@@ -111,25 +111,25 @@ export default function ChatView({ className, onBack }: { className: string; onB
 
   if (!vmId) {
     return (
-      <div className={`${className} flex-1 flex-col items-center justify-center bg-base-950 text-white/30`}>
+      <div className={`${className} flex-1 flex-col items-center justify-center bg-canvas text-muted-soft`}>
         <p className="text-sm">Select a VM to get started</p>
       </div>
     );
   }
 
   return (
-    <div className={`${className} safe-top flex-1 flex-col bg-base-950`}>
-      <div className="flex items-center gap-3 border-b border-white/5 px-4 py-3.5">
-        <button onClick={onBack} className="-ml-1 flex h-8 w-8 items-center justify-center rounded-lg text-white/50 hover:bg-white/5 md:hidden">
+    <div className={`${className} safe-top flex-1 flex-col bg-canvas`}>
+      <div className="flex items-center gap-3 border-b border-hairline px-4 py-3.5">
+        <button onClick={onBack} className="-ml-1 flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-surface-card md:hidden">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
             <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[14px] font-medium text-white/90">{session?.title ?? 'New chat'}</p>
-          <p className="truncate text-[12px] text-white/35">
+          <p className="truncate text-[14px] font-medium text-ink">{session?.title ?? 'New chat'}</p>
+          <p className="truncate text-[12px] text-muted-soft">
             {vm?.name}
-            {vm && <span className={`ml-1.5 inline-block h-1.5 w-1.5 rounded-full ${vm.connected ? 'bg-emerald-400' : 'bg-white/20'}`} />}
+            {vm && <span className={`ml-1.5 inline-block h-1.5 w-1.5 rounded-full ${vm.connected ? 'bg-success' : 'bg-hairline'}`} />}
             {session && <span className="ml-1.5">· {session.cwd}</span>}
           </p>
         </div>
@@ -137,7 +137,7 @@ export default function ChatView({ className, onBack }: { className: string; onB
 
       <div ref={scrollRef} className="flex-1 space-y-2.5 overflow-y-auto px-4 py-4">
         {items.length === 0 && (
-          <div className="flex h-full items-center justify-center text-sm text-white/25">
+          <div className="flex h-full items-center justify-center text-sm text-muted-soft">
             {sessionId ? 'No messages yet' : `Start a new chat on ${vm?.name}`}
           </div>
         )}
