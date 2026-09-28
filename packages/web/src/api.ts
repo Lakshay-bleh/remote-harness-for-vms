@@ -1,0 +1,59 @@
+import type { ImageAttachment, MessageDto, SessionDto, VmDto } from '@remote-harness/shared';
+
+const TOKEN_KEY = 'rh_token';
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function setToken(token: string | null): void {
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+  else localStorage.removeItem(TOKEN_KEY);
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`/api${path}`, {
+    ...init,
+    headers: {
+      'content-type': 'application/json',
+      ...(getToken() ? { authorization: `Bearer ${getToken()}` } : {}),
+      ...init?.headers,
+    },
+  });
+  if (res.status === 401) {
+    setToken(null);
+    window.location.reload();
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error || `Request failed: ${res.status}`);
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json();
+}
+
+export const api = {
+  login: (password: string) => request<{ token: string }>('/login', { method: 'POST', body: JSON.stringify({ password }) }),
+  listVms: () => request<VmDto[]>('/vms'),
+  listSessions: (vmId: string) => request<SessionDto[]>(`/vms/${vmId}/sessions`),
+  listMessages: (vmId: string, sessionId: string) =>
+    request<MessageDto[]>(`/vms/${vmId}/sessions/${sessionId}/messages`),
+  createSession: (vmId: string, body: { cwd?: string; text: string; images?: ImageAttachment[]; accountId?: string }) =>
+    request<{ tempId: string }>(`/vms/${vmId}/sessions`, { method: 'POST', body: JSON.stringify(body) }),
+  sendMessage: (vmId: string, sessionId: string, body: { text: string; images?: ImageAttachment[] }) =>
+    request(`/vms/${vmId}/sessions/${sessionId}/messages`, { method: 'POST', body: JSON.stringify(body) }),
+  interrupt: (vmId: string, sessionId: string) =>
+    request(`/vms/${vmId}/sessions/${sessionId}/interrupt`, { method: 'POST' }),
+  setPermissionMode: (vmId: string, sessionId: string, mode: string) =>
+    request(`/vms/${vmId}/sessions/${sessionId}/permission-mode`, { method: 'POST', body: JSON.stringify({ mode }) }),
+  setModel: (vmId: string, sessionId: string, model: string) =>
+    request(`/vms/${vmId}/sessions/${sessionId}/model`, { method: 'POST', body: JSON.stringify({ model }) }),
+  setEffort: (vmId: string, sessionId: string, effort: string) =>
+    request(`/vms/${vmId}/sessions/${sessionId}/effort`, { method: 'POST', body: JSON.stringify({ effort }) }),
+  resolvePermission: (vmId: string, sessionId: string, requestId: string, behavior: 'allow' | 'deny') =>
+    request(`/vms/${vmId}/sessions/${sessionId}/permission-response`, {
+      method: 'POST',
+      body: JSON.stringify({ requestId, behavior }),
+    }),
+};

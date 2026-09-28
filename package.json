@@ -1,0 +1,15 @@
+{
+  "name": "remote-harness-for-vms",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:hub": "npm run dev -w @remote-harness/hub",
+    "dev:web": "npm run dev -w @remote-harness/web",
+    "dev:agent": "npm run dev -w @remote-harness/agent",
+    "build:web": "npm run build -w @remote-harness/web",
+    "gen:icons": "node scripts/gen-icons.mjs"
+  }
+}

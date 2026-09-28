@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html, body, #root {
+  height: 100%;
+  background: #0b0f14;
+}
+
+body {
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #28323f transparent;
+}
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #28323f;
+  border-radius: 999px;
+}
+
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.markdown p {
+  margin: 0 0 0.5em;
+}
+.markdown p:last-child {
+  margin-bottom: 0;
+}
+.markdown pre {
+  background: #0b0f14 !important;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  font-size: 0.8rem;
+}
+.markdown code {
+  font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+  font-size: 0.85em;
+}
+.markdown :not(pre) > code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.1em 0.4em;
+  border-radius: 0.35em;
+}
+.markdown ul, .markdown ol {
+  padding-left: 1.25em;
+  margin: 0.4em 0;
+}
+.markdown a {
+  color: #7c9cff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.markdown h1, .markdown h2, .markdown h3 {
+  font-weight: 600;
+  margin: 0.6em 0 0.3em;
+}

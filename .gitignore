@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.log
+.env
+.env.*
+!.env.example
+packages/hub/data/
+packages/agent/data/
