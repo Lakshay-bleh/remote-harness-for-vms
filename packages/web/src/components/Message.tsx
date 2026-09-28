@@ -18,16 +18,16 @@ function summarizeTool(name: string, input: Record<string, unknown>): string {
 function ToolUseCard({ block }: { block: Block }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="my-1.5 overflow-hidden rounded-xl border border-white/8 bg-base-800/60">
+    <div className="my-1.5 overflow-hidden rounded-lg bg-surface-dark">
       <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-2 px-3 py-2 text-left">
-        <span className="rounded-md bg-accent/15 px-1.5 py-0.5 font-mono text-[11px] font-medium text-accent">{block.name}</span>
-        <span className="flex-1 truncate font-mono text-[12px] text-white/50">{summarizeTool(block.name, block.input)}</span>
-        <svg className={`h-3 w-3 shrink-0 text-white/30 transition-transform ${open ? 'rotate-90' : ''}`} viewBox="0 0 24 24" fill="none">
+        <span className="rounded-sm bg-primary/20 px-1.5 py-0.5 font-mono text-[11px] font-medium text-primary">{block.name}</span>
+        <span className="flex-1 truncate font-mono text-[12px] text-on-dark-soft">{summarizeTool(block.name, block.input)}</span>
+        <svg className={`h-3 w-3 shrink-0 text-on-dark-soft transition-transform ${open ? 'rotate-90' : ''}`} viewBox="0 0 24 24" fill="none">
           <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </button>
       {open && (
-        <pre className="border-t border-white/5 bg-base-950/60 px-3 py-2 font-mono text-[11px] text-white/60">
+        <pre className="on-dark-scroll overflow-x-auto border-t border-white/10 bg-surface-dark-soft px-3 py-2 font-mono text-[11px] text-on-dark-soft">
           {JSON.stringify(block.input, null, 2)}
         </pre>
       )}
@@ -39,17 +39,17 @@ function Thinking({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="my-1.5">
-      <button onClick={() => setOpen((o) => !o)} className="text-[12px] italic text-white/30 hover:text-white/50">
+      <button onClick={() => setOpen((o) => !o)} className="text-[12px] italic text-muted-soft hover:text-muted">
         {open ? 'Hide thinking' : 'Show thinking'}
       </button>
-      {open && <p className="mt-1 whitespace-pre-wrap text-[12px] italic leading-relaxed text-white/40">{text}</p>}
+      {open && <p className="mt-1 whitespace-pre-wrap text-[12px] italic leading-relaxed text-muted">{text}</p>}
     </div>
   );
 }
 
 function Markdown({ text }: { text: string }) {
   return (
-    <div className="markdown text-[14px] leading-relaxed text-white/90">
+    <div className="markdown text-[14px] leading-relaxed text-ink">
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
         {text}
       </ReactMarkdown>
@@ -60,7 +60,7 @@ function Markdown({ text }: { text: string }) {
 function ImageBlock({ block }: { block: Block }) {
   const src = block.source?.data ? `data:${block.source.media_type};base64,${block.source.data}` : undefined;
   if (!src) return null;
-  return <img src={src} className="mt-1.5 max-h-64 rounded-xl border border-white/10 object-cover" />;
+  return <img src={src} className="mt-1.5 max-h-64 rounded-md border border-hairline object-cover" />;
 }
 
 function Blocks({ blocks }: { blocks: Block[] }) {
@@ -97,9 +97,9 @@ function PermissionRequest({ vmId, sessionId, data, resolved }: { vmId: string; 
   }
 
   return (
-    <div className="my-1.5 max-w-[85%] rounded-xl border border-amber-400/25 bg-amber-400/[0.06] px-3.5 py-3">
-      <p className="text-[13px] font-medium text-amber-300">Permission requested</p>
-      <p className="mt-0.5 font-mono text-[12px] text-white/60">
+    <div className="my-1.5 max-w-[85%] rounded-lg border border-warning/40 bg-warning/10 px-3.5 py-3">
+      <p className="text-[13px] font-medium text-ink">Permission requested</p>
+      <p className="mt-0.5 font-mono text-[12px] text-body">
         {data.toolName} — {summarizeTool(data.toolName, data.input)}
       </p>
       {!resolved ? (
@@ -107,20 +107,20 @@ function PermissionRequest({ vmId, sessionId, data, resolved }: { vmId: string; 
           <button
             disabled={busy !== null}
             onClick={() => respond('allow')}
-            className="rounded-lg bg-amber-400 px-3 py-1.5 text-[12px] font-medium text-base-950 transition hover:bg-amber-300 disabled:opacity-40"
+            className="rounded-md bg-warning px-3 py-1.5 text-[12px] font-medium text-ink transition hover:opacity-90 disabled:opacity-40"
           >
             Allow
           </button>
           <button
             disabled={busy !== null}
             onClick={() => respond('deny')}
-            className="rounded-lg border border-white/10 px-3 py-1.5 text-[12px] font-medium text-white/70 transition hover:bg-white/5 disabled:opacity-40"
+            className="rounded-md border border-hairline px-3 py-1.5 text-[12px] font-medium text-body transition hover:bg-surface-card disabled:opacity-40"
           >
             Deny
           </button>
         </div>
       ) : (
-        <p className="mt-2 text-[12px] text-white/30">Resolved</p>
+        <p className="mt-2 text-[12px] text-muted-soft">Resolved</p>
       )}
     </div>
   );
@@ -132,7 +132,7 @@ export default function Message({ item, vmId, sessionId }: { item: DisplayItem; 
   if (item.kind === 'user') {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-2xl rounded-tr-sm bg-accent px-3.5 py-2.5 text-[14px] leading-relaxed text-base-950">
+        <div className="max-w-[85%] rounded-xl rounded-tr-sm bg-primary px-3.5 py-2.5 text-[14px] leading-relaxed text-on-primary">
           {item.blocks.map((b, i) =>
             b.type === 'text' ? <p key={i} className="whitespace-pre-wrap">{b.text}</p> : <ImageBlock key={i} block={b} />,
           )}
@@ -144,7 +144,7 @@ export default function Message({ item, vmId, sessionId }: { item: DisplayItem; 
   if (item.kind === 'assistant') {
     return (
       <div className="flex justify-start">
-        <div className="max-w-[85%] rounded-2xl rounded-tl-sm bg-base-800 px-3.5 py-2.5">
+        <div className="max-w-[85%] rounded-xl rounded-tl-sm border border-hairline bg-surface-card px-3.5 py-2.5">
           <Blocks blocks={item.blocks} />
         </div>
       </div>
@@ -156,9 +156,9 @@ export default function Message({ item, vmId, sessionId }: { item: DisplayItem; 
     if (!text) return null;
     return (
       <div className="flex justify-start">
-        <details className="max-w-[85%] rounded-xl border border-white/8 bg-base-900/60 px-3 py-2 text-[12px] text-white/40">
-          <summary className="cursor-pointer select-none text-white/40">Tool output</summary>
-          <pre className="mt-1.5 whitespace-pre-wrap font-mono text-[11px] text-white/50">{text.slice(0, 4000)}</pre>
+        <details className="max-w-[85%] rounded-lg bg-surface-dark px-3 py-2 text-[12px] text-on-dark-soft">
+          <summary className="cursor-pointer select-none text-on-dark-soft">Tool output</summary>
+          <pre className="on-dark-scroll mt-1.5 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-on-dark-soft">{text.slice(0, 4000)}</pre>
         </details>
       </div>
     );
@@ -174,7 +174,7 @@ export default function Message({ item, vmId, sessionId }: { item: DisplayItem; 
 
   if (item.kind === 'system_init') {
     return (
-      <p className="py-1 text-center text-[11px] text-white/25">
+      <p className="py-1 text-center text-[11px] text-muted-soft">
         Session started · {item.data.model} · {item.data.cwd}
       </p>
     );
@@ -183,7 +183,7 @@ export default function Message({ item, vmId, sessionId }: { item: DisplayItem; 
   if (item.kind === 'result') {
     const d = item.data;
     if (d.subtype !== 'success') {
-      return <p className="py-1 text-center text-[11px] text-red-400/70">Turn ended with an error</p>;
+      return <p className="py-1 text-center text-[11px] text-error">Turn ended with an error</p>;
     }
     return null;
   }
@@ -191,7 +191,7 @@ export default function Message({ item, vmId, sessionId }: { item: DisplayItem; 
   if (item.kind === 'error') {
     return (
       <div className="flex justify-start">
-        <div className="max-w-[85%] rounded-2xl border border-red-400/25 bg-red-400/[0.06] px-3.5 py-2.5 text-[13px] text-red-300">
+        <div className="max-w-[85%] rounded-xl border border-error/30 bg-error/10 px-3.5 py-2.5 text-[13px] text-error">
           {item.text}
         </div>
       </div>

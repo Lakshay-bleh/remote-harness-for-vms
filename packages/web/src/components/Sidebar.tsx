@@ -23,20 +23,20 @@ function SessionRow({ s, active, onClick }: { s: SessionDto; active: boolean; on
   return (
     <button
       onClick={onClick}
-      className={`flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left transition hover:bg-white/5 ${active ? 'bg-white/[0.07]' : ''}`}
+      className={`flex w-full flex-col gap-0.5 rounded-md px-2.5 py-2 text-left transition hover:bg-surface-card ${active ? 'bg-surface-card' : ''}`}
     >
-      <span className="flex items-center gap-1.5 truncate text-[13px] text-white/80">
-        {s.status === 'active' && <span className="h-1.5 w-1.5 shrink-0 animate-pulseDot rounded-full bg-accent" />}
+      <span className={`flex items-center gap-1.5 truncate text-[13px] ${active ? 'font-medium text-ink' : 'text-body'}`}>
+        {s.status === 'active' && <span className="h-1.5 w-1.5 shrink-0 animate-pulseDot rounded-full bg-primary" />}
         <span className="truncate">{s.title}</span>
       </span>
-      <span className="truncate text-[11px] text-white/30">{relativeTime(s.lastMessageAt)} ago · {s.cwd}</span>
+      <span className="truncate text-[11px] text-muted-soft">{relativeTime(s.lastMessageAt)} ago · {s.cwd}</span>
     </button>
   );
 }
 
 function NewChatRow({ onClick }: { onClick: () => void }) {
   return (
-    <button onClick={onClick} className="mb-0.5 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] text-accent transition hover:bg-accent/10">
+    <button onClick={onClick} className="mb-0.5 flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[13px] text-primary transition hover:bg-primary/10">
       <span className="text-base leading-none">+</span> New chat
     </button>
   );
@@ -82,20 +82,20 @@ export default function Sidebar({ className, onSelectSession }: { className: str
   }
 
   return (
-    <div className={`${className} safe-top w-full flex-col border-r border-white/5 bg-base-900 md:w-80`}>
+    <div className={`${className} safe-top w-full flex-col border-r border-hairline bg-surface-soft md:w-80`}>
       <div className="flex items-center gap-2.5 px-5 pb-3 pt-5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/15 text-accent">
+        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-surface-dark text-primary">
           <svg width="14" height="14" viewBox="0 0 100 100" fill="none">
             <path d="M35 22 L60 50 L35 78" stroke="currentColor" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round" />
             <rect x="60" y="66" width="10" height="20" rx="5" fill="currentColor" />
           </svg>
         </div>
-        <h1 className="text-[15px] font-semibold tracking-tight text-white">Remote Harness</h1>
+        <h1 className="text-[15px] font-semibold tracking-tight text-ink">Remote Harness</h1>
       </div>
 
       <div className="px-3 pb-2">
-        <div className="flex items-center gap-2 rounded-xl bg-white/[0.04] px-3 py-2">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="shrink-0 text-white/30">
+        <div className="flex items-center gap-2 rounded-md border border-hairline bg-canvas px-3 py-2 transition focus-within:border-primary">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="shrink-0 text-muted-soft">
             <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
             <path d="M21 21l-4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
           </svg>
@@ -103,14 +103,14 @@ export default function Sidebar({ className, onSelectSession }: { className: str
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search"
-            className="w-full bg-transparent text-[13px] text-white outline-none placeholder:text-white/30"
+            className="w-full bg-transparent text-[13px] text-ink outline-none placeholder:text-muted-soft"
           />
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-2.5 pb-4">
         {state.vms.length === 0 && (
-          <p className="px-3 py-6 text-sm text-white/30">No VMs connected yet. Install the agent on a server to see it here.</p>
+          <p className="px-3 py-6 text-sm text-muted-soft">No VMs connected yet. Install the agent on a server to see it here.</p>
         )}
         {state.vms.map((vm) => {
           const sessions = state.sessionsByVm[vm.id] ?? [];
@@ -122,32 +122,32 @@ export default function Sidebar({ className, onSelectSession }: { className: str
             <div key={vm.id} className="mb-1">
               <button
                 onClick={() => toggleVm(vm.id)}
-                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition hover:bg-white/5"
+                className="flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-left transition hover:bg-surface-card"
               >
-                <span className={`h-2 w-2 shrink-0 rounded-full ${vm.connected ? 'bg-emerald-400' : 'bg-white/20'}`} />
-                <span className="flex-1 truncate text-sm font-medium text-white/90">{vm.name}</span>
-                <svg className={`h-3.5 w-3.5 text-white/30 transition-transform ${expanded ? 'rotate-90' : ''}`} viewBox="0 0 24 24" fill="none">
+                <span className={`h-2 w-2 shrink-0 rounded-full ${vm.connected ? 'bg-success' : 'bg-hairline'}`} />
+                <span className="flex-1 truncate text-sm font-medium text-ink">{vm.name}</span>
+                <svg className={`h-3.5 w-3.5 text-muted-soft transition-transform ${expanded ? 'rotate-90' : ''}`} viewBox="0 0 24 24" fill="none">
                   <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </button>
 
               {expanded && !multiAccount && (
-                <div className="ml-3.5 border-l border-white/5 pl-2.5">
+                <div className="ml-3.5 border-l border-hairline pl-2.5">
                   {!q && <NewChatRow onClick={() => newChat(vm.id, accounts[0].id)} />}
                   {sessions.filter(matchSession).map((s) => (
                     <SessionRow key={s.id} s={s} active={state.selectedSessionId === s.id} onClick={() => pickSession(vm.id, s)} />
                   ))}
-                  {sessions.length === 0 && <p className="px-2.5 py-2 text-[13px] text-white/30">No sessions yet</p>}
+                  {sessions.length === 0 && <p className="px-2.5 py-2 text-[13px] text-muted-soft">No sessions yet</p>}
                 </div>
               )}
 
               {expanded && multiAccount && (
-                <div className="ml-3.5 space-y-2 border-l border-white/5 pl-2.5">
+                <div className="ml-3.5 space-y-2 border-l border-hairline pl-2.5">
                   {accounts.map((account) => {
                     const accountSessions = sessions.filter((s) => s.accountId === account.id).filter(matchSession);
                     return (
                       <div key={account.id}>
-                        <div className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-white/35">
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-soft">
                           <PersonIcon />
                           {account.label}
                         </div>
@@ -155,7 +155,7 @@ export default function Sidebar({ className, onSelectSession }: { className: str
                         {accountSessions.map((s) => (
                           <SessionRow key={s.id} s={s} active={state.selectedSessionId === s.id} onClick={() => pickSession(vm.id, s)} />
                         ))}
-                        {accountSessions.length === 0 && !q && <p className="px-2.5 py-1.5 text-[12px] text-white/25">No sessions yet</p>}
+                        {accountSessions.length === 0 && !q && <p className="px-2.5 py-1.5 text-[12px] text-muted-soft">No sessions yet</p>}
                       </div>
                     );
                   })}

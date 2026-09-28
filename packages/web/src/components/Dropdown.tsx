@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 export function Chip({ icon, label }: { icon?: ReactNode; label: string }) {
   return (
-    <span className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[12px] text-white/55">
+    <span className="flex items-center gap-1.5 rounded-pill border border-hairline bg-surface-card px-2.5 py-1 text-[12px] text-muted">
       {icon}
       <span className="max-w-[140px] truncate">{label}</span>
     </span>
@@ -40,7 +40,7 @@ export default function Dropdown<T extends string>({
       <button
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[12px] text-white/70 transition hover:bg-white/[0.09] disabled:opacity-40"
+        className="flex items-center gap-1.5 rounded-pill border border-hairline bg-surface-card px-2.5 py-1 text-[12px] text-body transition hover:bg-surface-cream-strong disabled:opacity-40"
       >
         {icon}
         <span className="max-w-[120px] truncate">{current?.label ?? value}</span>
@@ -49,7 +49,7 @@ export default function Dropdown<T extends string>({
         </svg>
       </button>
       {open && (
-        <div className="absolute bottom-full left-0 z-20 mb-1.5 min-w-[170px] overflow-hidden rounded-xl border border-white/10 bg-base-800 py-1 shadow-panel">
+        <div className="absolute bottom-full left-0 z-20 mb-1.5 min-w-[170px] overflow-hidden rounded-lg border border-hairline bg-canvas py-1 shadow-elevated">
           {options.map((o) => (
             <button
               key={o.value}
@@ -57,8 +57,8 @@ export default function Dropdown<T extends string>({
                 onChange(o.value);
                 setOpen(false);
               }}
-              className={`flex w-full items-center px-3 py-2 text-left text-[13px] transition hover:bg-white/5 ${
-                o.value === value ? 'text-accent' : 'text-white/80'
+              className={`flex w-full items-center px-3 py-2 text-left text-[13px] transition hover:bg-surface-card ${
+                o.value === value ? 'font-medium text-primary' : 'text-body'
               }`}
             >
               {o.label}

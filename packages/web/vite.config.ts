@@ -14,8 +14,8 @@ export default defineConfig({
         name: 'Remote Harness',
         short_name: 'Harness',
         description: 'Chat with and control your Claude Code sessions running on any VM.',
-        theme_color: '#0b0f14',
-        background_color: '#0b0f14',
+        theme_color: '#faf9f5',
+        background_color: '#faf9f5',
         display: 'standalone',
         orientation: 'portrait',
         icons: [
