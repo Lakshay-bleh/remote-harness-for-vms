@@ -55,15 +55,15 @@ export default function Composer({
   }
 
   return (
-    <div className="safe-bottom border-t border-white/5 bg-base-900 px-3 py-3">
+    <div className="safe-bottom border-t border-hairline bg-canvas px-3 py-3">
       {images.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2">
           {images.map((img, i) => (
             <div key={i} className="relative">
-              <img src={`data:${img.mediaType};base64,${img.dataBase64}`} className="h-14 w-14 rounded-lg border border-white/10 object-cover" />
+              <img src={`data:${img.mediaType};base64,${img.dataBase64}`} className="h-14 w-14 rounded-md border border-hairline object-cover" />
               <button
                 onClick={() => setImages(images.filter((_, j) => j !== i))}
-                className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-white/10 bg-base-950 text-[10px] text-white/70"
+                className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-hairline bg-canvas text-[10px] text-muted"
               >
                 ×
               </button>
@@ -71,7 +71,7 @@ export default function Composer({
           ))}
         </div>
       )}
-      <div className="rounded-2xl border border-white/10 bg-base-800 px-3 pb-2 pt-2.5">
+      <div className="rounded-xl border border-hairline bg-canvas px-3 pb-2 pt-2.5 transition focus-within:border-primary/60">
         {topChips && <div className="mb-2 flex flex-wrap items-center gap-1.5">{topChips}</div>}
         <textarea
           ref={taRef}
@@ -89,10 +89,10 @@ export default function Composer({
             }
           }}
           placeholder={placeholder}
-          className="max-h-40 w-full resize-none bg-transparent py-1 text-[14px] text-white outline-none placeholder:text-white/30"
+          className="max-h-40 w-full resize-none bg-transparent py-1 text-[14px] text-ink outline-none placeholder:text-muted-soft"
         />
         <div className="mt-1.5 flex items-center gap-1.5">
-          <label className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg text-white/40 transition hover:bg-white/5 hover:text-white/70">
+          <label className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted transition hover:bg-surface-card hover:text-ink">
             <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => e.target.files && addFiles(e.target.files)} />
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
               <path
@@ -107,7 +107,7 @@ export default function Composer({
           <div className="flex-1" />
           {footerExtra}
           {busy ? (
-            <button onClick={onInterrupt} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/10 text-white/80 transition hover:bg-white/20">
+            <button onClick={onInterrupt} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-surface-dark text-on-dark transition hover:bg-surface-dark-elevated">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
                 <rect x="5" y="5" width="14" height="14" rx="2" />
               </svg>
@@ -116,7 +116,7 @@ export default function Composer({
             <button
               onClick={submit}
               disabled={!text.trim() && images.length === 0}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent text-base-950 transition hover:bg-accent-soft disabled:opacity-30"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-on-primary transition hover:bg-primary-active disabled:opacity-30"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                 <path d="M4 12l16-8-6 8 6 8-16-8z" fill="currentColor" />

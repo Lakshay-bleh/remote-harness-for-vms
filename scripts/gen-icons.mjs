@@ -5,9 +5,11 @@ import { deflateSync } from 'node:zlib';
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const BG_TOP = [19, 26, 36];
-const BG_BOTTOM = [11, 15, 20];
-const ACCENT = [124, 156, 255];
+// Escanor-derived palette: a coral mark on a dark-ink "product chrome" ground,
+// echoing the cream/dark contrast rhythm used for code + technical surfaces.
+const BG_TOP = [37, 35, 32]; // surface-dark-elevated #252320
+const BG_BOTTOM = [24, 23, 21]; // surface-dark #181715
+const ACCENT = [204, 120, 92]; // primary (coral) #cc785c
 
 function crc32(buf) {
   let c;
