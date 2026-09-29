@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
-import { parseMcpServerInput, toMcpServerDto, type ImageAttachment, type McpOverviewDto, type McpPutResultDto } from '@remote-harness/shared';
+import { agentSupportsMcp, parseMcpServerInput, toMcpServerDto, type ApiTokenCreatedDto, type ImageAttachment, type McpOverviewDto, type McpPutResultDto } from '@remote-harness/shared';
 import type { Db } from './db.js';
 import type { AgentServer } from './agentServer.js';
 import type { BrowserServer } from './browserServer.js';
@@ -38,6 +38,27 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
 
   router.use(requireAuth);
 
+  // ---- tokens ----
+  // Signing out really signs out: the token is deleted, so a copy of it stops working too.
+  router.post('/logout', (req, res) => {
+    const header = req.header('authorization') ?? '';
+    db.revokeToken(header.startsWith('Bearer ') ? header.slice(7) : '');
+    res.json({ ok: true });
+  });
+
+  // A token for one purpose, e.g. Escanor. Unlike a login it survives signing out, and it can be
+  // revoked on its own. The value is returned once and never listed again.
+  router.post('/tokens', (req, res) => {
+    const label = String(req.body?.label ?? '').trim().slice(0, 60) || 'API token';
+    const created: ApiTokenCreatedDto = db.createApiToken(label);
+    res.status(201).json(created);
+  });
+  router.get('/tokens', (_req, res) => res.json(db.listApiTokens()));
+  router.delete('/tokens/:id', (req, res) => {
+    const removed = db.deleteApiToken(req.params.id);
+    res.status(removed ? 200 : 404).json({ ok: removed });
+  });
+
   router.get('/vms', (_req, res) => {
     const vms = db.listVms().map((v) => ({ ...v, connected: agentServer.isConnected(v.id) }));
     res.json(vms);
@@ -67,6 +88,8 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
           vmId: v.id,
           name: v.name,
           connected: agentServer.isConnected(v.id),
+          agentVersion: db.getVmAgentVersion(v.id),
+          mcpSupported: agentSupportsMcp(db.getVmAgentVersion(v.id)),
           reportedAt: status?.reportedAt ?? null,
           servers: status?.servers ?? [],
           liveSessions: status?.liveSessions ?? 0,

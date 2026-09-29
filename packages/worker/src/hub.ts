@@ -1,8 +1,11 @@
 import { DurableObject } from 'cloudflare:workers';
 import {
+  agentSupportsMcp,
   parseMcpServerInput,
   toMcpServerDto,
   type AgentMcpStatus,
+  type ApiTokenCreatedDto,
+  type ApiTokenDto,
   type AgentToHubMessage,
   type ClaudeAccount,
   type HubToAgentMessage,
@@ -79,6 +82,16 @@ export class Hub extends DurableObject<Env> {
         name TEXT PRIMARY KEY,
         config_json TEXT NOT NULL,
         updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS api_tokens (
+        id TEXT PRIMARY KEY,
+        token TEXT UNIQUE NOT NULL,
+        label TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS vm_agent_version (
+        vm_id TEXT PRIMARY KEY,
+        version TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS vm_mcp_status (
         vm_id TEXT PRIMARY KEY,
@@ -216,7 +229,21 @@ export class Hub extends DurableObject<Env> {
   }
 
   private isValidToken(token: string): boolean {
-    return Boolean(token) && this.sql.exec('SELECT 1 FROM auth_tokens WHERE token = ?', token).toArray().length > 0;
+    if (!token) return false;
+    return (
+      this.sql.exec('SELECT 1 FROM auth_tokens WHERE token = ?', token).toArray().length > 0 ||
+      this.sql.exec('SELECT 1 FROM api_tokens WHERE token = ?', token).toArray().length > 0
+    );
+  }
+
+  private revokeToken(token: string) {
+    this.sql.exec('DELETE FROM auth_tokens WHERE token = ?', token);
+    this.sql.exec('DELETE FROM api_tokens WHERE token = ?', token);
+  }
+
+  private getVmAgentVersion(vmId: string): string | null {
+    const row = this.sql.exec('SELECT version FROM vm_agent_version WHERE vm_id = ?', vmId).toArray()[0] as { version: string } | undefined;
+    return row?.version ?? null;
   }
 
   // ---------- sockets ----------
@@ -314,6 +341,12 @@ export class Hub extends DurableObject<Env> {
       }
       ws.serializeAttachment({ vmId, vmName: msg.vmName } satisfies AgentAttachment);
       this.setVmAccounts(vmId, msg.accounts);
+      this.sql.exec(
+        `INSERT INTO vm_agent_version (vm_id, version) VALUES (?, ?)
+         ON CONFLICT(vm_id) DO UPDATE SET version = excluded.version`,
+        vmId,
+        String(msg.agentVersion ?? ''),
+      );
       for (const s of msg.sessions) {
         this.upsertSession({ id: s.sessionId, vmId, cwd: s.cwd, title: s.title, status: s.status, accountId: s.accountId });
       }
@@ -451,6 +484,8 @@ export class Hub extends DurableObject<Env> {
             vmId: v.id,
             name: v.name,
             connected: Boolean(this.agentFor(v.id)),
+            agentVersion: this.getVmAgentVersion(v.id),
+            mcpSupported: agentSupportsMcp(this.getVmAgentVersion(v.id)),
             reportedAt: status?.reportedAt ?? null,
             servers: status?.servers ?? [],
             liveSessions: status?.liveSessions ?? 0,
@@ -458,6 +493,38 @@ export class Hub extends DurableObject<Env> {
         }),
       };
       return json(overview);
+    }
+
+    // ---- tokens (same behaviour as the Node hub) ----
+    if (method === 'POST' && path === '/logout') {
+      this.revokeToken(header.startsWith('Bearer ') ? header.slice(7) : '');
+      return json({ ok: true });
+    }
+    if (method === 'POST' && path === '/tokens') {
+      const label = String((body as any)?.label ?? '').trim().slice(0, 60) || 'API token';
+      const created: ApiTokenCreatedDto = {
+        id: crypto.randomUUID(),
+        token: crypto.randomUUID() + crypto.randomUUID(),
+        label,
+        createdAt: this.now(),
+      };
+      this.sql.exec('INSERT INTO api_tokens (id, token, label, created_at) VALUES (?, ?, ?, ?)', created.id, created.token, created.label, created.createdAt);
+      return json(created, 201);
+    }
+    if (method === 'GET' && path === '/tokens') {
+      const rows = this.sql.exec('SELECT id, label, created_at FROM api_tokens ORDER BY created_at DESC').toArray() as {
+        id: string;
+        label: string;
+        created_at: string;
+      }[];
+      return json(rows.map((r): ApiTokenDto => ({ id: r.id, label: r.label, createdAt: r.created_at })));
+    }
+    let tok: RegExpMatchArray | null;
+    if (method === 'DELETE' && (tok = path.match(/^\/tokens\/([^/]+)$/))) {
+      const id = decodeURIComponent(tok[1]);
+      const exists = this.sql.exec('SELECT 1 FROM api_tokens WHERE id = ?', id).toArray().length > 0;
+      if (exists) this.sql.exec('DELETE FROM api_tokens WHERE id = ?', id);
+      return json({ ok: exists }, exists ? 200 : 404);
     }
 
     let mcp: RegExpMatchArray | null;

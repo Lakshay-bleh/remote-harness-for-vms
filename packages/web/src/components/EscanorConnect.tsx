@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { McpOverviewDto } from '@remote-harness/shared';
-import { api, getHubUrl, getToken } from '../api';
+import type { ApiTokenCreatedDto, ApiTokenDto, McpOverviewDto } from '@remote-harness/shared';
+import { api, getHubUrl } from '../api';
 
 // Where the Escanor web app lives; the "Claude cloud sessions" card is on its Integrations page.
 const ESCANOR_INTEGRATIONS_URL = 'https://www.escanor.in/dashboard/integrations';
@@ -80,6 +80,84 @@ function CopyRow({ label, value, secret }: { label: string; value: string; secre
   );
 }
 
+// A dedicated token for Escanor rather than this browser's login: signing out here never breaks it,
+// and it can be revoked on its own. The value is shown once, when it is created.
+function TokenSection() {
+  const [tokens, setTokens] = useState<ApiTokenDto[]>([]);
+  const [created, setCreated] = useState<ApiTokenCreatedDto | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load() {
+    try {
+      setTokens(await api.listApiTokens());
+    } catch {
+      // An older hub has no /tokens; the rest of the dialog still works.
+    }
+  }
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function generate() {
+    setBusy(true);
+    setError(null);
+    try {
+      setCreated(await api.createApiToken('Escanor'));
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create a token');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revoke(id: string) {
+    try {
+      await api.deleteApiToken(id);
+      if (created?.id === id) setCreated(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not revoke the token');
+    }
+  }
+
+  return (
+    <div>
+      {created ? (
+        <>
+          <CopyRow label="Hub token for Escanor (shown once)" value={created.token} secret />
+          <p className="mt-1.5 text-[12px] text-muted-soft">Copy it now. It is not shown again, but you can always generate another.</p>
+        </>
+      ) : (
+        <button
+          type="button"
+          onClick={generate}
+          disabled={busy}
+          className="w-full rounded-md border border-hairline bg-canvas px-3 py-2.5 text-[13px] font-medium text-ink transition hover:bg-surface-card disabled:opacity-50"
+        >
+          {busy ? 'Generating…' : 'Generate a token for Escanor'}
+        </button>
+      )}
+      {error && <p className="mt-2 text-[12.5px] text-error">{error}</p>}
+      {tokens.length > 0 && (
+        <ul className="mt-3 space-y-1">
+          {tokens.map((t) => (
+            <li key={t.id} className="flex items-center gap-2 text-[12.5px] text-body">
+              <span className="min-w-0 flex-1 truncate">
+                {t.label} <span className="text-muted-soft">· {new Date(t.createdAt).toLocaleDateString()}</span>
+              </span>
+              <button type="button" onClick={() => revoke(t.id)} className="shrink-0 rounded px-1.5 py-0.5 text-muted transition hover:bg-surface-card hover:text-error">
+                Revoke
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export default function EscanorConnect() {
   const [open, setOpen] = useState(false);
   const [overview, setOverview] = useState<McpOverviewDto | null>(null);
@@ -110,7 +188,6 @@ export default function EscanorConnect() {
 
   const installed = Boolean(overview?.servers.some((s) => s.name === SERVER_NAME));
   const address = hubAddress();
-  const token = getToken() ?? '';
 
   return (
     <>
@@ -161,7 +238,9 @@ export default function EscanorConnect() {
                     const status = vm.servers.find((s) => s.name === SERVER_NAME)?.status;
                     const label = !vm.connected
                       ? 'offline — installs when it reconnects'
-                      : status === 'connected'
+                      : !vm.mcpSupported
+                        ? 'agent needs updating to receive it'
+                        : status === 'connected'
                         ? 'connected'
                         : status === 'failed' || status === 'needs-auth'
                           ? `${status}${vm.servers.find((s) => s.name === SERVER_NAME)?.error ? `: ${vm.servers.find((s) => s.name === SERVER_NAME)?.error}` : ''}`
@@ -179,7 +258,7 @@ export default function EscanorConnect() {
               </div>
             ) : (
               <ol className="mt-4 list-decimal space-y-1 pl-5 text-[13px] text-body">
-                <li>Copy your hub URL and session token below.</li>
+                <li>Copy your hub URL and generate a token below.</li>
                 <li>
                   In Escanor, open <span className="font-medium">Integrations → Claude cloud sessions</span>.
                 </li>
@@ -189,7 +268,7 @@ export default function EscanorConnect() {
 
             <div className="mt-4 space-y-3">
               <CopyRow label="Hub URL" value={address} />
-              <CopyRow label="Hub session token" value={token} secret />
+              <TokenSection />
             </div>
 
             {isPrivateAddress(address) && (
@@ -206,8 +285,8 @@ export default function EscanorConnect() {
             )}
 
             <p className="mt-3 text-[12px] leading-relaxed text-muted-soft">
-              The token gives full access to this hub. Only paste it into Escanor, which stores it encrypted and uses it
-              solely to install and update the MCP.
+              A token gives full access to this hub. Only paste it into Escanor, which stores it encrypted and uses it
+              solely to install and update the MCP. Revoke it here any time; signing out of this browser does not affect it.
             </p>
 
             <a

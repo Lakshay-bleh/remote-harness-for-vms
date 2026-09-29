@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseMcpServerInput, toMcpServerDto } from '../src/protocol.ts';
+import { agentSupportsMcp, parseMcpServerInput, toMcpServerDto } from '../src/protocol.ts';
 
 const ok = (name: string, body: unknown) => {
   const r = parseMcpServerInput(name, body);
@@ -55,4 +55,9 @@ test('the DTO never carries header values', () => {
   const dto = toMcpServerDto({ name: 'escanor', url: 'https://x/', headers: { Authorization: 'Bearer secret' }, updatedAt: 't' });
   assert.deepEqual(dto.headerNames, ['Authorization']);
   assert.ok(!JSON.stringify(dto).includes('secret'));
+});
+
+test('agents before 0.3.0 are reported as unable to install MCP servers', () => {
+  for (const v of ['0.2.0', '0.2.9', '0.1.0', '', null, undefined, 'garbage']) assert.equal(agentSupportsMcp(v as never), false, String(v));
+  for (const v of ['0.3.0', '0.3.1', '0.10.0', '1.0.0', '1']) assert.equal(agentSupportsMcp(v), true, v);
 });

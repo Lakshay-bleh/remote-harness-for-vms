@@ -284,10 +284,28 @@ export type McpServerInput = {
   managedBy?: string;
 };
 
+// The first agent release that understands `set_mcp_servers`. An older agent ignores the message
+// without saying so, so the hub reports it as needing an update instead of "installing" forever.
+export const MIN_MCP_AGENT_VERSION = '0.3.0';
+
+export function agentSupportsMcp(version: string | null | undefined): boolean {
+  if (!version) return false;
+  const parse = (v: string) => v.split('.').map((n) => parseInt(n, 10) || 0);
+  const have = parse(version);
+  const need = parse(MIN_MCP_AGENT_VERSION);
+  for (let i = 0; i < Math.max(have.length, need.length); i++) {
+    const d = (have[i] ?? 0) - (need[i] ?? 0);
+    if (d !== 0) return d > 0;
+  }
+  return true;
+}
+
 export type VmMcpStatusDto = {
   vmId: string;
   name: string;
   connected: boolean;
+  agentVersion: string | null;
+  mcpSupported: boolean;
   reportedAt: string | null;
   servers: AgentMcpServerStatus[];
   liveSessions: number;
@@ -363,3 +381,8 @@ export function toMcpServerDto(s: ManagedMcpServer): McpServerDto {
   const { headers, ...rest } = s;
   return { ...rest, headerNames: Object.keys(headers ?? {}) };
 }
+
+// A token issued for one purpose (Escanor's integration), separate from a browser login so that
+// signing out never breaks it and it can be revoked on its own. The value is shown once, on creation.
+export type ApiTokenDto = { id: string; label: string; createdAt: string };
+export type ApiTokenCreatedDto = ApiTokenDto & { token: string };

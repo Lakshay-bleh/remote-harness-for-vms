@@ -169,6 +169,14 @@ export default function Sidebar({ className, onSelectSession }: { className: str
 
       <div className="border-t border-hairline px-2.5 py-2.5">
         <EscanorConnect />
+        <button
+          type="button"
+          onClick={() => actions.logout()}
+          className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-[13px] text-muted transition hover:bg-surface-card hover:text-ink"
+        >
+          <span className="h-2 w-2 shrink-0" />
+          Sign out
+        </button>
       </div>
     </div>
   );

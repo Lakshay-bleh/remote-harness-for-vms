@@ -104,11 +104,18 @@ already running included — so tools are there the moment you start typing, wit
 configure per machine. [Escanor](https://www.escanor.in) uses this to add its integration tools
 (GitHub, Vercel, AWS, …) to all your sessions.
 
-**As a user:** open **Connect to Escanor** at the bottom of the sidebar, copy the hub URL and
-session token, and paste them in Escanor under *Integrations → Claude cloud sessions*. You can
+**As a user:** open **Connect to Escanor** at the bottom of the sidebar, copy the hub URL,
+generate a token for Escanor and copy that, and paste both in Escanor under *Integrations → Claude
+cloud sessions*. You can
 edit or disconnect there at any time; nothing needs restarting. The hub URL must be reachable
 from the internet (a reverse proxy, a tunnel, or the Cloudflare Worker hub) — Escanor's servers
-dial it.
+dial it. Machines must run agent **0.3.0 or newer**; an older agent ignores the install, and
+Escanor shows that machine as *needs updating* instead of waiting on it.
+
+**Tokens.** The token you give Escanor is its own (`POST /api/tokens`), not your browser login, so
+signing out never breaks it and you can revoke it alone from the same dialog. It is shown once
+when created. **Sign out** in the sidebar (`POST /api/logout`) deletes the login token on the
+hub, so a copy of it stops working too.
 
 **How it works:** the hub stores the set of servers and pushes the *complete* set to each agent
 (`set_mcp_servers`) when the agent connects and whenever the set changes. So a new VM, or one
@@ -128,6 +135,11 @@ ask* mode, which denies anything not pre-approved by your own settings, the tool
 GET    /api/mcp-servers          servers (header *names* only) + per-VM state
 PUT    /api/mcp-servers/:name    { url, headers?, autoAllow?, alwaysLoad?, managedBy? }
 DELETE /api/mcp-servers/:name
+
+POST   /api/tokens               { label }  ->  { id, token, label }   (token shown once)
+GET    /api/tokens               issued tokens, without their values
+DELETE /api/tokens/:id           revoke one
+POST   /api/logout               revoke the token making the request
 ```
 
 `name` is the server's namespace in Claude Code (`mcp__<name>__<tool>`), so it is limited to

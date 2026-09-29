@@ -1,4 +1,4 @@
-import type { ImageAttachment, McpOverviewDto, MessageDto, SessionDto, VmDto } from '@remote-harness/shared';
+import type { ApiTokenCreatedDto, ApiTokenDto, ImageAttachment, McpOverviewDto, MessageDto, SessionDto, VmDto } from '@remote-harness/shared';
 
 const TOKEN_KEY = 'rh_token';
 const HUB_URL_KEY = 'rh_hub_url';
@@ -50,6 +50,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   login: (password: string) => request<{ token: string }>('/login', { method: 'POST', body: JSON.stringify({ password }) }),
+  logout: () => request<{ ok: boolean }>('/logout', { method: 'POST' }),
+  listApiTokens: () => request<ApiTokenDto[]>('/tokens'),
+  createApiToken: (label: string) => request<ApiTokenCreatedDto>('/tokens', { method: 'POST', body: JSON.stringify({ label }) }),
+  deleteApiToken: (id: string) => request<{ ok: boolean }>(`/tokens/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   listVms: () => request<VmDto[]>('/vms'),
   getMcpOverview: () => request<McpOverviewDto>('/mcp-servers'),
   listSessions: (vmId: string) => request<SessionDto[]>(`/vms/${vmId}/sessions`),

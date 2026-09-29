@@ -12,7 +12,8 @@ const { HubConnection } = await import('./wsClient.js');
 const { discoverProfiles } = await import('./profiles.js');
 const { listProjects } = await import('./projects.js');
 
-const AGENT_VERSION = '0.2.0';
+// 0.3.0 is the first release that installs hub-managed MCP servers (see MIN_MCP_AGENT_VERSION).
+const AGENT_VERSION = '0.3.0';
 
 const profiles = discoverProfiles(config.profilesDir);
 console.log(`Claude accounts: ${profiles.map((p) => p.id).join(', ')}`);

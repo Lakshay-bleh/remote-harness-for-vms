@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import type { AgentMcpStatus, ClaudeAccount, ManagedMcpServer, MessageDto, SessionDto, VmDto } from '@remote-harness/shared';
+import type { AgentMcpStatus, ApiTokenDto, ClaudeAccount, ManagedMcpServer, MessageDto, SessionDto, VmDto } from '@remote-harness/shared';
 
 export function openDb(dataDir: string) {
   mkdirSync(dataDir, { recursive: true });
@@ -41,6 +41,16 @@ export function openDb(dataDir: string) {
       name TEXT PRIMARY KEY,
       config_json TEXT NOT NULL,
       updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS api_tokens (
+      id TEXT PRIMARY KEY,
+      token TEXT UNIQUE NOT NULL,
+      label TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS vm_agent_version (
+      vm_id TEXT PRIMARY KEY,
+      version TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS vm_mcp_status (
       vm_id TEXT PRIMARY KEY,
@@ -184,7 +194,49 @@ export function openDb(dataDir: string) {
     },
 
     isValidToken(token: string): boolean {
-      return Boolean(db.prepare('SELECT 1 FROM auth_tokens WHERE token = ?').get(token));
+      if (!token) return false;
+      return (
+        Boolean(db.prepare('SELECT 1 FROM auth_tokens WHERE token = ?').get(token)) ||
+        Boolean(db.prepare('SELECT 1 FROM api_tokens WHERE token = ?').get(token))
+      );
+    },
+
+    /** Sign out: the token stops working immediately, wherever it was copied to. */
+    revokeToken(token: string): boolean {
+      const a = Number(db.prepare('DELETE FROM auth_tokens WHERE token = ?').run(token).changes);
+      const b = Number(db.prepare('DELETE FROM api_tokens WHERE token = ?').run(token).changes);
+      return a + b > 0;
+    },
+
+    createApiToken(label: string): { id: string; token: string; label: string; createdAt: string } {
+      const created = { id: randomUUID(), token: randomUUID() + randomUUID(), label, createdAt: new Date().toISOString() };
+      db.prepare('INSERT INTO api_tokens (id, token, label, created_at) VALUES (?, ?, ?, ?)').run(
+        created.id,
+        created.token,
+        created.label,
+        created.createdAt,
+      );
+      return created;
+    },
+
+    listApiTokens(): ApiTokenDto[] {
+      return db.prepare('SELECT id, label, created_at as createdAt FROM api_tokens ORDER BY created_at DESC').all() as never;
+    },
+
+    deleteApiToken(id: string): boolean {
+      return Number(db.prepare('DELETE FROM api_tokens WHERE id = ?').run(id).changes) > 0;
+    },
+
+    setVmAgentVersion(vmId: string, version: string): void {
+      db.prepare(
+        `INSERT INTO vm_agent_version (vm_id, version) VALUES (?, ?)
+         ON CONFLICT(vm_id) DO UPDATE SET version = excluded.version`,
+      ).run(vmId, version);
+    },
+
+    getVmAgentVersion(vmId: string): string | null {
+      const row = db.prepare('SELECT version FROM vm_agent_version WHERE vm_id = ?').get(vmId) as { version: string } | undefined;
+      return row?.version ?? null;
     },
   };
 }

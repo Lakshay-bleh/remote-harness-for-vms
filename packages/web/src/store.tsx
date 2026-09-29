@@ -113,6 +113,9 @@ function buildActions(dispatch: React.Dispatch<Action>) {
       dispatch({ type: 'set_authed', authed: true });
     },
     logout() {
+      // Revoke it on the hub first, so a copy of this token stops working too. Best effort: being
+      // offline must never leave the user unable to sign out of this device.
+      void api.logout().catch(() => undefined);
       setToken(null);
       dispatch({ type: 'set_authed', authed: false });
     },

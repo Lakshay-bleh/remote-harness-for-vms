@@ -7,7 +7,7 @@ import type { Db } from './db.js';
 const PROJECTS_REQUEST_TIMEOUT_MS = 5000;
 
 export type AgentEventHandlers = {
-  onHello: (vmId: string, vmName: string, accounts: ClaudeAccount[], sessions: AgentSessionSummary[]) => void;
+  onHello: (vmId: string, vmName: string, accounts: ClaudeAccount[], sessions: AgentSessionSummary[], agentVersion: string) => void;
   onEvent: (vmId: string, msg: AgentToHubMessage) => void;
   onStatusChange: (vmId: string, vmName: string, connected: boolean) => void;
 };
@@ -40,7 +40,7 @@ export function createAgentServer(db: Db, token: string, handlers: AgentEventHan
         const previous = byVmId.get(vmId);
         if (previous && previous !== ws) previous.close();
         byVmId.set(vmId, ws);
-        handlers.onHello(vmId, vmName, msg.accounts, msg.sessions);
+        handlers.onHello(vmId, vmName, msg.accounts, msg.sessions, String(msg.agentVersion ?? ''));
         handlers.onStatusChange(vmId, vmName, true);
         return;
       }

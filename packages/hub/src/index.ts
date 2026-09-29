@@ -34,8 +34,9 @@ const httpServer = createServer(app);
 const browserServer = createBrowserServer(db);
 
 const agentServer = createAgentServer(db, config.hubAgentToken, {
-  onHello(vmId, vmName, accounts, sessions) {
+  onHello(vmId, vmName, accounts, sessions, agentVersion) {
     db.setVmAccounts(vmId, accounts);
+    db.setVmAgentVersion(vmId, agentVersion);
     for (const s of sessions) {
       db.upsertSession({ id: s.sessionId, vmId, cwd: s.cwd, title: s.title, status: s.status, accountId: s.accountId });
     }

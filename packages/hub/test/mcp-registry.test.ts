@@ -16,7 +16,8 @@ const json = { 'content-type': 'application/json' };
 
 before(async () => {
   dataDir = mkdtempSync(join(tmpdir(), 'hub-test-'));
-  proc = spawn('npx', ['tsx', 'src/index.ts'], {
+  // Spawned directly (not via npx) so that killing it in `after` kills the hub itself, not just a wrapper.
+  proc = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
     cwd: new URL('..', import.meta.url).pathname,
     env: { ...process.env, PORT: String(PORT), HUB_AGENT_TOKEN: 'agent-secret', APP_PASSWORD: 'pw', DATA_DIR: dataDir, WEB_DIST: dataDir },
     stdio: 'ignore',
@@ -40,12 +41,12 @@ after(() => {
 
 const put = (name: string, body: unknown, headers = auth) => fetch(`${HUB}/api/mcp-servers/${name}`, { method: 'PUT', headers, body: JSON.stringify(body) });
 
-function connectAgent(vmName: string) {
+function connectAgent(vmName: string, agentVersion = '0.3.0') {
   const inbox: any[] = [];
   const ws = new WebSocket(`ws://127.0.0.1:${PORT}/agent`, { headers: { authorization: 'Bearer agent-secret' } });
   ws.on('message', (d) => inbox.push(JSON.parse(d.toString())));
   const ready = new Promise<void>((res) => ws.on('open', () => {
-    ws.send(JSON.stringify({ type: 'hello', agentVersion: 't', vmName, hostname: 'h', accounts: [], sessions: [] }));
+    ws.send(JSON.stringify({ type: 'hello', agentVersion, vmName, hostname: 'h', accounts: [], sessions: [] }));
     res();
   }));
   return { ws, inbox, ready };
@@ -126,4 +127,52 @@ test('CORS preflight allows PUT and DELETE for the browser and Android app', asy
   assert.equal(r.status, 204);
   const methods = r.headers.get('access-control-allow-methods') ?? '';
   assert.ok(methods.includes('PUT') && methods.includes('DELETE'));
+});
+
+test('an agent too old to install MCP servers is reported as needing an update, not "installing"', async () => {
+  const old = connectAgent('vm-old', '0.2.0');
+  const current = connectAgent('vm-new', '0.3.0');
+  await Promise.all([old.ready, current.ready]);
+  await settle();
+  const overview = await (await fetch(`${HUB}/api/mcp-servers`, { headers: auth })).json();
+  const byName = (n: string) => overview.vms.find((v: any) => v.name === n);
+  assert.deepEqual([byName('vm-old').mcpSupported, byName('vm-old').agentVersion], [false, '0.2.0']);
+  assert.deepEqual([byName('vm-new').mcpSupported, byName('vm-new').agentVersion], [true, '0.3.0']);
+  old.ws.close();
+  current.ws.close();
+});
+
+const login = async () =>
+  ({ authorization: `Bearer ${(await (await fetch(`${HUB}/api/login`, { method: 'POST', headers: json, body: JSON.stringify({ password: 'pw' }) })).json()).token}`, ...json });
+
+test('signing out revokes the token everywhere', async () => {
+  const session = await login();
+  assert.equal((await fetch(`${HUB}/api/vms`, { headers: session })).status, 200);
+  assert.equal((await fetch(`${HUB}/api/logout`, { method: 'POST', headers: session })).status, 200);
+  assert.equal((await fetch(`${HUB}/api/vms`, { headers: session })).status, 401, 'a copy of the token no longer works');
+});
+
+test('a dedicated token works, survives the browser signing out, and can be revoked on its own', async () => {
+  const session = await login();
+  const created = await (await fetch(`${HUB}/api/tokens`, { method: 'POST', headers: session, body: JSON.stringify({ label: 'Escanor' }) })).json();
+  assert.ok(created.token && created.id);
+  const escanor = { authorization: `Bearer ${created.token}`, ...json };
+
+  assert.equal((await fetch(`${HUB}/api/mcp-servers`, { headers: escanor })).status, 200, 'it authenticates');
+  const listed = await (await fetch(`${HUB}/api/tokens`, { headers: session })).json();
+  assert.ok(listed.some((t: any) => t.id === created.id && t.label === 'Escanor'));
+  assert.ok(!JSON.stringify(listed).includes(created.token), 'the value is never listed');
+
+  await fetch(`${HUB}/api/logout`, { method: 'POST', headers: session });
+  assert.equal((await fetch(`${HUB}/api/mcp-servers`, { headers: escanor })).status, 200, 'signing out of the browser does not break it');
+
+  const fresh = await login();
+  assert.equal((await fetch(`${HUB}/api/tokens/${created.id}`, { method: 'DELETE', headers: fresh })).status, 200);
+  assert.equal((await fetch(`${HUB}/api/mcp-servers`, { headers: escanor })).status, 401, 'revoked');
+  assert.equal((await fetch(`${HUB}/api/tokens/${created.id}`, { method: 'DELETE', headers: fresh })).status, 404);
+});
+
+test('tokens cannot be created or listed without authentication', async () => {
+  assert.equal((await fetch(`${HUB}/api/tokens`, { method: 'POST', headers: json, body: '{}' })).status, 401);
+  assert.equal((await fetch(`${HUB}/api/tokens`)).status, 401);
 });
