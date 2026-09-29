@@ -91,7 +91,7 @@ const nonEmptyLines = (t: string) => t.split('\n').filter((l) => l.trim()).lengt
 
 // ---------- small building blocks ----------
 
-const MONO = 'font-mono text-[12.5px] leading-[1.55]';
+const MONO = 'font-mono text-[12.5px] leading-[1.55] [overflow-wrap:anywhere]';
 
 // The ⎿ connector: dim, non-selectable, content hangs to its right.
 function Response({ children }: { children: ReactNode }) {
@@ -128,7 +128,7 @@ function Expandable({ text, error, limit = 3 }: { text: string; error?: boolean;
 
 function Markdown({ text }: { text: string }) {
   return (
-    <div className="markdown min-w-0 flex-1 text-[14px] leading-relaxed text-ink">
+    <div className="markdown min-w-0 flex-1 [overflow-wrap:anywhere] text-[14px] leading-relaxed text-ink">
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
         {text}
       </ReactMarkdown>
