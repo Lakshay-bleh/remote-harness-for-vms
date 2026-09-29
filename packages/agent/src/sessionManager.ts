@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { resolve, relative, isAbsolute } from 'node:path';
 import { query, type McpServerConfig, type Options, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { isReadOnlyMcpCall } from '@remote-harness/shared';
+import { isSandboxAutoAllowed } from './sandboxPolicy.js';
 import type {
   AgentMcpServerStatus,
   AgentSessionSummary,
@@ -89,6 +90,7 @@ export class SessionManager {
     dataDir: string,
     private profiles: ClaudeProfile[],
     private send: (msg: AgentToHubMessage) => void,
+    private opts: { managed?: boolean; guide?: string } = {},
   ) {
     this.registry = new SessionRegistry(dataDir);
   }
@@ -254,6 +256,10 @@ export class SessionManager {
       mcpServers: this.sdkMcpConfig(),
       canUseTool: async (toolName, toolInput, opts) => {
         if (this.isAutoAllowedMcpTool(toolName, toolInput)) return { behavior: 'allow' as const, updatedInput: toolInput };
+        // A managed worker is a sandbox: local work runs freely, so the assistant can edit, run and fix in a loop.
+        if (this.opts.managed && isSandboxAutoAllowed(toolName, toolInput, { root: this.workspaceRoot })) {
+          return { behavior: 'allow' as const, updatedInput: toolInput };
+        }
         const decision = await this.requestPermission(
           () => resolvedSessionId,
           toolName,
@@ -266,6 +272,7 @@ export class SessionManager {
           : { behavior: 'deny' as const, message: decision.message ?? 'Denied by user' };
       },
     };
+    if (this.opts.guide) options.systemPrompt = { type: 'preset', preset: 'claude_code', append: this.opts.guide };
     if (isResume) options.resume = input.sessionId;
     if (profile.configDir) options.env = { ...process.env, CLAUDE_CONFIG_DIR: profile.configDir };
 

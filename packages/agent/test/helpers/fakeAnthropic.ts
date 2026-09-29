@@ -30,6 +30,8 @@ function reply(res: http.ServerResponse, model: string, block: unknown, delta: u
 }
 
 export async function startFakeAnthropic() {
+  // The system prompt of every generation request, so a test can check what the model was told.
+  const systems: string[] = [];
   const server = http.createServer(async (req, res) => {
     const chunks: Buffer[] = [];
     for await (const c of req) chunks.push(c as Buffer);
@@ -50,12 +52,15 @@ export async function startFakeAnthropic() {
       return;
     }
     const names: string[] = (body.tools ?? []).map((t: any) => t.name);
+    systems.push(typeof body.system === 'string' ? body.system : JSON.stringify(body.system ?? ''));
     // "invoke:<tool_id>" in the user's message makes the model call escanor_invoke with that id;
     // otherwise it calls the first Escanor tool it can see.
     const userText = JSON.stringify(body.messages?.filter((m: any) => m.role === 'user').at(-1)?.content ?? '');
     const wanted = userText.match(/invoke:([A-Za-z0-9_.-]+)/)?.[1];
-    const tool = wanted ? names.find((n) => n === 'mcp__escanor__escanor_invoke') : names.find((n) => n === 'mcp__escanor__escanor_list_providers');
-    const toolInput = wanted ? { tool_id: wanted, arguments: {} } : {};
+    // "bash[[<command>]]" makes the model run that shell command.
+    const shell = userText.match(/bash\[\[(.*?)\]\]/)?.[1];
+    const tool = shell ? names.find((n) => n === 'Bash') : wanted ? names.find((n) => n === 'mcp__escanor__escanor_invoke') : names.find((n) => n === 'mcp__escanor__escanor_list_providers');
+    const toolInput = shell ? { command: shell, description: 'test' } : wanted ? { tool_id: wanted, arguments: {} } : {};
     // Claude Code also puts role:'system' notes (environment, token budget) in the conversation, sometimes
     // after the tool result; a model reads past them.
     const last = [...(body.messages ?? [])].reverse().find((m: any) => m.role !== 'system');
@@ -67,5 +72,5 @@ export async function startFakeAnthropic() {
     }
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
-  return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, close: () => server.close() };
+  return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, systems, close: () => server.close() };
 }

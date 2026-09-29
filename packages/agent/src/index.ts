@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import type { HubToAgentMessage } from '@remote-harness/shared';
 
@@ -18,7 +18,17 @@ const AGENT_VERSION = '0.3.0';
 const profiles = discoverProfiles(config.profilesDir);
 console.log(`Claude accounts: ${profiles.map((p) => p.id).join(', ')}`);
 
-const manager = new SessionManager(config.workspaceRoot, config.dataDir, profiles, (msg) => connection.send(msg));
+function readGuide(): string {
+  if (!config.guideFile) return '';
+  try {
+    return readFileSync(config.guideFile, 'utf8').slice(0, 20_000);
+  } catch {
+    console.warn(`Could not read ESCANOR_GUIDE_FILE (${config.guideFile}); continuing without it.`);
+    return '';
+  }
+}
+
+const manager = new SessionManager(config.workspaceRoot, config.dataDir, profiles, (msg) => connection.send(msg), { managed: config.managed, guide: readGuide() });
 
 const connection = new HubConnection(
   config.hubUrl,

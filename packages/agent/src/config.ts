@@ -9,7 +9,13 @@ function required(name: string): string {
 
 const workspaceRoot = resolve(process.env.WORKSPACE_ROOT || process.env.HOME || '/');
 
+// Set by the Escanor worker container: this agent runs in a sandbox, so its local tools need no approval.
+const managed = process.env.ESCANOR_MANAGED === '1';
+
 export const config = {
+  managed,
+  // A short briefing appended to the assistant's system prompt (what it can reach and how to work).
+  guideFile: process.env.ESCANOR_GUIDE_FILE?.trim() || '',
   hubUrl: required('HUB_URL'),
   hubToken: required('HUB_TOKEN'),
   vmName: process.env.VM_NAME?.trim() || hostname(),
