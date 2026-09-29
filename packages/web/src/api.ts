@@ -50,6 +50,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   login: (password: string) => request<{ token: string }>('/login', { method: 'POST', body: JSON.stringify({ password }) }),
+  loginWithEscanor: (accessToken: string) =>
+    request<{ token: string; hubId: string }>('/login/escanor', { method: 'POST', body: JSON.stringify({ accessToken }) }),
   listVms: () => request<VmDto[]>('/vms'),
   listSessions: (vmId: string) => request<SessionDto[]>(`/vms/${vmId}/sessions`),
   listProjects: (vmId: string) => request<string[]>(`/vms/${vmId}/projects`),

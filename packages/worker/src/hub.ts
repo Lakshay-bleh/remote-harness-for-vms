@@ -65,6 +65,13 @@ export class Hub extends DurableObject<Env> {
         created_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
+      CREATE TABLE IF NOT EXISTS hub_users (
+        escanor_user_id TEXT PRIMARY KEY,
+        hub_id TEXT NOT NULL UNIQUE,
+        email TEXT NOT NULL,
+        name TEXT,
+        created_at TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS auth_tokens (
         token TEXT PRIMARY KEY,
         created_at TEXT NOT NULL
@@ -359,6 +366,37 @@ export class Hub extends DurableObject<Env> {
 
   // ---------- REST API ----------
 
+  // Single-tenant: the first Escanor user to sign in owns the hub; others need HUB_ALLOWED_EMAILS.
+  private async loginWithEscanor(accessToken: unknown): Promise<Response> {
+    if (typeof accessToken !== 'string' || !accessToken) return json({ error: 'accessToken required' }, 400);
+    const apiUrl = (this.env.ESCANOR_API_URL || 'https://api.escanor.in/api/v1').replace(/\/+$/, '');
+    let session: any;
+    try {
+      const r = await fetch(`${apiUrl}/auth/session`, { headers: { authorization: `Bearer ${accessToken}` } });
+      if (!r.ok) return json({ error: 'Escanor rejected the token' }, 401);
+      session = await r.json();
+    } catch {
+      return json({ error: 'Could not reach Escanor to verify the token' }, 502);
+    }
+    const u = session?.user;
+    if (!u?.id || !u?.email) return json({ error: 'Unexpected Escanor session response' }, 502);
+
+    const existing = this.sql.exec('SELECT hub_id FROM hub_users WHERE escanor_user_id = ?', String(u.id)).toArray() as { hub_id: string }[];
+    let hubId = existing[0]?.hub_id;
+    if (!hubId) {
+      const count = (this.sql.exec('SELECT COUNT(*) AS n FROM hub_users').toArray()[0] as { n: number }).n;
+      const allowed = (this.env.HUB_ALLOWED_EMAILS ?? '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
+      if (count > 0 && !allowed.includes(String(u.email).toLowerCase())) {
+        return json({ error: 'This hub already belongs to another account' }, 403);
+      }
+      hubId = `hub_${crypto.randomUUID()}`;
+      this.sql.exec('INSERT INTO hub_users (escanor_user_id, hub_id, email, name, created_at) VALUES (?, ?, ?, ?, ?)', String(u.id), hubId, String(u.email), u.name ?? null, this.now());
+    }
+    const token = crypto.randomUUID() + crypto.randomUUID();
+    this.sql.exec('INSERT INTO auth_tokens (token, created_at) VALUES (?, ?)', token, this.now());
+    return json({ token, hubId });
+  }
+
   private async handleApi(request: Request, url: URL): Promise<Response> {
     const path = url.pathname.replace(/^\/api/, '');
     const method = request.method;
@@ -370,6 +408,8 @@ export class Hub extends DurableObject<Env> {
       this.sql.exec('INSERT INTO auth_tokens (token, created_at) VALUES (?, ?)', token, this.now());
       return json({ token });
     }
+
+    if (method === 'POST' && path === '/login/escanor') return this.loginWithEscanor((body as any)?.accessToken);
 
     const header = request.headers.get('authorization') ?? '';
     if (!this.isValidToken(header.startsWith('Bearer ') ? header.slice(7) : '')) return json({ error: 'Unauthorized' }, 401);

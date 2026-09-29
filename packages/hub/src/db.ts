@@ -37,6 +37,13 @@ export function openDb(dataDir: string) {
       token TEXT PRIMARY KEY,
       created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS hub_users (
+      escanor_user_id TEXT PRIMARY KEY,
+      hub_id TEXT NOT NULL UNIQUE,
+      email TEXT NOT NULL,
+      name TEXT,
+      created_at TEXT NOT NULL
+    );
   `);
 
   return {
@@ -138,6 +145,20 @@ export function openDb(dataDir: string) {
       const token = randomUUID() + randomUUID();
       db.prepare('INSERT INTO auth_tokens (token, created_at) VALUES (?, ?)').run(token, new Date().toISOString());
       return token;
+    },
+
+    // The hub is single-tenant: the first Escanor user to sign in owns it, and only they
+    // (or emails in allowedEmails) may sign in afterwards. Returns null when refused.
+    upsertHubUser(user: { id: string; email: string; name: string | null }, allowedEmails: string[]): { hubId: string } | null {
+      const existing = db.prepare('SELECT hub_id FROM hub_users WHERE escanor_user_id = ?').get(user.id) as { hub_id: string } | undefined;
+      if (existing) return { hubId: existing.hub_id };
+      const count = (db.prepare('SELECT COUNT(*) AS n FROM hub_users').get() as { n: number }).n;
+      if (count > 0 && !allowedEmails.includes(user.email.toLowerCase())) return null;
+      const hubId = `hub_${randomUUID()}`;
+      db.prepare('INSERT INTO hub_users (escanor_user_id, hub_id, email, name, created_at) VALUES (?, ?, ?, ?, ?)').run(
+        user.id, hubId, user.email, user.name, new Date().toISOString(),
+      );
+      return { hubId };
     },
 
     isValidToken(token: string): boolean {
