@@ -11,6 +11,15 @@ AGENT_DIR="$SCRIPT_DIR"
 ENV_FILE="$AGENT_DIR/.env"
 SERVICE_NAME="remote-harness-agent"
 
+# When this script is run as `curl ... | bash`, stdin is the script itself,
+# not the terminal, so `read` would hit EOF instantly. Read prompts from the
+# controlling terminal directly instead.
+TTY=/dev/tty
+if [ ! -r "$TTY" ] || [ ! -w "$TTY" ]; then
+  echo "This installer needs an interactive terminal for setup prompts. Run it directly (not from a non-interactive script) and try again." >&2
+  exit 1
+fi
+
 echo "==> Checking Node.js"
 if ! command -v node >/dev/null 2>&1 || [ "$(node -e 'console.log(process.versions.node.split(".")[0])')" -lt 20 ]; then
   echo "Node.js 20+ is required. Install it (e.g. via nvm or NodeSource) and re-run this script."
@@ -23,15 +32,15 @@ echo "==> Installing dependencies"
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "==> Configuring agent (edit $ENV_FILE later to change these)"
-  read -rp "Hub WebSocket URL (e.g. wss://your-hub.example.com/agent): " HUB_URL
-  read -rp "Hub agent token (HUB_AGENT_TOKEN from the hub): " HUB_TOKEN
-  read -rp "Name for this VM [$(hostname)]: " VM_NAME
+  read -rp "Hub WebSocket URL (e.g. wss://your-hub.example.com/agent): " HUB_URL < "$TTY"
+  read -rp "Hub agent token (HUB_AGENT_TOKEN from the hub): " HUB_TOKEN < "$TTY"
+  read -rp "Name for this VM [$(hostname)]: " VM_NAME < "$TTY"
   VM_NAME="${VM_NAME:-$(hostname)}"
-  read -rp "Workspace root directory Claude may work in [$HOME]: " WORKSPACE_ROOT
+  read -rp "Workspace root directory Claude may work in [$HOME]: " WORKSPACE_ROOT < "$TTY"
   WORKSPACE_ROOT="${WORKSPACE_ROOT:-$HOME}"
-  read -rp "Folder to scan for projects, shown as pick-a-project options for new chats [$WORKSPACE_ROOT]: " PROJECTS_ROOT
+  read -rp "Folder to scan for projects, shown as pick-a-project options for new chats [$WORKSPACE_ROOT]: " PROJECTS_ROOT < "$TTY"
   PROJECTS_ROOT="${PROJECTS_ROOT:-$WORKSPACE_ROOT}"
-  read -rp "ANTHROPIC_API_KEY (leave blank if this machine already ran 'claude' and logged in): " ANTHROPIC_API_KEY
+  read -rp "ANTHROPIC_API_KEY (leave blank if this machine already ran 'claude' and logged in): " ANTHROPIC_API_KEY < "$TTY"
 
   cat > "$ENV_FILE" <<EOF
 HUB_URL=$HUB_URL
@@ -58,7 +67,7 @@ if [ -d "$PROFILES_DIR" ] && [ -n "$(ls -A "$PROFILES_DIR" 2>/dev/null)" ]; then
   ls "$PROFILES_DIR" | sed 's/^/    /'
 else
   echo "==> Set up Claude accounts"
-  read -rp "How many separate Claude accounts do you want on this VM? [1]: " ACCOUNT_COUNT
+  read -rp "How many separate Claude accounts do you want on this VM? [1]: " ACCOUNT_COUNT < "$TTY"
   ACCOUNT_COUNT="${ACCOUNT_COUNT:-1}"
 
   if [ "$ACCOUNT_COUNT" -gt 1 ] 2>/dev/null; then
