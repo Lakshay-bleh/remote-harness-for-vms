@@ -34,11 +34,12 @@ after(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-const server = (autoAllow: boolean, token = 'tok'): ManagedMcpServer => ({
+const server = (autoAllow: boolean, token = 'tok', autoAllowReads = false): ManagedMcpServer => ({
   name: 'escanor',
   url: mcp.url,
   headers: { Authorization: `Bearer ${token}` },
   autoAllow,
+  autoAllowReads,
   alwaysLoad: true,
   updatedAt: '',
 });
@@ -66,8 +67,13 @@ function harness() {
     }
     assert.ok(results() >= count, `timed out waiting for turn ${count}`);
   }
+  // A first message starts a chat under a temporary id; every later one must use the real session id, exactly
+  // as the hub does after resolving the alias. (Sending the temporary id again quietly starts a *new* session,
+  // which is not what a person's follow-up does.)
+  const realId = (tempId: string) =>
+    (out.find((m) => m.type === 'session_created' && m.tempId === tempId) as { sessionId: string } | undefined)?.sessionId ?? tempId;
   const say = (id: string, text: string, first: boolean) =>
-    manager.handleUserInput({ type: 'user_input', sessionId: id, ...(first ? { tempId: id } : {}), text } as never);
+    manager.handleUserInput({ type: 'user_input', sessionId: first ? id : realId(id), ...(first ? { tempId: id } : {}), text } as never);
   return { manager, out, asked, turns, say };
 }
 
@@ -148,4 +154,38 @@ test('an unchanged re-push is a no-op and removal takes the tool away from a run
 
   await h.manager.setMcpServers([]);
   assert.deepEqual((h.out.filter((m) => m.type === 'mcp_status').at(-1) as any).servers, []);
+});
+
+test('reads-only mode: looking things up is silent, changing something asks first', async () => {
+  const h = harness();
+  await h.manager.setMcpServers([server(false, 'tok', true)]);
+
+  const reads = mcp.seen.filter((s) => s.rpc === 'tools/call' && s.tool === 'github.list_repos').length;
+  h.say('g', 'please invoke:github.list_repos', true);
+  await h.turns(1);
+  assert.deepEqual(h.asked, [], 'a read went through with no card');
+  assert.equal(mcp.seen.filter((s) => s.rpc === 'tools/call' && s.tool === 'github.list_repos').length, reads + 1);
+
+  const deletes = () => mcp.seen.filter((s) => s.rpc === 'tools/call' && s.tool === 'github.delete_repo').length;
+  h.say('g', 'now invoke:github.delete_repo', false);
+  await h.turns(2, 'deny');
+  assert.equal(h.asked.length, 1, 'the delete asked');
+  assert.equal(deletes(), 0, 'and being told no, it never ran');
+});
+
+test('a change asked for in the second turn, after a silent read, completes once it is allowed', async () => {
+  const h = harness();
+  await h.manager.setMcpServers([server(false, 'tok', true)]);
+  h.say('h', 'list my escanor providers', true);
+  await h.turns(1);
+  assert.deepEqual(h.asked, [], 'the read was silent');
+
+  const deletes = () => mcp.seen.filter((s) => s.rpc === 'tools/call' && s.tool === 'github.delete_repo').length;
+  const before = deletes();
+  h.say('h', 'please invoke:github.delete_repo', false);
+  await h.turns(2, 'allow');
+  assert.equal(h.asked.length, 1, 'the change asked once');
+  assert.equal(deletes(), before + 1, 'and ran exactly once after being allowed');
+  const results = h.out.filter((m) => m.type === 'sdk_message' && (m.message as any)?.type === 'result');
+  assert.equal(results.length, 2, 'both turns finished; nothing looped');
 });

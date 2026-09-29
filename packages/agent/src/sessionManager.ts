@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { resolve, relative, isAbsolute } from 'node:path';
 import { query, type McpServerConfig, type Options, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import { isReadOnlyMcpCall } from '@remote-harness/shared';
 import type {
   AgentMcpServerStatus,
   AgentSessionSummary,
@@ -136,8 +137,15 @@ export class SessionManager {
   // turning auto-approve off would have kept approving in every chat already open. Deciding per call
   // makes both directions take effect immediately, and fails closed: if this ever stops being reached
   // (e.g. in "Don't ask" mode, which denies whatever is not pre-approved) the tool is denied, not run.
-  private isAutoAllowedMcpTool(toolName: string): boolean {
-    return [...this.mcpServers.values()].some((s) => s.autoAllow !== false && toolName.startsWith(`mcp__${s.name}__`));
+  private isAutoAllowedMcpTool(toolName: string, input: Record<string, unknown>): boolean {
+    for (const s of this.mcpServers.values()) {
+      const prefix = `mcp__${s.name}__`;
+      if (!toolName.startsWith(prefix)) continue;
+      if (s.autoAllow !== false) return true;
+      // Not blanket-approved, but calls that only read may still go through without a card.
+      if (s.autoAllowReads && isReadOnlyMcpCall(toolName.slice(prefix.length), input)) return true;
+    }
+    return false;
   }
 
   /** Replace the managed MCP servers and make every running session match, without restarting it. */
@@ -245,7 +253,7 @@ export class SessionManager {
       // changed it gets the change with no restart.
       mcpServers: this.sdkMcpConfig(),
       canUseTool: async (toolName, toolInput, opts) => {
-        if (this.isAutoAllowedMcpTool(toolName)) return { behavior: 'allow' as const, updatedInput: toolInput };
+        if (this.isAutoAllowedMcpTool(toolName, toolInput)) return { behavior: 'allow' as const, updatedInput: toolInput };
         const decision = await this.requestPermission(
           () => resolvedSessionId,
           toolName,

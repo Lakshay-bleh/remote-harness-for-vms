@@ -1,19 +1,73 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { AgentMcpStatus, ApiTokenDto, ClaudeAccount, ManagedMcpServer, MessageDto, SessionDto, VmDto } from '@remote-harness/shared';
 
+// Everything a hub stores belongs to a tenant. A hub run the classic way has exactly one, 'default',
+// whose credentials are HUB_AGENT_TOKEN and APP_PASSWORD. A hub that also sets HUB_ADMIN_TOKEN can
+// mint more: each gets its own agent token and API tokens, and can never see another's VMs, chats,
+// MCP servers or tokens. Isolation is enforced here, in the queries, not left to callers to remember.
+export const DEFAULT_TENANT = 'default';
+
+const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
+const newSecret = () => randomBytes(32).toString('base64url');
+
+export type TenantDto = { id: string; label: string; createdAt: string };
+
+function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
+  return (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === column);
+}
+
+function migrate(db: DatabaseSync) {
+  // Databases from before tenants existed hold exactly one tenant's data: it becomes 'default'.
+  if (hasColumn(db, 'vms', 'id') && !hasColumn(db, 'vms', 'tenant_id')) {
+    db.exec(`
+      CREATE TABLE vms_new (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL DEFAULT '${DEFAULT_TENANT}',
+        name TEXT NOT NULL,
+        last_seen_at TEXT,
+        accounts_json TEXT NOT NULL DEFAULT '[]',
+        UNIQUE (tenant_id, name)
+      );
+      INSERT INTO vms_new (id, name, last_seen_at, accounts_json) SELECT id, name, last_seen_at, accounts_json FROM vms;
+      DROP TABLE vms;
+      ALTER TABLE vms_new RENAME TO vms;
+    `);
+  }
+  for (const table of ['sessions', 'messages', 'auth_tokens', 'api_tokens']) {
+    if (hasColumn(db, table, 'created_at') && !hasColumn(db, table, 'tenant_id')) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN tenant_id TEXT NOT NULL DEFAULT '${DEFAULT_TENANT}'`);
+    }
+  }
+  if (hasColumn(db, 'mcp_servers', 'name') && !hasColumn(db, 'mcp_servers', 'tenant_id')) {
+    db.exec(`
+      CREATE TABLE mcp_servers_new (
+        tenant_id TEXT NOT NULL DEFAULT '${DEFAULT_TENANT}',
+        name TEXT NOT NULL,
+        config_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, name)
+      );
+      INSERT INTO mcp_servers_new (name, config_json, updated_at) SELECT name, config_json, updated_at FROM mcp_servers;
+      DROP TABLE mcp_servers;
+      ALTER TABLE mcp_servers_new RENAME TO mcp_servers;
+    `);
+  }
+}
+
 export function openDb(dataDir: string) {
   mkdirSync(dataDir, { recursive: true });
   const db = new DatabaseSync(join(dataDir, 'hub.sqlite'));
 
+  // Tables that predate tenants are created in their old shape first, so `migrate` has one path to handle.
   db.exec(`
-    CREATE TABLE IF NOT EXISTS vms (
+    CREATE TABLE IF NOT EXISTS tenants (
       id TEXT PRIMARY KEY,
-      name TEXT UNIQUE NOT NULL,
-      last_seen_at TEXT,
-      accounts_json TEXT NOT NULL DEFAULT '[]'
+      label TEXT NOT NULL,
+      agent_token_hash TEXT UNIQUE NOT NULL,
+      created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
@@ -32,21 +86,21 @@ export function openDb(dataDir: string) {
       payload TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
     CREATE TABLE IF NOT EXISTS auth_tokens (
       token TEXT PRIMARY KEY,
       created_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS mcp_servers (
-      name TEXT PRIMARY KEY,
-      config_json TEXT NOT NULL,
-      updated_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS api_tokens (
       id TEXT PRIMARY KEY,
       token TEXT UNIQUE NOT NULL,
       label TEXT NOT NULL,
       created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS session_aliases (
+      tenant_id TEXT NOT NULL,
+      old_id TEXT NOT NULL,
+      new_id TEXT NOT NULL,
+      PRIMARY KEY (tenant_id, old_id)
     );
     CREATE TABLE IF NOT EXISTS vm_agent_version (
       vm_id TEXT PRIMARY KEY,
@@ -58,187 +112,291 @@ export function openDb(dataDir: string) {
       reported_at TEXT NOT NULL
     );
   `);
+  const hasOldVms = Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='vms'").get());
+  if (!hasOldVms) {
+    db.exec(`
+      CREATE TABLE vms (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL DEFAULT '${DEFAULT_TENANT}',
+        name TEXT NOT NULL,
+        last_seen_at TEXT,
+        accounts_json TEXT NOT NULL DEFAULT '[]',
+        UNIQUE (tenant_id, name)
+      );
+    `);
+  }
+  const hasOldMcp = Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='mcp_servers'").get());
+  if (!hasOldMcp) {
+    db.exec(`
+      CREATE TABLE mcp_servers (
+        tenant_id TEXT NOT NULL DEFAULT '${DEFAULT_TENANT}',
+        name TEXT NOT NULL,
+        config_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, name)
+      );
+    `);
+  }
+  migrate(db);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_messages_tenant_session ON messages(tenant_id, session_id, id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_vm ON sessions(tenant_id, vm_id);
+  `);
+
+  /** The data of one tenant. Every statement is filtered by `t`; there is no unscoped read of tenant data. */
+  function scoped(t: string) {
+    return {
+      tenantId: t,
+
+      upsertVm(name: string): string {
+        const existing = db.prepare('SELECT id FROM vms WHERE tenant_id = ? AND name = ?').get(t, name) as { id: string } | undefined;
+        const id = existing?.id ?? randomUUID();
+        db.prepare(
+          `INSERT INTO vms (id, tenant_id, name, last_seen_at) VALUES (?, ?, ?, ?)
+           ON CONFLICT(tenant_id, name) DO UPDATE SET last_seen_at = excluded.last_seen_at`,
+        ).run(id, t, name, new Date().toISOString());
+        return id;
+      },
+
+      hasVm(id: string): boolean {
+        return Boolean(db.prepare('SELECT 1 FROM vms WHERE tenant_id = ? AND id = ?').get(t, id));
+      },
+
+      touchVmSeen(id: string): void {
+        db.prepare('UPDATE vms SET last_seen_at = ? WHERE tenant_id = ? AND id = ?').run(new Date().toISOString(), t, id);
+      },
+
+      setVmAccounts(id: string, accounts: ClaudeAccount[]): void {
+        db.prepare('UPDATE vms SET accounts_json = ? WHERE tenant_id = ? AND id = ?').run(JSON.stringify(accounts), t, id);
+      },
+
+      listVms(): Omit<VmDto, 'connected'>[] {
+        const rows = db
+          .prepare('SELECT id, name, last_seen_at as lastSeenAt, accounts_json as accountsJson FROM vms WHERE tenant_id = ? ORDER BY name')
+          .all(t) as { id: string; name: string; lastSeenAt: string | null; accountsJson: string }[];
+        return rows.map((r) => ({ id: r.id, name: r.name, lastSeenAt: r.lastSeenAt, accounts: JSON.parse(r.accountsJson) }));
+      },
+
+      getVmName(id: string): string | undefined {
+        const row = db.prepare('SELECT name FROM vms WHERE tenant_id = ? AND id = ?').get(t, id) as { name: string } | undefined;
+        return row?.name;
+      },
+
+      getVmAccounts(id: string): ClaudeAccount[] {
+        const row = db.prepare('SELECT accounts_json as accountsJson FROM vms WHERE tenant_id = ? AND id = ?').get(t, id) as
+          | { accountsJson: string }
+          | undefined;
+        return row ? JSON.parse(row.accountsJson) : [];
+      },
+
+      upsertSession(s: { id: string; vmId: string; cwd: string; title: string; status: string; accountId: string }): void {
+        const now = new Date().toISOString();
+        // A session id belongs to the tenant that first recorded it. Another tenant reporting the same
+        // id (they are random UUIDs, so this is a bug or an attack) must not overwrite or adopt it.
+        db.prepare(
+          `INSERT INTO sessions (id, tenant_id, vm_id, cwd, title, created_at, last_message_at, status, account_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET status = excluded.status, last_message_at = excluded.last_message_at
+           WHERE sessions.tenant_id = excluded.tenant_id`,
+        ).run(s.id, t, s.vmId, s.cwd, s.title, now, now, s.status, s.accountId);
+      },
+
+      touchSession(id: string, status?: string): void {
+        if (status) {
+          db.prepare('UPDATE sessions SET last_message_at = ?, status = ? WHERE tenant_id = ? AND id = ?').run(new Date().toISOString(), status, t, id);
+        } else {
+          db.prepare('UPDATE sessions SET last_message_at = ? WHERE tenant_id = ? AND id = ?').run(new Date().toISOString(), t, id);
+        }
+      },
+
+      listSessionsByVm(vmId: string): SessionDto[] {
+        return db
+          .prepare(
+            `SELECT id, vm_id as vmId, cwd, title, created_at as createdAt, last_message_at as lastMessageAt, status, account_id as accountId
+             FROM sessions WHERE tenant_id = ? AND vm_id = ? ORDER BY last_message_at DESC`,
+          )
+          .all(t, vmId) as never;
+      },
+
+      insertMessage(m: { sessionId: string; vmId: string; message: unknown }): MessageDto {
+        const createdAt = new Date().toISOString();
+        const result = db
+          .prepare('INSERT INTO messages (tenant_id, session_id, vm_id, payload, created_at) VALUES (?, ?, ?, ?, ?)')
+          .run(t, m.sessionId, m.vmId, JSON.stringify(m.message), createdAt);
+        return { id: Number(result.lastInsertRowid), sessionId: m.sessionId, vmId: m.vmId, message: m.message, createdAt };
+      },
+
+      // A new chat starts under a temporary id and is re-keyed to Claude's real session id once it exists.
+      // The alias is kept so a caller that only ever learned the temporary id (a backend, a script) can keep
+      // using it: every session route resolves it.
+      rekeySession(oldId: string, newId: string): void {
+        db.prepare('UPDATE messages SET session_id = ? WHERE tenant_id = ? AND session_id = ?').run(newId, t, oldId);
+        if (oldId !== newId) {
+          db.prepare(
+            `INSERT INTO session_aliases (tenant_id, old_id, new_id) VALUES (?, ?, ?)
+             ON CONFLICT(tenant_id, old_id) DO UPDATE SET new_id = excluded.new_id`,
+          ).run(t, oldId, newId);
+        }
+      },
+
+      resolveSession(id: string): string {
+        const row = db.prepare('SELECT new_id as newId FROM session_aliases WHERE tenant_id = ? AND old_id = ?').get(t, id) as { newId: string } | undefined;
+        return row?.newId ?? id;
+      },
+
+      listMessages(sessionId: string): MessageDto[] {
+        const rows = db
+          .prepare(
+            'SELECT id, session_id as sessionId, vm_id as vmId, payload, created_at as createdAt FROM messages WHERE tenant_id = ? AND session_id = ? ORDER BY id ASC',
+          )
+          .all(t, sessionId) as { id: number; sessionId: string; vmId: string; payload: string; createdAt: string }[];
+        return rows.map((r) => ({ id: r.id, sessionId: r.sessionId, vmId: r.vmId, createdAt: r.createdAt, message: JSON.parse(r.payload) }));
+      },
+
+      createAuthToken(): string {
+        const token = randomUUID() + randomUUID();
+        db.prepare('INSERT INTO auth_tokens (token, created_at, tenant_id) VALUES (?, ?, ?)').run(token, new Date().toISOString(), t);
+        return token;
+      },
+
+      /** Sign out: the token stops working immediately, wherever it was copied to. */
+      revokeToken(token: string): boolean {
+        const a = Number(db.prepare('DELETE FROM auth_tokens WHERE tenant_id = ? AND token = ?').run(t, token).changes);
+        const b = Number(db.prepare('DELETE FROM api_tokens WHERE tenant_id = ? AND token = ?').run(t, token).changes);
+        return a + b > 0;
+      },
+
+      createApiToken(label: string): { id: string; token: string; label: string; createdAt: string } {
+        const created = { id: randomUUID(), token: randomUUID() + randomUUID(), label, createdAt: new Date().toISOString() };
+        db.prepare('INSERT INTO api_tokens (id, token, label, created_at, tenant_id) VALUES (?, ?, ?, ?, ?)').run(
+          created.id,
+          created.token,
+          created.label,
+          created.createdAt,
+          t,
+        );
+        return created;
+      },
+
+      listApiTokens(): ApiTokenDto[] {
+        return db.prepare('SELECT id, label, created_at as createdAt FROM api_tokens WHERE tenant_id = ? ORDER BY created_at DESC').all(t) as never;
+      },
+
+      deleteApiToken(id: string): boolean {
+        return Number(db.prepare('DELETE FROM api_tokens WHERE tenant_id = ? AND id = ?').run(t, id).changes) > 0;
+      },
+
+      setVmAgentVersion(vmId: string, version: string): void {
+        db.prepare(
+          `INSERT INTO vm_agent_version (vm_id, version) VALUES (?, ?)
+           ON CONFLICT(vm_id) DO UPDATE SET version = excluded.version`,
+        ).run(vmId, version);
+      },
+
+      getVmAgentVersion(vmId: string): string | null {
+        const row = db.prepare('SELECT version FROM vm_agent_version WHERE vm_id = ?').get(vmId) as { version: string } | undefined;
+        return row?.version ?? null;
+      },
+
+      listMcpServers(): ManagedMcpServer[] {
+        const rows = db.prepare('SELECT config_json as configJson FROM mcp_servers WHERE tenant_id = ? ORDER BY name').all(t) as { configJson: string }[];
+        return rows.map((r) => JSON.parse(r.configJson) as ManagedMcpServer);
+      },
+
+      putMcpServer(server: Omit<ManagedMcpServer, 'updatedAt'>): ManagedMcpServer {
+        const stored: ManagedMcpServer = { ...server, updatedAt: new Date().toISOString() };
+        db.prepare(
+          `INSERT INTO mcp_servers (tenant_id, name, config_json, updated_at) VALUES (?, ?, ?, ?)
+           ON CONFLICT(tenant_id, name) DO UPDATE SET config_json = excluded.config_json, updated_at = excluded.updated_at`,
+        ).run(t, stored.name, JSON.stringify(stored), stored.updatedAt);
+        return stored;
+      },
+
+      deleteMcpServer(name: string): boolean {
+        return Number(db.prepare('DELETE FROM mcp_servers WHERE tenant_id = ? AND name = ?').run(t, name).changes) > 0;
+      },
+
+      setVmMcpStatus(vmId: string, status: Pick<AgentMcpStatus, 'servers' | 'liveSessions'>): void {
+        // Only for a VM this tenant owns: a status row keyed by another tenant's VM id is refused.
+        if (!db.prepare('SELECT 1 FROM vms WHERE tenant_id = ? AND id = ?').get(t, vmId)) return;
+        db.prepare(
+          `INSERT INTO vm_mcp_status (vm_id, status_json, reported_at) VALUES (?, ?, ?)
+           ON CONFLICT(vm_id) DO UPDATE SET status_json = excluded.status_json, reported_at = excluded.reported_at`,
+        ).run(vmId, JSON.stringify(status), new Date().toISOString());
+      },
+
+      getVmMcpStatus(vmId: string): { servers: AgentMcpStatus['servers']; liveSessions: number; reportedAt: string } | null {
+        const row = db
+          .prepare(
+            `SELECT s.status_json as statusJson, s.reported_at as reportedAt FROM vm_mcp_status s
+             JOIN vms v ON v.id = s.vm_id WHERE v.tenant_id = ? AND s.vm_id = ?`,
+          )
+          .get(t, vmId) as { statusJson: string; reportedAt: string } | undefined;
+        if (!row) return null;
+        return { ...JSON.parse(row.statusJson), reportedAt: row.reportedAt };
+      },
+    };
+  }
 
   return {
-    upsertVm(name: string): string {
-      const existing = db.prepare('SELECT id FROM vms WHERE name = ?').get(name) as { id: string } | undefined;
-      const id = existing?.id ?? randomUUID();
-      db.prepare(
-        `INSERT INTO vms (id, name, last_seen_at) VALUES (?, ?, ?)
-         ON CONFLICT(name) DO UPDATE SET last_seen_at = excluded.last_seen_at`,
-      ).run(id, name, new Date().toISOString());
-      return id;
+    for: scoped,
+
+    // ---- who does a credential belong to? ----
+
+    tenantForApiToken(token: string): string | null {
+      if (!token) return null;
+      const a = db.prepare('SELECT tenant_id as t FROM auth_tokens WHERE token = ?').get(token) as { t: string } | undefined;
+      if (a) return a.t;
+      const b = db.prepare('SELECT tenant_id as t FROM api_tokens WHERE token = ?').get(token) as { t: string } | undefined;
+      return b?.t ?? null;
     },
 
-    touchVmSeen(id: string): void {
-      db.prepare('UPDATE vms SET last_seen_at = ? WHERE id = ?').run(new Date().toISOString(), id);
+    tenantForAgentToken(token: string): string | null {
+      if (!token) return null;
+      const row = db.prepare('SELECT id FROM tenants WHERE agent_token_hash = ?').get(sha256(token)) as { id: string } | undefined;
+      return row?.id ?? null;
     },
 
-    setVmAccounts(id: string, accounts: ClaudeAccount[]): void {
-      db.prepare('UPDATE vms SET accounts_json = ? WHERE id = ?').run(JSON.stringify(accounts), id);
+    // ---- tenants (the admin API) ----
+
+    /** Mint a tenant with its own agent token and an API token. The plaintext is returned once; only a hash of the agent token is kept. */
+    createTenant(label: string): { id: string; label: string; agentToken: string; apiToken: string } {
+      const id = `t_${randomBytes(9).toString('base64url')}`;
+      const agentToken = newSecret();
+      db.prepare('INSERT INTO tenants (id, label, agent_token_hash, created_at) VALUES (?, ?, ?, ?)').run(id, label, sha256(agentToken), new Date().toISOString());
+      const apiToken = scoped(id).createApiToken('managed').token;
+      return { id, label, agentToken, apiToken };
     },
 
-    listVms(): Omit<VmDto, 'connected'>[] {
-      const rows = db
-        .prepare('SELECT id, name, last_seen_at as lastSeenAt, accounts_json as accountsJson FROM vms ORDER BY name')
-        .all() as { id: string; name: string; lastSeenAt: string | null; accountsJson: string }[];
-      return rows.map((r) => ({ id: r.id, name: r.name, lastSeenAt: r.lastSeenAt, accounts: JSON.parse(r.accountsJson) }));
+    /** A new agent token; the old one stops working at once. */
+    rotateAgentToken(id: string): string | null {
+      if (!db.prepare('SELECT 1 FROM tenants WHERE id = ?').get(id)) return null;
+      const agentToken = newSecret();
+      db.prepare('UPDATE tenants SET agent_token_hash = ? WHERE id = ?').run(sha256(agentToken), id);
+      return agentToken;
     },
 
-    getVmName(id: string): string | undefined {
-      const row = db.prepare('SELECT name FROM vms WHERE id = ?').get(id) as { name: string } | undefined;
-      return row?.name;
+    listTenants(): TenantDto[] {
+      return db.prepare('SELECT id, label, created_at as createdAt FROM tenants ORDER BY created_at').all() as never;
     },
 
-    getVmAccounts(id: string): ClaudeAccount[] {
-      const row = db.prepare('SELECT accounts_json as accountsJson FROM vms WHERE id = ?').get(id) as
-        | { accountsJson: string }
-        | undefined;
-      return row ? JSON.parse(row.accountsJson) : [];
+    hasTenant(id: string): boolean {
+      return Boolean(db.prepare('SELECT 1 FROM tenants WHERE id = ?').get(id));
     },
 
-    upsertSession(s: { id: string; vmId: string; cwd: string; title: string; status: string; accountId: string }): void {
-      const now = new Date().toISOString();
-      db.prepare(
-        `INSERT INTO sessions (id, vm_id, cwd, title, created_at, last_message_at, status, account_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET status = excluded.status, last_message_at = excluded.last_message_at`,
-      ).run(s.id, s.vmId, s.cwd, s.title, now, now, s.status, s.accountId);
-    },
-
-    touchSession(id: string, status?: string): void {
-      if (status) {
-        db.prepare('UPDATE sessions SET last_message_at = ?, status = ? WHERE id = ?').run(
-          new Date().toISOString(),
-          status,
-          id,
-        );
-      } else {
-        db.prepare('UPDATE sessions SET last_message_at = ? WHERE id = ?').run(new Date().toISOString(), id);
+    /** Remove a tenant and everything it owned. */
+    deleteTenant(id: string): boolean {
+      if (id === DEFAULT_TENANT || !db.prepare('SELECT 1 FROM tenants WHERE id = ?').get(id)) return false;
+      db.prepare('DELETE FROM vm_mcp_status WHERE vm_id IN (SELECT id FROM vms WHERE tenant_id = ?)').run(id);
+      db.prepare('DELETE FROM vm_agent_version WHERE vm_id IN (SELECT id FROM vms WHERE tenant_id = ?)').run(id);
+      for (const table of ['messages', 'sessions', 'vms', 'mcp_servers', 'auth_tokens', 'api_tokens', 'session_aliases']) {
+        db.prepare(`DELETE FROM ${table} WHERE tenant_id = ?`).run(id);
       }
-    },
-
-    listSessionsByVm(vmId: string): SessionDto[] {
-      return db
-        .prepare(
-          `SELECT id, vm_id as vmId, cwd, title, created_at as createdAt, last_message_at as lastMessageAt, status, account_id as accountId
-           FROM sessions WHERE vm_id = ? ORDER BY last_message_at DESC`,
-        )
-        .all(vmId) as never;
-    },
-
-    insertMessage(m: { sessionId: string; vmId: string; message: unknown }): MessageDto {
-      const createdAt = new Date().toISOString();
-      const result = db
-        .prepare('INSERT INTO messages (session_id, vm_id, payload, created_at) VALUES (?, ?, ?, ?)')
-        .run(m.sessionId, m.vmId, JSON.stringify(m.message), createdAt);
-      return {
-        id: Number(result.lastInsertRowid),
-        sessionId: m.sessionId,
-        vmId: m.vmId,
-        message: m.message,
-        createdAt,
-      };
-    },
-
-    rekeySession(oldId: string, newId: string): void {
-      db.prepare('UPDATE messages SET session_id = ? WHERE session_id = ?').run(newId, oldId);
-    },
-
-    listMessages(sessionId: string): MessageDto[] {
-      const rows = db
-        .prepare(
-          'SELECT id, session_id as sessionId, vm_id as vmId, payload, created_at as createdAt FROM messages WHERE session_id = ? ORDER BY id ASC',
-        )
-        .all(sessionId) as { id: number; sessionId: string; vmId: string; payload: string; createdAt: string }[];
-      return rows.map((r) => ({ id: r.id, sessionId: r.sessionId, vmId: r.vmId, createdAt: r.createdAt, message: JSON.parse(r.payload) }));
-    },
-
-    listMcpServers(): ManagedMcpServer[] {
-      const rows = db.prepare('SELECT config_json as configJson FROM mcp_servers ORDER BY name').all() as { configJson: string }[];
-      return rows.map((r) => JSON.parse(r.configJson) as ManagedMcpServer);
-    },
-
-    putMcpServer(server: Omit<ManagedMcpServer, 'updatedAt'>): ManagedMcpServer {
-      const stored: ManagedMcpServer = { ...server, updatedAt: new Date().toISOString() };
-      db.prepare(
-        `INSERT INTO mcp_servers (name, config_json, updated_at) VALUES (?, ?, ?)
-         ON CONFLICT(name) DO UPDATE SET config_json = excluded.config_json, updated_at = excluded.updated_at`,
-      ).run(stored.name, JSON.stringify(stored), stored.updatedAt);
-      return stored;
-    },
-
-    deleteMcpServer(name: string): boolean {
-      return Number(db.prepare('DELETE FROM mcp_servers WHERE name = ?').run(name).changes) > 0;
-    },
-
-    setVmMcpStatus(vmId: string, status: Pick<AgentMcpStatus, 'servers' | 'liveSessions'>): void {
-      db.prepare(
-        `INSERT INTO vm_mcp_status (vm_id, status_json, reported_at) VALUES (?, ?, ?)
-         ON CONFLICT(vm_id) DO UPDATE SET status_json = excluded.status_json, reported_at = excluded.reported_at`,
-      ).run(vmId, JSON.stringify(status), new Date().toISOString());
-    },
-
-    getVmMcpStatus(vmId: string): { servers: AgentMcpStatus['servers']; liveSessions: number; reportedAt: string } | null {
-      const row = db.prepare('SELECT status_json as statusJson, reported_at as reportedAt FROM vm_mcp_status WHERE vm_id = ?').get(vmId) as
-        | { statusJson: string; reportedAt: string }
-        | undefined;
-      if (!row) return null;
-      return { ...JSON.parse(row.statusJson), reportedAt: row.reportedAt };
-    },
-
-    createAuthToken(): string {
-      const token = randomUUID() + randomUUID();
-      db.prepare('INSERT INTO auth_tokens (token, created_at) VALUES (?, ?)').run(token, new Date().toISOString());
-      return token;
-    },
-
-    isValidToken(token: string): boolean {
-      if (!token) return false;
-      return (
-        Boolean(db.prepare('SELECT 1 FROM auth_tokens WHERE token = ?').get(token)) ||
-        Boolean(db.prepare('SELECT 1 FROM api_tokens WHERE token = ?').get(token))
-      );
-    },
-
-    /** Sign out: the token stops working immediately, wherever it was copied to. */
-    revokeToken(token: string): boolean {
-      const a = Number(db.prepare('DELETE FROM auth_tokens WHERE token = ?').run(token).changes);
-      const b = Number(db.prepare('DELETE FROM api_tokens WHERE token = ?').run(token).changes);
-      return a + b > 0;
-    },
-
-    createApiToken(label: string): { id: string; token: string; label: string; createdAt: string } {
-      const created = { id: randomUUID(), token: randomUUID() + randomUUID(), label, createdAt: new Date().toISOString() };
-      db.prepare('INSERT INTO api_tokens (id, token, label, created_at) VALUES (?, ?, ?, ?)').run(
-        created.id,
-        created.token,
-        created.label,
-        created.createdAt,
-      );
-      return created;
-    },
-
-    listApiTokens(): ApiTokenDto[] {
-      return db.prepare('SELECT id, label, created_at as createdAt FROM api_tokens ORDER BY created_at DESC').all() as never;
-    },
-
-    deleteApiToken(id: string): boolean {
-      return Number(db.prepare('DELETE FROM api_tokens WHERE id = ?').run(id).changes) > 0;
-    },
-
-    setVmAgentVersion(vmId: string, version: string): void {
-      db.prepare(
-        `INSERT INTO vm_agent_version (vm_id, version) VALUES (?, ?)
-         ON CONFLICT(vm_id) DO UPDATE SET version = excluded.version`,
-      ).run(vmId, version);
-    },
-
-    getVmAgentVersion(vmId: string): string | null {
-      const row = db.prepare('SELECT version FROM vm_agent_version WHERE vm_id = ?').get(vmId) as { version: string } | undefined;
-      return row?.version ?? null;
+      db.prepare('DELETE FROM tenants WHERE id = ?').run(id);
+      return true;
     },
   };
 }
 
 export type Db = ReturnType<typeof openDb>;
+export type TenantDb = ReturnType<Db['for']>;

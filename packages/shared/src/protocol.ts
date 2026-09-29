@@ -159,7 +159,10 @@ export type ManagedMcpServer = {
   name: string;
   url: string; // streamable-HTTP endpoint
   headers?: Record<string, string>; // e.g. { Authorization: 'Bearer ...' }
-  autoAllow?: boolean; // pre-approve this server's tools so chats never stall on a permission card
+  autoAllow?: boolean; // pre-approve ALL of this server's tools so chats never stall on a permission card
+  // When autoAllow is off: still pre-approve the calls that only *read* (see isReadOnlyMcpCall), so a
+  // chat can look things up freely and asks only before it changes something.
+  autoAllowReads?: boolean;
   alwaysLoad?: boolean; // load its tools into every prompt instead of deferring them behind tool search
   managedBy?: string; // who installed it ('escanor'); informational
   updatedAt: string;
@@ -371,6 +374,7 @@ export function parseMcpServerInput(name: string, body: unknown): ParsedMcpServe
       url: url.toString(),
       headers,
       autoAllow: b.autoAllow === undefined ? true : Boolean(b.autoAllow),
+      autoAllowReads: b.autoAllowReads === undefined ? false : Boolean(b.autoAllowReads),
       alwaysLoad: b.alwaysLoad === undefined ? true : Boolean(b.alwaysLoad),
       managedBy: typeof b.managedBy === 'string' ? b.managedBy.slice(0, 32) : undefined,
     },
@@ -386,3 +390,50 @@ export function toMcpServerDto(s: ManagedMcpServer): McpServerDto {
 // signing out never breaks it and it can be revoked on its own. The value is shown once, on creation.
 export type ApiTokenDto = { id: string; label: string; createdAt: string };
 export type ApiTokenCreatedDto = ApiTokenDto & { token: string };
+
+// ---------- Is this MCP call read-only? ----------
+//
+// Used to let a chat look things up without asking while still asking before it changes anything.
+// The rule is deliberately one-sided: a call is "read" only if it positively looks like one, and
+// anything unrecognised, mixed ("get_or_create"), or touching secrets is *not* -- it asks. A wrong
+// "no" costs one click; a wrong "yes" changes someone's cloud account without asking.
+
+const READ_VERBS = new Set([
+  'list', 'get', 'describe', 'read', 'search', 'query', 'status', 'show', 'find', 'count', 'fetch',
+  'view', 'head', 'check', 'lookup', 'inspect', 'retrieve', 'summary', 'overview', 'stats', 'usage',
+  'providers', 'tools', 'whoami', 'me',
+]);
+
+const CHANGE_WORDS = new Set([
+  'create', 'delete', 'remove', 'update', 'put', 'post', 'patch', 'set', 'add', 'start', 'stop', 'restart',
+  'reboot', 'terminate', 'destroy', 'deploy', 'apply', 'run', 'exec', 'execute', 'invoke', 'send', 'write',
+  'upload', 'attach', 'detach', 'revoke', 'rotate', 'reset', 'cancel', 'scale', 'resize', 'merge', 'close',
+  'open', 'push', 'publish', 'import', 'restore', 'enable', 'disable', 'grant', 'invite', 'transfer',
+  'drain', 'kill', 'purge', 'clear', 'flush', 'trigger', 'rollback', 'promote', 'assign', 'unassign',
+  'register', 'deregister', 'subscribe', 'unsubscribe', 'approve', 'reject', 'commit', 'fork', 'clone',
+  'archive', 'unarchive', 'lock', 'unlock', 'move', 'rename', 'copy', 'sync', 'schedule', 'submit',
+  'suspend', 'resume', 'pause', 'replace', 'modify', 'edit', 'change', 'confirm', 'pay', 'refund', 'charge',
+]);
+
+// Reading these is itself sensitive; a person should see the request first.
+const SENSITIVE_WORDS = new Set(['secret', 'secrets', 'password', 'passwords', 'credential', 'credentials', 'token', 'tokens', 'key', 'keys', 'apikey', 'apikeys', 'private', 'ssh', 'cert', 'certificate', 'certificates', 'env', 'vault']);
+
+// The tools Escanor's MCP server exposes for discovery. They never change anything.
+const ESCANOR_READ_ONLY_TOOLS = new Set(['escanor_list_providers', 'escanor_connection_status', 'escanor_list_tools', 'escanor_usage_stats']);
+
+export function isReadOnlyMcpCall(tool: string, input: Record<string, unknown> | undefined): boolean {
+  if (ESCANOR_READ_ONLY_TOOLS.has(tool)) return true;
+  if (tool !== 'escanor_invoke') return false;
+
+  const toolId = typeof input?.tool_id === 'string' ? input.tool_id : '';
+  if (!toolId) return false;
+  const args = input?.arguments;
+  // An explicit confirm flag is how Escanor marks a destructive call; its presence means the caller
+  // knew it was one.
+  if (args && typeof args === 'object' && (args as Record<string, unknown>).confirm) return false;
+
+  const words = toolId.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  if (words.length === 0) return false;
+  if (words.some((w) => CHANGE_WORDS.has(w) || SENSITIVE_WORDS.has(w))) return false;
+  return words.some((w) => READ_VERBS.has(w));
+}

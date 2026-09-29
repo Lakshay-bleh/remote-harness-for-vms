@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { agentSupportsMcp, parseMcpServerInput, toMcpServerDto, type ApiTokenCreatedDto, type ImageAttachment, type McpOverviewDto, type McpPutResultDto } from '@remote-harness/shared';
-import type { Db } from './db.js';
+import { timingSafeEqual } from 'node:crypto';
+import { DEFAULT_TENANT, type Db } from './db.js';
 import type { AgentServer } from './agentServer.js';
 import type { BrowserServer } from './browserServer.js';
 
@@ -14,35 +15,59 @@ function contentBlocks(text: string, images: ImageAttachment[] | undefined) {
   return blocks;
 }
 
+const passwordMatches = (given: unknown, expected: string) => {
+  if (typeof given !== 'string') return false;
+  const a = Buffer.from(given);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+};
+
 export function createApiRouter(db: Db, agentServer: AgentServer, browserServer: BrowserServer, appPassword: string) {
   const router = Router();
 
+  // Password login is the classic single-tenant hub's front door: it signs in to the default tenant.
+  // Other tenants have no password; they hold API tokens issued by the admin API.
   router.post('/login', (req: Request, res: Response) => {
-    const { password } = req.body ?? {};
-    if (password !== appPassword) {
+    if (!passwordMatches(req.body?.password, appPassword)) {
       res.status(401).json({ error: 'Invalid password' });
       return;
     }
-    res.json({ token: db.createAuthToken() });
+    res.json({ token: db.for(DEFAULT_TENANT).createAuthToken() });
   });
 
   function requireAuth(req: Request, res: Response, next: NextFunction): void {
     const header = req.header('authorization') ?? '';
     const token = header.startsWith('Bearer ') ? header.slice(7) : '';
-    if (!db.isValidToken(token)) {
+    const tenantId = db.tenantForApiToken(token);
+    if (!tenantId) {
       res.status(401).json({ error: 'Unauthorized' });
       return;
     }
+    res.locals.tenantId = tenantId;
     next();
   }
 
   router.use(requireAuth);
 
+  // Everything below acts for the caller's tenant only.
+  const T = (res: Response) => db.for(res.locals.tenantId as string);
+  const tenantOf = (res: Response) => res.locals.tenantId as string;
+
+  // A VM id in a URL must be one of the caller's. Without this, knowing (or guessing) another tenant's
+  // VM id would be enough to message its machine, since sockets are looked up by VM id alone.
+  router.param('vmId', (_req, res, next, vmId) => {
+    if (!T(res).hasVm(vmId)) {
+      res.status(404).json({ error: 'Unknown VM' });
+      return;
+    }
+    next();
+  });
+
   // ---- tokens ----
   // Signing out really signs out: the token is deleted, so a copy of it stops working too.
   router.post('/logout', (req, res) => {
     const header = req.header('authorization') ?? '';
-    db.revokeToken(header.startsWith('Bearer ') ? header.slice(7) : '');
+    T(res).revokeToken(header.startsWith('Bearer ') ? header.slice(7) : '');
     res.json({ ok: true });
   });
 
@@ -50,17 +75,17 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
   // revoked on its own. The value is returned once and never listed again.
   router.post('/tokens', (req, res) => {
     const label = String(req.body?.label ?? '').trim().slice(0, 60) || 'API token';
-    const created: ApiTokenCreatedDto = db.createApiToken(label);
+    const created: ApiTokenCreatedDto = T(res).createApiToken(label);
     res.status(201).json(created);
   });
-  router.get('/tokens', (_req, res) => res.json(db.listApiTokens()));
+  router.get('/tokens', (_req, res) => res.json(T(res).listApiTokens()));
   router.delete('/tokens/:id', (req, res) => {
-    const removed = db.deleteApiToken(req.params.id);
+    const removed = T(res).deleteApiToken(req.params.id);
     res.status(removed ? 200 : 404).json({ ok: removed });
   });
 
   router.get('/vms', (_req, res) => {
-    const vms = db.listVms().map((v) => ({ ...v, connected: agentServer.isConnected(v.id) }));
+    const vms = T(res).listVms().map((v) => ({ ...v, connected: agentServer.isConnected(v.id) }));
     res.json(vms);
   });
 
@@ -70,10 +95,10 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
   // connects and whenever it changes, so a VM that was offline or is brand new converges on
   // its own. Header values (credentials) go in but are never returned.
 
-  const pushMcpServers = () => {
-    const servers = db.listMcpServers();
+  const pushMcpServers = (tenantId: string) => {
+    const servers = db.for(tenantId).listMcpServers();
     let delivered = 0;
-    for (const vmId of agentServer.connectedVmIds()) {
+    for (const vmId of agentServer.connectedVmIds(tenantId)) {
       if (agentServer.sendToVm(vmId, { type: 'set_mcp_servers', servers })) delivered++;
     }
     return delivered;
@@ -81,15 +106,15 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
 
   router.get('/mcp-servers', (_req, res) => {
     const overview: McpOverviewDto = {
-      servers: db.listMcpServers().map(toMcpServerDto),
-      vms: db.listVms().map((v) => {
-        const status = db.getVmMcpStatus(v.id);
+      servers: T(res).listMcpServers().map(toMcpServerDto),
+      vms: T(res).listVms().map((v) => {
+        const status = T(res).getVmMcpStatus(v.id);
         return {
           vmId: v.id,
           name: v.name,
           connected: agentServer.isConnected(v.id),
-          agentVersion: db.getVmAgentVersion(v.id),
-          mcpSupported: agentSupportsMcp(db.getVmAgentVersion(v.id)),
+          agentVersion: T(res).getVmAgentVersion(v.id),
+          mcpSupported: agentSupportsMcp(T(res).getVmAgentVersion(v.id)),
           reportedAt: status?.reportedAt ?? null,
           servers: status?.servers ?? [],
           liveSessions: status?.liveSessions ?? 0,
@@ -105,9 +130,9 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
       res.status(400).json({ error: parsed.error });
       return;
     }
-    const server = db.putMcpServer(parsed.server);
-    pushMcpServers();
-    const vms = db.listVms();
+    const server = T(res).putMcpServer(parsed.server);
+    pushMcpServers(tenantOf(res));
+    const vms = T(res).listVms();
     const result: McpPutResultDto = {
       server: toMcpServerDto(server),
       vmsConnected: vms.filter((v) => agentServer.isConnected(v.id)).length,
@@ -117,13 +142,13 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
   });
 
   router.delete('/mcp-servers/:name', (req, res) => {
-    const removed = db.deleteMcpServer(req.params.name);
-    if (removed) pushMcpServers();
+    const removed = T(res).deleteMcpServer(req.params.name);
+    if (removed) pushMcpServers(tenantOf(res));
     res.status(removed ? 200 : 404).json({ ok: removed });
   });
 
   router.get('/vms/:vmId/sessions', (req, res) => {
-    res.json(db.listSessionsByVm(req.params.vmId));
+    res.json(T(res).listSessionsByVm(req.params.vmId));
   });
 
   router.get('/vms/:vmId/projects', async (req, res) => {
@@ -131,7 +156,7 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
   });
 
   router.get('/vms/:vmId/sessions/:sessionId/messages', (req, res) => {
-    res.json(db.listMessages(req.params.sessionId));
+    res.json(T(res).listMessages(T(res).resolveSession(req.params.sessionId)));
   });
 
   router.post('/vms/:vmId/sessions', (req, res) => {
@@ -147,8 +172,8 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
       local: true,
       message: { role: 'user', content: contentBlocks(text ?? '', images) },
     };
-    db.insertMessage({ sessionId: tempId, vmId, message: localMessage });
-    browserServer.broadcast({
+    T(res).insertMessage({ sessionId: tempId, vmId, message: localMessage });
+    browserServer.broadcast(tenantOf(res), {
       type: 'sdk_message',
       vmId,
       sessionId: tempId,
@@ -173,7 +198,8 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
   });
 
   router.post('/vms/:vmId/sessions/:sessionId/messages', (req, res) => {
-    const { vmId, sessionId } = req.params;
+    const { vmId } = req.params;
+    const sessionId = T(res).resolveSession(req.params.sessionId);
     const { text, images } = req.body ?? {};
     if (!text && !(images?.length > 0)) {
       res.status(400).json({ error: 'text or images required' });
@@ -184,9 +210,9 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
       local: true,
       message: { role: 'user', content: contentBlocks(text ?? '', images) },
     };
-    db.insertMessage({ sessionId, vmId, message: localMessage });
-    db.touchSession(sessionId, 'active');
-    browserServer.broadcast({
+    T(res).insertMessage({ sessionId, vmId, message: localMessage });
+    T(res).touchSession(sessionId, 'active');
+    browserServer.broadcast(tenantOf(res), {
       type: 'sdk_message',
       vmId,
       sessionId,
@@ -203,7 +229,7 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
   });
 
   router.post('/vms/:vmId/sessions/:sessionId/interrupt', (req, res) => {
-    const delivered = agentServer.sendToVm(req.params.vmId, { type: 'interrupt', sessionId: req.params.sessionId });
+    const delivered = agentServer.sendToVm(req.params.vmId, { type: 'interrupt', sessionId: T(res).resolveSession(req.params.sessionId) });
     res.status(delivered ? 202 : 503).json({ ok: delivered });
   });
 
@@ -211,7 +237,7 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
     const { model } = req.body ?? {};
     const delivered = agentServer.sendToVm(req.params.vmId, {
       type: 'set_model',
-      sessionId: req.params.sessionId,
+      sessionId: T(res).resolveSession(req.params.sessionId),
       model: model || undefined,
     });
     res.status(delivered ? 202 : 503).json({ ok: delivered });
@@ -221,7 +247,7 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
     const { effort } = req.body ?? {};
     const delivered = agentServer.sendToVm(req.params.vmId, {
       type: 'set_effort',
-      sessionId: req.params.sessionId,
+      sessionId: T(res).resolveSession(req.params.sessionId),
       effort: effort || null,
     });
     res.status(delivered ? 202 : 503).json({ ok: delivered });
@@ -231,7 +257,7 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
     const { mode } = req.body ?? {};
     const delivered = agentServer.sendToVm(req.params.vmId, {
       type: 'set_permission_mode',
-      sessionId: req.params.sessionId,
+      sessionId: T(res).resolveSession(req.params.sessionId),
       mode,
     });
     res.status(delivered ? 202 : 503).json({ ok: delivered });
@@ -245,10 +271,10 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
       behavior,
       message,
     });
-    browserServer.broadcast({
+    browserServer.broadcast(tenantOf(res), {
       type: 'permission_resolved',
       vmId: req.params.vmId,
-      sessionId: req.params.sessionId,
+      sessionId: T(res).resolveSession(req.params.sessionId),
       requestId,
     });
     res.status(delivered ? 202 : 503).json({ ok: delivered });

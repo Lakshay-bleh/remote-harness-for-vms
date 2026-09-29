@@ -147,6 +147,33 @@ POST   /api/logout               revoke the token making the request
 never returned by the API. `autoAllow` and `alwaysLoad` default to `true`; the latter loads the
 server's tools into every prompt instead of deferring them behind tool search.
 
+### Multi-tenant hub (managed service)
+
+The Node hub can host many isolated tenants. Every table is keyed by tenant; a tenant has its own
+agent token, its own API tokens, VMs, sessions, messages and MCP registry, and one tenant can never
+see or address another's VM ids (they get a 404). The legacy `HUB_AGENT_TOKEN` + `APP_PASSWORD` pair
+is the `default` tenant, so existing single-user installs keep working and old databases migrate in
+place.
+
+Set `HUB_ADMIN_TOKEN` to enable the admin API (it does not exist otherwise):
+
+```
+POST   /admin/tenants                          { label } -> { id, label, agentToken, apiToken }   (shown once)
+GET    /admin/tenants
+POST   /admin/tenants/:id/rotate-agent-token       -> { agentToken }
+DELETE /admin/tenants/:id                      drops the tenant and disconnects its agents
+```
+
+All admin calls need `Authorization: Bearer $HUB_ADMIN_TOKEN`. Session ids stay valid across the
+id change Claude makes when a new session starts (`session_aliases`). The Cloudflare Worker hub is
+**single-tenant**; use the Node hub for a managed service.
+
+**Auto-approving reads.** A managed server can set `autoAllowReads: true` (with `autoAllow: false`):
+tools that only read (`list_*`, `get_*`, `search_*`, ... -- decided per call by a fail-closed
+classifier in `@remote-harness/shared`, which refuses anything with a change or credential word, or
+`confirm: true`) run silently, and everything else asks for permission in the app. The decision is
+made per call in the agent, so toggling it takes effect on the next tool call.
+
 ## Local development
 
 ```bash

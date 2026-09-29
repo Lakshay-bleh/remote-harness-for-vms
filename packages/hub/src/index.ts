@@ -11,13 +11,14 @@ const { openDb } = await import('./db.js');
 const { createAgentServer } = await import('./agentServer.js');
 const { createBrowserServer } = await import('./browserServer.js');
 const { createApiRouter } = await import('./api.js');
+const { createAdminRouter } = await import('./admin.js');
 
 const db = openDb(config.dataDir);
 
 const app = express();
 // The native Android app calls the hub cross-origin. Auth is a bearer token (no cookies),
 // so allowing any origin doesn't widen what an attacker without the token can do.
-app.use('/api', (req, res, next) => {
+app.use(['/api', '/admin'], (req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'authorization, content-type');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
@@ -34,40 +35,37 @@ const httpServer = createServer(app);
 const browserServer = createBrowserServer(db);
 
 const agentServer = createAgentServer(db, config.hubAgentToken, {
-  onHello(vmId, vmName, accounts, sessions, agentVersion) {
-    db.setVmAccounts(vmId, accounts);
-    db.setVmAgentVersion(vmId, agentVersion);
+  onHello(tenantId, vmId, vmName, accounts, sessions, agentVersion) {
+    const t = db.for(tenantId);
+    t.setVmAccounts(vmId, accounts);
+    t.setVmAgentVersion(vmId, agentVersion);
     for (const s of sessions) {
-      db.upsertSession({ id: s.sessionId, vmId, cwd: s.cwd, title: s.title, status: s.status, accountId: s.accountId });
+      t.upsertSession({ id: s.sessionId, vmId, cwd: s.cwd, title: s.title, status: s.status, accountId: s.accountId });
     }
-    // Every (re)connect converges the VM on the hub's MCP servers, so a new VM, or one that was
+    // Every (re)connect converges the VM on the tenant's MCP servers, so a new VM, or one that was
     // offline while they changed, needs nothing done to it.
-    agentServer.sendToVm(vmId, { type: 'set_mcp_servers', servers: db.listMcpServers() });
+    agentServer.sendToVm(vmId, { type: 'set_mcp_servers', servers: t.listMcpServers() });
   },
-  onStatusChange(vmId, vmName, connected) {
-    db.touchVmSeen(vmId);
-    browserServer.broadcast({ type: 'vm_status', vmId, name: vmName, connected, accounts: db.getVmAccounts(vmId) });
+  onStatusChange(tenantId, vmId, vmName, connected) {
+    const t = db.for(tenantId);
+    t.touchVmSeen(vmId);
+    browserServer.broadcast(tenantId, { type: 'vm_status', vmId, name: vmName, connected, accounts: t.getVmAccounts(vmId) });
   },
-  onEvent(vmId, msg) {
+  onEvent(tenantId, vmId, msg) {
+    const t = db.for(tenantId);
+    const broadcast = (m: Parameters<typeof browserServer.broadcast>[1]) => browserServer.broadcast(tenantId, m);
     const now = new Date().toISOString();
     switch (msg.type) {
       case 'sdk_message': {
-        db.insertMessage({ sessionId: msg.sessionId, vmId, message: msg.message });
-        db.touchSession(msg.sessionId, 'active');
-        browserServer.broadcast({
-          type: 'sdk_message',
-          vmId,
-          sessionId: msg.sessionId,
-          tempId: msg.tempId,
-          message: msg.message,
-          createdAt: now,
-        });
+        t.insertMessage({ sessionId: msg.sessionId, vmId, message: msg.message });
+        t.touchSession(msg.sessionId, 'active');
+        broadcast({ type: 'sdk_message', vmId, sessionId: msg.sessionId, tempId: msg.tempId, message: msg.message, createdAt: now });
         break;
       }
       case 'session_created': {
-        db.rekeySession(msg.tempId, msg.sessionId);
-        db.upsertSession({ id: msg.sessionId, vmId, cwd: msg.cwd, title: msg.title, status: 'active', accountId: msg.accountId });
-        browserServer.broadcast({
+        t.rekeySession(msg.tempId, msg.sessionId);
+        t.upsertSession({ id: msg.sessionId, vmId, cwd: msg.cwd, title: msg.title, status: 'active', accountId: msg.accountId });
+        broadcast({
           type: 'session_created',
           vmId,
           tempId: msg.tempId,
@@ -79,16 +77,16 @@ const agentServer = createAgentServer(db, config.hubAgentToken, {
         break;
       }
       case 'mcp_status': {
-        db.setVmMcpStatus(vmId, { servers: msg.servers, liveSessions: msg.liveSessions });
+        t.setVmMcpStatus(vmId, { servers: msg.servers, liveSessions: msg.liveSessions });
         break;
       }
       case 'session_ended': {
-        db.touchSession(msg.sessionId, 'idle');
-        browserServer.broadcast({ type: 'session_ended', vmId, sessionId: msg.sessionId });
+        t.touchSession(msg.sessionId, 'idle');
+        broadcast({ type: 'session_ended', vmId, sessionId: msg.sessionId });
         break;
       }
       case 'permission_request': {
-        db.insertMessage({
+        t.insertMessage({
           sessionId: msg.sessionId,
           vmId,
           message: {
@@ -99,7 +97,7 @@ const agentServer = createAgentServer(db, config.hubAgentToken, {
             blockedPath: msg.blockedPath,
           },
         });
-        browserServer.broadcast({
+        broadcast({
           type: 'permission_request',
           vmId,
           sessionId: msg.sessionId,
@@ -112,22 +110,16 @@ const agentServer = createAgentServer(db, config.hubAgentToken, {
       }
       case 'error': {
         const sessionId = msg.sessionId ?? msg.tempId ?? 'unknown';
-        console.error(`[agent ${vmId}]`, msg.message);
-        db.insertMessage({ sessionId, vmId, message: { type: 'error', message: msg.message } });
-        browserServer.broadcast({
-          type: 'sdk_message',
-          vmId,
-          sessionId,
-          tempId: msg.tempId,
-          message: { type: 'error', message: msg.message },
-          createdAt: now,
-        });
+        console.error(`[agent ${tenantId}/${vmId}]`, msg.message);
+        t.insertMessage({ sessionId, vmId, message: { type: 'error', message: msg.message } });
+        broadcast({ type: 'sdk_message', vmId, sessionId, tempId: msg.tempId, message: { type: 'error', message: msg.message }, createdAt: now });
         break;
       }
     }
   },
 });
 
+app.use('/admin', createAdminRouter(db, agentServer, browserServer, config.hubAdminToken));
 app.use('/api', createApiRouter(db, agentServer, browserServer, config.appPassword));
 app.use(express.static(config.webDist));
 app.get('*', (_req, res) => {

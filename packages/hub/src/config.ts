@@ -10,6 +10,8 @@ export const config = {
   port: Number(process.env.PORT || 8787),
   hubAgentToken: required('HUB_AGENT_TOKEN'),
   appPassword: required('APP_PASSWORD'),
+  // Optional. Set it to let an operator create isolated tenants on this hub (see admin.ts).
+  hubAdminToken: process.env.HUB_ADMIN_TOKEN || '',
   dataDir: resolve(process.env.DATA_DIR || './data'),
   webDist: resolve(process.env.WEB_DIST || '../web/dist'),
 };

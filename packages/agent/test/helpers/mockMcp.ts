@@ -4,9 +4,10 @@
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
-export type Seen = { auth: string | undefined; rpc: string | undefined };
+export type Seen = { auth: string | undefined; rpc: string | undefined; tool?: string };
 
 export async function startMockMcp() {
   const seen: Seen[] = [];
@@ -14,9 +15,12 @@ export async function startMockMcp() {
     const chunks: Buffer[] = [];
     for await (const c of req) chunks.push(c as Buffer);
     const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : undefined;
-    seen.push({ auth: req.headers.authorization, rpc: body?.method });
+    seen.push({ auth: req.headers.authorization, rpc: body?.method, tool: body?.params?.arguments?.tool_id });
     const mcp = new McpServer({ name: 'escanor', version: '1' });
     mcp.tool('escanor_list_providers', 'List providers', async () => ({ content: [{ type: 'text', text: 'github,vercel' }] }));
+    mcp.tool('escanor_invoke', 'Run one tool by id', { tool_id: z.string(), arguments: z.record(z.any()).optional() }, async ({ tool_id }) => ({
+      content: [{ type: 'text', text: `ran ${tool_id}` }],
+    }));
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on('close', () => {
       void transport.close();
