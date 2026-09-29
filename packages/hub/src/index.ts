@@ -39,6 +39,9 @@ const agentServer = createAgentServer(db, config.hubAgentToken, {
     for (const s of sessions) {
       db.upsertSession({ id: s.sessionId, vmId, cwd: s.cwd, title: s.title, status: s.status, accountId: s.accountId });
     }
+    // Every (re)connect converges the VM on the hub's MCP servers, so a new VM, or one that was
+    // offline while they changed, needs nothing done to it.
+    agentServer.sendToVm(vmId, { type: 'set_mcp_servers', servers: db.listMcpServers() });
   },
   onStatusChange(vmId, vmName, connected) {
     db.touchVmSeen(vmId);
@@ -72,6 +75,10 @@ const agentServer = createAgentServer(db, config.hubAgentToken, {
           title: msg.title,
           accountId: msg.accountId,
         });
+        break;
+      }
+      case 'mcp_status': {
+        db.setVmMcpStatus(vmId, { servers: msg.servers, liveSessions: msg.liveSessions });
         break;
       }
       case 'session_ended': {

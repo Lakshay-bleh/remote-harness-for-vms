@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import type { ClaudeAccount, MessageDto, SessionDto, VmDto } from '@remote-harness/shared';
+import type { AgentMcpStatus, ClaudeAccount, ManagedMcpServer, MessageDto, SessionDto, VmDto } from '@remote-harness/shared';
 
 export function openDb(dataDir: string) {
   mkdirSync(dataDir, { recursive: true });
@@ -36,6 +36,16 @@ export function openDb(dataDir: string) {
     CREATE TABLE IF NOT EXISTS auth_tokens (
       token TEXT PRIMARY KEY,
       created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS mcp_servers (
+      name TEXT PRIMARY KEY,
+      config_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS vm_mcp_status (
+      vm_id TEXT PRIMARY KEY,
+      status_json TEXT NOT NULL,
+      reported_at TEXT NOT NULL
     );
   `);
 
@@ -132,6 +142,39 @@ export function openDb(dataDir: string) {
         )
         .all(sessionId) as { id: number; sessionId: string; vmId: string; payload: string; createdAt: string }[];
       return rows.map((r) => ({ id: r.id, sessionId: r.sessionId, vmId: r.vmId, createdAt: r.createdAt, message: JSON.parse(r.payload) }));
+    },
+
+    listMcpServers(): ManagedMcpServer[] {
+      const rows = db.prepare('SELECT config_json as configJson FROM mcp_servers ORDER BY name').all() as { configJson: string }[];
+      return rows.map((r) => JSON.parse(r.configJson) as ManagedMcpServer);
+    },
+
+    putMcpServer(server: Omit<ManagedMcpServer, 'updatedAt'>): ManagedMcpServer {
+      const stored: ManagedMcpServer = { ...server, updatedAt: new Date().toISOString() };
+      db.prepare(
+        `INSERT INTO mcp_servers (name, config_json, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(name) DO UPDATE SET config_json = excluded.config_json, updated_at = excluded.updated_at`,
+      ).run(stored.name, JSON.stringify(stored), stored.updatedAt);
+      return stored;
+    },
+
+    deleteMcpServer(name: string): boolean {
+      return Number(db.prepare('DELETE FROM mcp_servers WHERE name = ?').run(name).changes) > 0;
+    },
+
+    setVmMcpStatus(vmId: string, status: Pick<AgentMcpStatus, 'servers' | 'liveSessions'>): void {
+      db.prepare(
+        `INSERT INTO vm_mcp_status (vm_id, status_json, reported_at) VALUES (?, ?, ?)
+         ON CONFLICT(vm_id) DO UPDATE SET status_json = excluded.status_json, reported_at = excluded.reported_at`,
+      ).run(vmId, JSON.stringify(status), new Date().toISOString());
+    },
+
+    getVmMcpStatus(vmId: string): { servers: AgentMcpStatus['servers']; liveSessions: number; reportedAt: string } | null {
+      const row = db.prepare('SELECT status_json as statusJson, reported_at as reportedAt FROM vm_mcp_status WHERE vm_id = ?').get(vmId) as
+        | { statusJson: string; reportedAt: string }
+        | undefined;
+      if (!row) return null;
+      return { ...JSON.parse(row.statusJson), reportedAt: row.reportedAt };
     },
 
     createAuthToken(): string {

@@ -78,6 +78,20 @@ export type AgentProjectsList = {
   projects: string[]; // relative paths under the agent's workspace root
 };
 
+export type AgentMcpServerStatus = {
+  name: string;
+  // 'configured' = accepted and will be used by the next session; the others are what a
+  // live session's own MCP client reported when it dialled the server.
+  status: 'configured' | 'connected' | 'pending' | 'needs-auth' | 'failed' | 'disabled';
+  error?: string;
+};
+
+export type AgentMcpStatus = {
+  type: 'mcp_status';
+  servers: AgentMcpServerStatus[];
+  liveSessions: number; // sessions the change was applied to without a restart
+};
+
 export type AgentToHubMessage =
   | AgentHello
   | AgentSdkMessage
@@ -85,7 +99,8 @@ export type AgentToHubMessage =
   | AgentSessionEnded
   | AgentPermissionRequest
   | AgentError
-  | AgentProjectsList;
+  | AgentProjectsList
+  | AgentMcpStatus;
 
 // ---------- Hub -> Agent ----------
 
@@ -138,6 +153,25 @@ export type HubListProjects = {
   requestId: string;
 };
 
+// An MCP server the hub keeps installed on every VM. `name` becomes the server's namespace
+// in Claude Code (`mcp__<name>__<tool>`), so it is restricted to characters that survive that.
+export type ManagedMcpServer = {
+  name: string;
+  url: string; // streamable-HTTP endpoint
+  headers?: Record<string, string>; // e.g. { Authorization: 'Bearer ...' }
+  autoAllow?: boolean; // pre-approve this server's tools so chats never stall on a permission card
+  alwaysLoad?: boolean; // load its tools into every prompt instead of deferring them behind tool search
+  managedBy?: string; // who installed it ('escanor'); informational
+  updatedAt: string;
+};
+
+// Declarative: always the complete set. The agent makes its sessions match it, so a server
+// missing from the list is removed and a VM that was offline converges as soon as it is back.
+export type HubSetMcpServers = {
+  type: 'set_mcp_servers';
+  servers: ManagedMcpServer[];
+};
+
 export type HubToAgentMessage =
   | HubUserInput
   | HubInterrupt
@@ -145,7 +179,8 @@ export type HubToAgentMessage =
   | HubSetModel
   | HubSetEffort
   | HubPermissionResponse
-  | HubListProjects;
+  | HubListProjects
+  | HubSetMcpServers;
 
 // ---------- Hub -> Browser (push channel) ----------
 
@@ -235,3 +270,96 @@ export type MessageDto = {
   message: unknown;
   createdAt: string;
 };
+
+export type McpServerDto = Omit<ManagedMcpServer, 'headers'> & {
+  // Header *names* only. Values are credentials and never leave the hub once stored.
+  headerNames: string[];
+};
+
+export type McpServerInput = {
+  url: string;
+  headers?: Record<string, string>;
+  autoAllow?: boolean;
+  alwaysLoad?: boolean;
+  managedBy?: string;
+};
+
+export type VmMcpStatusDto = {
+  vmId: string;
+  name: string;
+  connected: boolean;
+  reportedAt: string | null;
+  servers: AgentMcpServerStatus[];
+  liveSessions: number;
+};
+
+export type McpOverviewDto = {
+  servers: McpServerDto[];
+  vms: VmMcpStatusDto[];
+};
+
+export type McpPutResultDto = {
+  server: McpServerDto;
+  vmsConnected: number;
+  vmsTotal: number;
+};
+
+export const MCP_SERVER_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+
+// ---------- MCP server helpers (pure; used by the Node hub and the Worker hub alike) ----------
+
+const HEADER_NAME_RE = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}$/;
+const MAX_HEADERS = 16;
+const MAX_HEADER_VALUE = 4096;
+
+export type ParsedMcpServerInput = { ok: true; server: Omit<ManagedMcpServer, 'updatedAt'> } | { ok: false; error: string };
+
+export function parseMcpServerInput(name: string, body: unknown): ParsedMcpServerInput {
+  if (!MCP_SERVER_NAME_RE.test(name)) {
+    return { ok: false, error: 'Server name must be 1-32 chars of a-z, 0-9, "_" or "-", starting with a letter or digit' };
+  }
+  const b = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+
+  if (typeof b.url !== 'string') return { ok: false, error: 'url is required' };
+  let url: URL;
+  try {
+    url = new URL(b.url.trim());
+  } catch {
+    return { ok: false, error: 'url is not a valid URL' };
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return { ok: false, error: 'url must be http(s)' };
+  if (url.username || url.password) return { ok: false, error: 'url must not embed credentials; use headers' };
+
+  let headers: Record<string, string> | undefined;
+  if (b.headers !== undefined && b.headers !== null) {
+    if (typeof b.headers !== 'object' || Array.isArray(b.headers)) return { ok: false, error: 'headers must be an object' };
+    const entries = Object.entries(b.headers as Record<string, unknown>);
+    if (entries.length > MAX_HEADERS) return { ok: false, error: `at most ${MAX_HEADERS} headers` };
+    headers = {};
+    for (const [k, v] of entries) {
+      if (!HEADER_NAME_RE.test(k)) return { ok: false, error: `invalid header name "${k}"` };
+      // A CR/LF in a value would let a caller smuggle extra headers into every MCP request.
+      if (typeof v !== 'string' || v.length > MAX_HEADER_VALUE || /[\r\n]/.test(v)) {
+        return { ok: false, error: `invalid value for header "${k}"` };
+      }
+      headers[k] = v;
+    }
+  }
+
+  return {
+    ok: true,
+    server: {
+      name,
+      url: url.toString(),
+      headers,
+      autoAllow: b.autoAllow === undefined ? true : Boolean(b.autoAllow),
+      alwaysLoad: b.alwaysLoad === undefined ? true : Boolean(b.alwaysLoad),
+      managedBy: typeof b.managedBy === 'string' ? b.managedBy.slice(0, 32) : undefined,
+    },
+  };
+}
+
+export function toMcpServerDto(s: ManagedMcpServer): McpServerDto {
+  const { headers, ...rest } = s;
+  return { ...rest, headerNames: Object.keys(headers ?? {}) };
+}

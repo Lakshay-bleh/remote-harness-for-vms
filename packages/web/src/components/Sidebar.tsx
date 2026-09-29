@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ClaudeAccount, SessionDto } from '@remote-harness/shared';
 import { useStore } from '../store';
+import EscanorConnect from './EscanorConnect';
 
 function relativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -164,6 +165,10 @@ export default function Sidebar({ className, onSelectSession }: { className: str
             </div>
           );
         })}
+      </div>
+
+      <div className="border-t border-hairline px-2.5 py-2.5">
+        <EscanorConnect />
       </div>
     </div>
   );

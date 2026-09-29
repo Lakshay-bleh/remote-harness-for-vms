@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
-import type { ImageAttachment } from '@remote-harness/shared';
+import { parseMcpServerInput, toMcpServerDto, type ImageAttachment, type McpOverviewDto, type McpPutResultDto } from '@remote-harness/shared';
 import type { Db } from './db.js';
 import type { AgentServer } from './agentServer.js';
 import type { BrowserServer } from './browserServer.js';
@@ -41,6 +41,62 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
   router.get('/vms', (_req, res) => {
     const vms = db.listVms().map((v) => ({ ...v, connected: agentServer.isConnected(v.id) }));
     res.json(vms);
+  });
+
+  // ---- MCP servers installed on every VM ----
+  //
+  // Declarative and hub-owned: whatever is stored here is pushed to every agent when it
+  // connects and whenever it changes, so a VM that was offline or is brand new converges on
+  // its own. Header values (credentials) go in but are never returned.
+
+  const pushMcpServers = () => {
+    const servers = db.listMcpServers();
+    let delivered = 0;
+    for (const vmId of agentServer.connectedVmIds()) {
+      if (agentServer.sendToVm(vmId, { type: 'set_mcp_servers', servers })) delivered++;
+    }
+    return delivered;
+  };
+
+  router.get('/mcp-servers', (_req, res) => {
+    const overview: McpOverviewDto = {
+      servers: db.listMcpServers().map(toMcpServerDto),
+      vms: db.listVms().map((v) => {
+        const status = db.getVmMcpStatus(v.id);
+        return {
+          vmId: v.id,
+          name: v.name,
+          connected: agentServer.isConnected(v.id),
+          reportedAt: status?.reportedAt ?? null,
+          servers: status?.servers ?? [],
+          liveSessions: status?.liveSessions ?? 0,
+        };
+      }),
+    };
+    res.json(overview);
+  });
+
+  router.put('/mcp-servers/:name', (req, res) => {
+    const parsed = parseMcpServerInput(req.params.name, req.body);
+    if (!parsed.ok) {
+      res.status(400).json({ error: parsed.error });
+      return;
+    }
+    const server = db.putMcpServer(parsed.server);
+    pushMcpServers();
+    const vms = db.listVms();
+    const result: McpPutResultDto = {
+      server: toMcpServerDto(server),
+      vmsConnected: vms.filter((v) => agentServer.isConnected(v.id)).length,
+      vmsTotal: vms.length,
+    };
+    res.json(result);
+  });
+
+  router.delete('/mcp-servers/:name', (req, res) => {
+    const removed = db.deleteMcpServer(req.params.name);
+    if (removed) pushMcpServers();
+    res.status(removed ? 200 : 404).json({ ok: removed });
   });
 
   router.get('/vms/:vmId/sessions', (req, res) => {

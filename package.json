@@ -13,6 +13,8 @@
     "gen:icons": "node scripts/gen-icons.mjs",
     "build:apk": "npm run android:apk -w @remote-harness/web",
     "dev:worker": "npm run dev -w @remote-harness/worker",
-    "deploy:worker": "npm run deploy -w @remote-harness/worker"
+    "deploy:worker": "npm run deploy -w @remote-harness/worker",
+    "test": "node --experimental-strip-types --test packages/shared/test/*.test.ts && npm run test -w @remote-harness/hub",
+    "test:integration": "npm run test:integration -w @remote-harness/agent"
   }
 }

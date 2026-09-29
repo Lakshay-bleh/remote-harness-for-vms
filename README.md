@@ -97,6 +97,44 @@ into `$PROFILES_DIR` instead of re-running setup — see `packages/agent/.env.ex
   `HUB_AGENT_TOKEN` for all agents — deliberately simple for personal/small-team use.
   Put the hub behind TLS if it's reachable from the internet.
 
+## MCP servers on every VM (Escanor)
+
+The hub can install an MCP server into **every Claude session on every VM** — chats that are
+already running included — so tools are there the moment you start typing, with nothing to
+configure per machine. [Escanor](https://www.escanor.in) uses this to add its integration tools
+(GitHub, Vercel, AWS, …) to all your sessions.
+
+**As a user:** open **Connect to Escanor** at the bottom of the sidebar, copy the hub URL and
+session token, and paste them in Escanor under *Integrations → Claude cloud sessions*. You can
+edit or disconnect there at any time; nothing needs restarting. The hub URL must be reachable
+from the internet (a reverse proxy, a tunnel, or the Cloudflare Worker hub) — Escanor's servers
+dial it.
+
+**How it works:** the hub stores the set of servers and pushes the *complete* set to each agent
+(`set_mcp_servers`) when the agent connects and whenever the set changes. So a new VM, or one
+that was offline, converges by itself. The agent passes the set to every new session's
+`mcpServers`, applies it to running sessions with the SDK's `setMcpServers` (no restart), and
+reports each server's real connection state back to the hub.
+
+**Approval.** With `autoAllow` (the default) the agent approves the server's tools itself, per
+call, so chats never stall on a permission card. It is decided per call from the *current* set,
+not baked into the session, so turning `autoAllow` off takes effect on the very next call in
+chats that are already running — the tool then shows the normal Allow/Deny card. (In *Don't
+ask* mode, which denies anything not pre-approved by your own settings, the tools are denied.)
+
+**API** (same bearer token as the rest of `/api`; CORS-enabled like the rest):
+
+```
+GET    /api/mcp-servers          servers (header *names* only) + per-VM state
+PUT    /api/mcp-servers/:name    { url, headers?, autoAllow?, alwaysLoad?, managedBy? }
+DELETE /api/mcp-servers/:name
+```
+
+`name` is the server's namespace in Claude Code (`mcp__<name>__<tool>`), so it is limited to
+`[a-z0-9_-]`, 32 chars. Header values are credentials: accepted, stored, pushed to agents, and
+never returned by the API. `autoAllow` and `alwaysLoad` default to `true`; the latter loads the
+server's tools into every prompt instead of deferring them behind tool search.
+
 ## Local development
 
 ```bash

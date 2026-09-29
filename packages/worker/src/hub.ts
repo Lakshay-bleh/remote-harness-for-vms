@@ -1,12 +1,18 @@
 import { DurableObject } from 'cloudflare:workers';
-import type {
-  AgentToHubMessage,
-  ClaudeAccount,
-  HubToAgentMessage,
-  HubToBrowserMessage,
-  ImageAttachment,
-  MessageDto,
-  SessionDto,
+import {
+  parseMcpServerInput,
+  toMcpServerDto,
+  type AgentMcpStatus,
+  type AgentToHubMessage,
+  type ClaudeAccount,
+  type HubToAgentMessage,
+  type HubToBrowserMessage,
+  type ImageAttachment,
+  type ManagedMcpServer,
+  type McpOverviewDto,
+  type McpPutResultDto,
+  type MessageDto,
+  type SessionDto,
 } from '@remote-harness/shared';
 import type { Env } from './index';
 
@@ -17,7 +23,7 @@ type AgentAttachment = { vmId?: string; vmName?: string };
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, content-type',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
 };
 
 function json(body: unknown, status = 200): Response {
@@ -68,6 +74,16 @@ export class Hub extends DurableObject<Env> {
       CREATE TABLE IF NOT EXISTS auth_tokens (
         token TEXT PRIMARY KEY,
         created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mcp_servers (
+        name TEXT PRIMARY KEY,
+        config_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS vm_mcp_status (
+        vm_id TEXT PRIMARY KEY,
+        status_json TEXT NOT NULL,
+        reported_at TEXT NOT NULL
       );
     `);
     // Answered by the runtime without waking the object, so idle browser tabs stay connected cheaply.
@@ -149,6 +165,54 @@ export class Hub extends DurableObject<Env> {
       createdAt: r.created_at,
       message: JSON.parse(r.payload),
     }));
+  }
+
+  private listMcpServers(): ManagedMcpServer[] {
+    const rows = this.sql.exec('SELECT config_json FROM mcp_servers ORDER BY name').toArray() as { config_json: string }[];
+    return rows.map((r) => JSON.parse(r.config_json) as ManagedMcpServer);
+  }
+
+  private putMcpServer(server: Omit<ManagedMcpServer, 'updatedAt'>): ManagedMcpServer {
+    const stored: ManagedMcpServer = { ...server, updatedAt: this.now() };
+    this.sql.exec(
+      `INSERT INTO mcp_servers (name, config_json, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(name) DO UPDATE SET config_json = excluded.config_json, updated_at = excluded.updated_at`,
+      stored.name,
+      JSON.stringify(stored),
+      stored.updatedAt,
+    );
+    return stored;
+  }
+
+  private deleteMcpServer(name: string): boolean {
+    const exists = this.sql.exec('SELECT 1 FROM mcp_servers WHERE name = ?', name).toArray().length > 0;
+    if (exists) this.sql.exec('DELETE FROM mcp_servers WHERE name = ?', name);
+    return exists;
+  }
+
+  private setVmMcpStatus(vmId: string, status: Pick<AgentMcpStatus, 'servers' | 'liveSessions'>) {
+    this.sql.exec(
+      `INSERT INTO vm_mcp_status (vm_id, status_json, reported_at) VALUES (?, ?, ?)
+       ON CONFLICT(vm_id) DO UPDATE SET status_json = excluded.status_json, reported_at = excluded.reported_at`,
+      vmId,
+      JSON.stringify(status),
+      this.now(),
+    );
+  }
+
+  private getVmMcpStatus(vmId: string): { servers: AgentMcpStatus['servers']; liveSessions: number; reportedAt: string } | null {
+    const row = this.sql.exec('SELECT status_json, reported_at FROM vm_mcp_status WHERE vm_id = ?', vmId).toArray()[0] as
+      | { status_json: string; reported_at: string }
+      | undefined;
+    return row ? { ...JSON.parse(row.status_json), reportedAt: row.reported_at } : null;
+  }
+
+  // Push the complete set to every connected agent; a VM that is offline converges on its next hello.
+  private pushMcpServers() {
+    const servers = this.listMcpServers();
+    for (const { att } of this.agentSockets()) {
+      if (att.vmId) this.sendToVm(att.vmId, { type: 'set_mcp_servers', servers });
+    }
   }
 
   private isValidToken(token: string): boolean {
@@ -255,6 +319,7 @@ export class Hub extends DurableObject<Env> {
       }
       this.touchVmSeen(vmId);
       this.broadcast({ type: 'vm_status', vmId, name: msg.vmName, connected: true, accounts: this.getVmAccounts(vmId) });
+      this.sendToVm(vmId, { type: 'set_mcp_servers', servers: this.listMcpServers() });
       return;
     }
 
@@ -272,6 +337,9 @@ export class Hub extends DurableObject<Env> {
 
     const now = this.now();
     switch (msg.type) {
+      case 'mcp_status':
+        this.setVmMcpStatus(vmId, { servers: msg.servers, liveSessions: msg.liveSessions });
+        break;
       case 'sdk_message':
         this.insertMessage({ sessionId: msg.sessionId, vmId, message: msg.message });
         this.touchSession(msg.sessionId, 'active');
@@ -362,7 +430,7 @@ export class Hub extends DurableObject<Env> {
   private async handleApi(request: Request, url: URL): Promise<Response> {
     const path = url.pathname.replace(/^\/api/, '');
     const method = request.method;
-    const body = method === 'POST' ? await request.json().catch(() => ({})) : {};
+    const body = method === 'POST' || method === 'PUT' ? await request.json().catch(() => ({})) : {};
 
     if (method === 'POST' && path === '/login') {
       if ((body as any)?.password !== this.env.APP_PASSWORD) return json({ error: 'Invalid password' }, 401);
@@ -373,6 +441,43 @@ export class Hub extends DurableObject<Env> {
 
     const header = request.headers.get('authorization') ?? '';
     if (!this.isValidToken(header.startsWith('Bearer ') ? header.slice(7) : '')) return json({ error: 'Unauthorized' }, 401);
+
+    if (method === 'GET' && path === '/mcp-servers') {
+      const overview: McpOverviewDto = {
+        servers: this.listMcpServers().map(toMcpServerDto),
+        vms: (this.sql.exec('SELECT id, name FROM vms ORDER BY name').toArray() as { id: string; name: string }[]).map((v) => {
+          const status = this.getVmMcpStatus(v.id);
+          return {
+            vmId: v.id,
+            name: v.name,
+            connected: Boolean(this.agentFor(v.id)),
+            reportedAt: status?.reportedAt ?? null,
+            servers: status?.servers ?? [],
+            liveSessions: status?.liveSessions ?? 0,
+          };
+        }),
+      };
+      return json(overview);
+    }
+
+    let mcp: RegExpMatchArray | null;
+    if ((mcp = path.match(/^\/mcp-servers\/([^/]+)$/))) {
+      const name = decodeURIComponent(mcp[1]);
+      if (method === 'PUT') {
+        const parsed = parseMcpServerInput(name, body);
+        if (!parsed.ok) return json({ error: parsed.error }, 400);
+        const server = this.putMcpServer(parsed.server);
+        this.pushMcpServers();
+        const vmsTotal = (this.sql.exec('SELECT COUNT(*) AS n FROM vms').toArray()[0] as { n: number }).n;
+        const result: McpPutResultDto = { server: toMcpServerDto(server), vmsConnected: new Set(this.agentSockets().map((a) => a.att.vmId).filter(Boolean)).size, vmsTotal };
+        return json(result);
+      }
+      if (method === 'DELETE') {
+        const removed = this.deleteMcpServer(name);
+        if (removed) this.pushMcpServers();
+        return json({ ok: removed }, removed ? 200 : 404);
+      }
+    }
 
     if (method === 'GET' && path === '/vms') {
       const rows = this.sql

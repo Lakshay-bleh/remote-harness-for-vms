@@ -1,12 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { resolve, relative, isAbsolute } from 'node:path';
-import { query, type Options, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import { query, type McpServerConfig, type Options, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import type {
+  AgentMcpServerStatus,
   AgentSessionSummary,
   AgentToHubMessage,
   EffortLevel,
   HubUserInput,
   ImageAttachment,
+  ManagedMcpServer,
   PermissionDecision,
   PermissionMode,
 } from '@remote-harness/shared';
@@ -21,7 +23,30 @@ type LiveSession = {
   setPermissionMode: (mode: PermissionMode) => Promise<void>;
   setModel: (model?: string) => Promise<void>;
   setEffort: (effort: EffortLevel | null) => Promise<void>;
+  setMcpServers: (servers: Record<string, McpServerConfig>) => Promise<unknown>;
+  mcpServerStatus: () => Promise<Array<{ name: string; status: string; error?: string }>>;
+  close: () => void;
+  appliedMcp: string; // the MCP config this session was last given, so an unchanged re-push is a no-op
 };
+
+// A wedged session must not stop the rest (or the status report) from converging.
+const MCP_APPLY_TIMEOUT_MS = 15_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
 
 type PendingPermission = {
   resolve: (decision: { behavior: PermissionDecision; message?: string }) => void;
@@ -52,6 +77,11 @@ export class SessionManager {
   private live = new Map<string, LiveSession>();
   private pendingPermissions = new Map<string, PendingPermission>();
   private registry: SessionRegistry;
+  // The hub's declarative set of MCP servers. Every session, new or already running, is made to match it.
+  private mcpServers = new Map<string, ManagedMcpServer>();
+  // What each running session's own MCP client last reported, so the hub can show real connection state.
+  private mcpSessionStatus = new Map<LiveSession, Map<string, { status: string; error?: string }>>();
+  private lastMcpReport = '';
 
   constructor(
     private workspaceRoot: string,
@@ -84,6 +114,110 @@ export class SessionManager {
     return inside ? candidate : this.workspaceRoot;
   }
 
+  // ---------- hub-managed MCP servers ----------
+
+  private sdkMcpConfig(): Record<string, McpServerConfig> {
+    const out: Record<string, McpServerConfig> = {};
+    for (const s of this.mcpServers.values()) {
+      out[s.name] = {
+        type: 'http',
+        url: s.url,
+        ...(s.headers && Object.keys(s.headers).length > 0 ? { headers: s.headers } : {}),
+        // Escanor exposes a handful of tools, so have them in the very first prompt instead of
+        // deferred behind tool search: "available automatically" means the model can call them at once.
+        ...(s.alwaysLoad !== false ? { alwaysLoad: true } : {}),
+      };
+    }
+    return out;
+  }
+
+  // Approval is decided per call, here, from the *current* set -- not baked into the session as an
+  // `allowedTools` rule at start. A start-time rule cannot be withdrawn from a running session, so
+  // turning auto-approve off would have kept approving in every chat already open. Deciding per call
+  // makes both directions take effect immediately, and fails closed: if this ever stops being reached
+  // (e.g. in "Don't ask" mode, which denies whatever is not pre-approved) the tool is denied, not run.
+  private isAutoAllowedMcpTool(toolName: string): boolean {
+    return [...this.mcpServers.values()].some((s) => s.autoAllow !== false && toolName.startsWith(`mcp__${s.name}__`));
+  }
+
+  /** Replace the managed MCP servers and make every running session match, without restarting it. */
+  async setMcpServers(servers: ManagedMcpServer[]): Promise<void> {
+    const next = new Map<string, ManagedMcpServer>();
+    for (const s of servers) {
+      // The hub validates already; a bad entry here must never reach a session's config.
+      if (/^https?:\/\//.test(s.url) && /^[a-z0-9][a-z0-9_-]{0,31}$/.test(s.name)) next.set(s.name, s);
+    }
+    this.mcpServers = next;
+    const config = this.sdkMcpConfig();
+    const configJson = JSON.stringify(config);
+
+    const sessions = new Set(this.live.values());
+    let applied = 0;
+    await Promise.all(
+      [...this.live.entries()].map(async ([key, session]) => {
+        if (!sessions.delete(session)) return; // the same session is briefly registered under two keys
+        try {
+          if (session.appliedMcp !== configJson) {
+            await withTimeout(session.setMcpServers(config), MCP_APPLY_TIMEOUT_MS);
+            session.appliedMcp = configJson;
+          }
+          const status = await withTimeout(session.mcpServerStatus(), MCP_APPLY_TIMEOUT_MS);
+          this.mcpSessionStatus.set(session, new Map(status.map((s) => [s.name, { status: s.status, error: s.error }])));
+          applied++;
+        } catch (err) {
+          console.error(`Could not apply MCP servers to session ${key}:`, err instanceof Error ? err.message : err);
+        }
+      }),
+    );
+    this.reportMcpStatus(applied);
+  }
+
+  // Keyed by the session object, not its id: a new chat is re-keyed from its temp id to its real one
+  // straight after init, and a lookup by the old key would find nothing.
+  private refreshMcpStatusLater(session: LiveSession, attempt = 0): void {
+    setTimeout(async () => {
+      if (![...this.live.values()].includes(session)) return;
+      try {
+        const status = await withTimeout(session.mcpServerStatus(), MCP_APPLY_TIMEOUT_MS);
+        this.mcpSessionStatus.set(session, new Map(status.map((s) => [s.name, { status: s.status, error: s.error }])));
+        this.reportMcpStatus();
+        if (status.some((s) => s.status === 'pending') && attempt < 4) this.refreshMcpStatusLater(session, attempt + 1);
+      } catch {
+        // the session ended or is busy; the next init or change reports again
+      }
+    }, 3000);
+  }
+
+  private reportMcpStatus(liveSessions = this.live.size): void {
+    const servers: AgentMcpServerStatus[] = [...this.mcpServers.keys()].map((name) => {
+      const reports = [...this.mcpSessionStatus.values()].map((m) => m.get(name)).filter((r) => r !== undefined);
+      if (reports.length === 0) return { name, status: 'configured' };
+      // One healthy session is proof the server works from this VM; otherwise show the most recent problem.
+      const best = reports.find((r) => r.status === 'connected') ?? reports[reports.length - 1];
+      return { name, status: best.status as AgentMcpServerStatus['status'], ...(best.error ? { error: best.error } : {}) };
+    });
+    const payload = JSON.stringify({ servers, liveSessions });
+    if (payload === this.lastMcpReport) return;
+    this.lastMcpReport = payload;
+    this.send({ type: 'mcp_status', servers, liveSessions });
+  }
+
+  /** Stop every running Claude Code process. Without this they outlive the agent that started them. */
+  shutdown(): void {
+    for (const session of new Set(this.live.values())) {
+      try {
+        session.close();
+      } catch {
+        // already gone
+      }
+    }
+  }
+
+  /** The hub (re)connected: it has forgotten what we last told it. */
+  resetMcpReport(): void {
+    this.lastMcpReport = '';
+  }
+
   handleUserInput(input: HubUserInput): void {
     const live = this.live.get(input.sessionId);
     if (live) {
@@ -107,7 +241,11 @@ export class SessionManager {
       permissionMode: 'default',
       // Ask for summarized thinking so the web UI can show it like the CLI's transcript view.
       thinking: { type: 'adaptive', display: 'summarized' },
+      // Session config is built from the *current* managed set, so a chat opened after the hub
+      // changed it gets the change with no restart.
+      mcpServers: this.sdkMcpConfig(),
       canUseTool: async (toolName, toolInput, opts) => {
+        if (this.isAutoAllowedMcpTool(toolName)) return { behavior: 'allow' as const, updatedInput: toolInput };
         const decision = await this.requestPermission(
           () => resolvedSessionId,
           toolName,
@@ -127,16 +265,22 @@ export class SessionManager {
     queue.push(toUserMessage(input.text, input.images));
 
     const liveKey = tempId ?? input.sessionId;
-    this.live.set(liveKey, {
+    const session: LiveSession = {
       queue,
       cwd,
       interrupt: () => q.interrupt(),
       setPermissionMode: (mode) => q.setPermissionMode(mode),
       setModel: (model) => q.setModel(model),
       setEffort: (effort) => q.applyFlagSettings({ effortLevel: effort }),
-    });
+      setMcpServers: (servers) => q.setMcpServers(servers),
+      mcpServerStatus: () => q.mcpServerStatus(),
+      close: () => q.close(),
+      appliedMcp: JSON.stringify(options.mcpServers ?? {}),
+    };
+    this.live.set(liveKey, session);
 
     void this.pump(q, {
+      session,
       tempId,
       cwd,
       accountId: profile.id,
@@ -150,6 +294,7 @@ export class SessionManager {
   private async pump(
     q: AsyncIterable<unknown>,
     ctx: {
+      session: LiveSession;
       tempId?: string;
       cwd: string;
       accountId: string;
@@ -161,7 +306,19 @@ export class SessionManager {
   ): Promise<void> {
     try {
       for await (const message of q) {
-        const msg = message as { type?: string; subtype?: string; session_id?: string };
+        const msg = message as {
+          type?: string;
+          subtype?: string;
+          session_id?: string;
+          mcp_servers?: Array<{ name: string; status: string; error?: string }>;
+        };
+        if (msg.type === 'system' && msg.subtype === 'init' && Array.isArray(msg.mcp_servers)) {
+          this.mcpSessionStatus.set(ctx.session, new Map(msg.mcp_servers.map((s) => [s.name, { status: s.status, error: s.error }])));
+          this.reportMcpStatus();
+          // MCP servers connect in the background, so init can say 'pending'. Ask again once they have
+          // had time to settle, or the hub would show "pending" for as long as the chat stays open.
+          if (msg.mcp_servers.some((s) => s.status === 'pending')) this.refreshMcpStatusLater(ctx.session);
+        }
         if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id && !ctx.getSessionId()) {
           const sessionId = msg.session_id;
           ctx.setSessionId(sessionId);
@@ -196,6 +353,8 @@ export class SessionManager {
       const sessionId = ctx.getSessionId();
       this.live.delete(ctx.liveKey);
       if (sessionId) this.live.delete(sessionId);
+      this.mcpSessionStatus.delete(ctx.session);
+      this.reportMcpStatus();
       this.send({ type: 'session_ended', sessionId: sessionId || ctx.tempId || ctx.liveKey });
     }
   }

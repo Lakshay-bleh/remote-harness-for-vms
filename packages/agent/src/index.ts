@@ -42,12 +42,16 @@ const connection = new HubConnection(
       case 'permission_response':
         manager.resolvePermission(msg.requestId, msg.behavior, msg.message);
         break;
+      case 'set_mcp_servers':
+        void manager.setMcpServers(msg.servers);
+        break;
       case 'list_projects':
         connection.send({ type: 'projects_list', requestId: msg.requestId, projects: listProjects(config.projectsRoot) });
         break;
     }
   },
   () => {
+    manager.resetMcpReport();
     connection.send({
       type: 'hello',
       agentVersion: AGENT_VERSION,
@@ -63,6 +67,7 @@ const connection = new HubConnection(
 connection.connect();
 
 process.on('SIGINT', () => {
+  manager.shutdown();
   connection.close();
   process.exit(0);
 });
