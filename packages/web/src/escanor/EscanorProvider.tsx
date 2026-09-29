@@ -26,7 +26,12 @@ type Ctx = {
   dismissNotice: () => void;
   signInWithGoogle: () => Promise<void>;
   connectProvider: (providerId: string) => Promise<void>;
+  connectWithSecret: (providerId: string, secret: { accessToken?: string; credentials?: Record<string, string> }) => Promise<void>;
+  disconnectProvider: (providerId: string) => Promise<void>;
   refreshIntegrations: () => Promise<void>;
+  mcpConnected: boolean | null;
+  connectMcp: () => Promise<void>;
+  disconnectMcp: () => Promise<void>;
   signOut: () => void;
 };
 
@@ -57,6 +62,7 @@ export function EscanorProvider({ children }: { children: ReactNode }) {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [mcpConnected, setMcpConnected] = useState<boolean | null>(null);
   const handledUrls = useRef(new Set<string>());
 
   const signOut = useCallback(() => {
@@ -66,6 +72,7 @@ export function EscanorProvider({ children }: { children: ReactNode }) {
     setHubId(null);
     setCatalog(null);
     setConnections([]);
+    setMcpConnected(null);
     actions.logout();
   }, [actions]);
 
@@ -80,7 +87,7 @@ export function EscanorProvider({ children }: { children: ReactNode }) {
   // Restore the Escanor identity for an already-signed-in hub session.
   useEffect(() => {
     if (!state.authed || !tokens.access()) return;
-    escanor.getSession().then(setSession).catch(() => {});
+    escanor.getSession().then(setSession).catch((e) => setCatalogError(e instanceof Error ? `Escanor session: ${e.message}` : 'Could not reach Escanor'));
   }, [state.authed]);
 
   const refreshIntegrations = useCallback(async () => {
@@ -94,6 +101,30 @@ export function EscanorProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const refreshMcp = useCallback(async () => {
+    try {
+      const r = await api.listMcp();
+      setMcpConnected(r.servers.some((s) => s.name === 'escanor'));
+    } catch {
+      setMcpConnected(null);
+    }
+  }, []);
+
+  const connectMcp = useCallback(async () => {
+    const { endpoint, token } = await escanor.mintMcpToken();
+    await api.setEscanorMcp(endpoint, token);
+    setMcpConnected(true);
+  }, []);
+
+  const disconnectMcp = useCallback(async () => {
+    await api.removeEscanorMcp();
+    setMcpConnected(false);
+  }, []);
+
+  useEffect(() => {
+    if (state.authed) void refreshMcp();
+  }, [state.authed, refreshMcp]);
+
   const completeLogin = useCallback(async () => {
     const s = await escanor.getSession();
     setSession(s);
@@ -103,7 +134,15 @@ export function EscanorProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(HUB_ID_KEY, res.hubId);
     setHubId(res.hubId);
     actions.loginWithToken(res.token);
-  }, [actions]);
+    // Give this hub's Claude sessions the signed-in user's Escanor MCP, unless it is already attached.
+    try {
+      const existing = await api.listMcp();
+      if (!existing.servers.some((x) => x.name === 'escanor')) await connectMcp();
+      else setMcpConnected(true);
+    } catch {
+      setNotice('Signed in, but could not attach Escanor MCP. You can retry from Settings.');
+    }
+  }, [actions, connectMcp]);
 
   const handleReturn = useCallback(
     async (rawUrl: string) => {
@@ -178,6 +217,25 @@ export function EscanorProvider({ children }: { children: ReactNode }) {
     await openExternal(url);
   }, []);
 
+  const connectWithSecret = useCallback(
+    async (providerId: string, secret: { accessToken?: string; credentials?: Record<string, string> }) => {
+      const r = await escanor.connectWithSecret(providerId, secret);
+      if (r.synced === false) throw new Error(r.message ?? 'Could not connect');
+      setNotice(`Connected ${providerId}`);
+      await refreshIntegrations();
+    },
+    [refreshIntegrations],
+  );
+
+  const disconnectProvider = useCallback(
+    async (providerId: string) => {
+      await escanor.disconnectIntegration(providerId);
+      setNotice(`Disconnected ${providerId}`);
+      await refreshIntegrations();
+    },
+    [refreshIntegrations],
+  );
+
   const value = useMemo<Ctx>(
     () => ({
       session,
@@ -189,10 +247,15 @@ export function EscanorProvider({ children }: { children: ReactNode }) {
       dismissNotice: () => setNotice(null),
       signInWithGoogle,
       connectProvider,
+      connectWithSecret,
+      disconnectProvider,
       refreshIntegrations,
+      mcpConnected,
+      connectMcp,
+      disconnectMcp,
       signOut,
     }),
-    [session, hubId, catalog, connections, catalogError, notice, signInWithGoogle, connectProvider, refreshIntegrations, signOut],
+    [session, hubId, catalog, connections, catalogError, notice, signInWithGoogle, connectProvider, connectWithSecret, disconnectProvider, refreshIntegrations, mcpConnected, connectMcp, disconnectMcp, signOut],
   );
 
   return <EscanorContext.Provider value={value}>{children}</EscanorContext.Provider>;

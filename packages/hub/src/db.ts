@@ -44,6 +44,12 @@ export function openDb(dataDir: string) {
       name TEXT,
       created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS mcp_servers (
+      name TEXT PRIMARY KEY,
+      url TEXT NOT NULL,
+      token TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
 
   return {
@@ -159,6 +165,20 @@ export function openDb(dataDir: string) {
         user.id, hubId, user.email, user.name, new Date().toISOString(),
       );
       return { hubId };
+    },
+
+    setMcpServer(name: string, url: string, token: string): void {
+      db.prepare(
+        'INSERT INTO mcp_servers (name, url, token, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET url = excluded.url, token = excluded.token, updated_at = excluded.updated_at',
+      ).run(name, url, token, new Date().toISOString());
+    },
+
+    removeMcpServer(name: string): void {
+      db.prepare('DELETE FROM mcp_servers WHERE name = ?').run(name);
+    },
+
+    listMcpServers(): { name: string; url: string; token: string }[] {
+      return db.prepare('SELECT name, url, token FROM mcp_servers ORDER BY name').all() as { name: string; url: string; token: string }[];
     },
 
     isValidToken(token: string): boolean {

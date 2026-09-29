@@ -1,5 +1,7 @@
 // Minimal client for the Escanor API (same endpoints as @escanor/sdk), with single-flight token refresh.
 
+import snapshot from './catalog.snapshot.json';
+
 export const ESCANOR_API_URL = (
   (import.meta as any).env?.VITE_ESCANOR_API_URL || 'https://api.escanor.in/api/v1'
 ).replace(/\/+$/, '');
@@ -16,16 +18,42 @@ const KEYS = {
 export type EscanorUser = { id: string; email: string; name: string | null; avatarUrl: string | null };
 export type EscanorSession = { user: EscanorUser; workspaceId: string | null; orgId: string | null };
 
+export type ConnectMode = 'oauth' | 'api_key' | 'credentials' | 'local_agent' | 'none';
+
 export type CatalogProvider = {
   id: string;
   name: string;
   description: string;
-  authType?: string;
-  implementationStatus?: string;
-  supportsOauth: boolean;
+  status: string;
+  connected: boolean;
+  mode: ConnectMode;
+  oauthAvailable: boolean;
+  credentialFields: string[];
+  tokenLabel: string | null;
+  helpUrl: string | null;
 };
 export type CatalogCategory = { id: string; label: string; description: string; providers: CatalogProvider[] };
 export type Connection = { providerId: string; isActive: boolean };
+
+export function snapshotCatalog(): CatalogCategory[] {
+  return (snapshot as any[]).map((cat) => ({
+    id: cat.id,
+    label: cat.label,
+    description: cat.description,
+    providers: cat.providers.map((p: any): CatalogProvider => ({
+      id: p.id,
+      name: p.name,
+      description: p.description,
+      status: p.status,
+      connected: false,
+      mode: p.authType === 'oauth' ? 'oauth' : p.authType === 'api_key' ? 'api_key' : 'credentials',
+      oauthAvailable: p.authType === 'oauth',
+      credentialFields: [],
+      tokenLabel: null,
+      helpUrl: null,
+    })),
+  }));
+}
 
 export class EscanorApiError extends Error {
   constructor(message: string, public status: number) {
@@ -125,21 +153,39 @@ export const escanor = {
     const d = await request<any>('/integrations/catalog');
     const cats: any[] = Array.isArray(d?.categories) ? d.categories : [];
     return cats
-      .filter((c) => c && typeof c.id === 'string' && Array.isArray(c.providers) && c.id !== 'ai-providers')
+      .filter((c) => c && typeof c.id === 'string' && Array.isArray(c.providers))
       .map((c) => ({
         id: c.id,
         label: c.label ?? c.id,
         description: c.description ?? '',
         providers: c.providers
-          .filter((p: any) => p && typeof p.id === 'string' && ['live', 'stub'].includes(p.implementationStatus))
-          .map((p: any) => ({
-            id: p.id,
-            name: p.name ?? p.id,
-            description: p.description ?? '',
-            authType: p.authType,
-            implementationStatus: p.implementationStatus,
-            supportsOauth: p.supports_oauth ?? p.authType === 'oauth',
-          })),
+          .filter((p: any) => p && typeof p.id === 'string')
+          .map((p: any): CatalogProvider => {
+            const fields: string[] = Array.isArray(p.credential_fields) ? p.credential_fields : [];
+            const mode: ConnectMode = p.supports_local_agent
+              ? 'local_agent'
+              : p.supports_api_key
+                ? 'api_key'
+                : p.supports_credentials || fields.length > 0
+                  ? 'credentials'
+                  : p.supports_oauth
+                    ? 'oauth'
+                    : p.can_connect === false
+                      ? 'none'
+                      : 'api_key';
+            return {
+              id: p.id,
+              name: p.name ?? p.id,
+              description: p.description ?? '',
+              status: p.implementation_status ?? 'live',
+              connected: Boolean(p.connected),
+              mode,
+              oauthAvailable: Boolean(p.supports_oauth && p.oauth_available !== false),
+              credentialFields: fields,
+              tokenLabel: p.token_label ?? null,
+              helpUrl: p.help_url ?? null,
+            };
+          }),
       }))
       .filter((c) => c.providers.length > 0);
   },
@@ -155,6 +201,28 @@ export const escanor = {
     const url: string = d.authorization_url ?? d.authorize_url ?? '';
     if (!/^https:\/\//.test(url)) throw new Error('The server returned an invalid authorization URL.');
     return url;
+  },
+
+  async mintMcpToken(): Promise<{ endpoint: string; token: string }> {
+    const r = await request<{ endpoint: string; token: string }>('/agent/mcp/install', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'Remote Harness' }),
+    });
+    return { endpoint: r.endpoint, token: r.token };
+  },
+
+  async connectWithSecret(providerId: string, secret: { accessToken?: string; credentials?: Record<string, string> }) {
+    const body: Record<string, unknown> = {};
+    if (secret.accessToken) body.access_token = secret.accessToken;
+    if (secret.credentials) body.credentials = secret.credentials;
+    return request<{ synced?: boolean; message?: string }>(`/auth/integrations/${encodeURIComponent(providerId)}/connect`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  async disconnectIntegration(providerId: string) {
+    return request<{ disconnected?: boolean }>(`/auth/integrations/${encodeURIComponent(providerId)}`, { method: 'DELETE' });
   },
 
   async exchangeIntegration(providerId: string, code: string, state: string | null, redirectUri: string) {

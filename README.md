@@ -105,6 +105,15 @@ into `$PROFILES_DIR` instead of re-running setup — see `packages/agent/.env.ex
   other emails get 403 unless listed in `HUB_ALLOWED_EMAILS`. `ESCANOR_API_URL` (hub) and
   `VITE_ESCANOR_API_URL` (web build) default to `https://api.escanor.in/api/v1`.
   Password login keeps working.
+- **Escanor MCP for Claude sessions**: on Google login the app mints a restricted Escanor MCP
+  token and stores it on the hub (Settings -> Escanor MCP can disconnect/reconnect). The hub
+  attaches it to each message it sends to the agent, which passes it to Claude as an HTTP
+  `mcpServers` entry, so sessions on any VM can use the signed-in user's Escanor integrations.
+  It applies to new or resumed chats (not ones already running), and the agent on each VM must
+  be updated. Hub-password logins have no Escanor identity, so they cannot attach MCP.
+- **Hub URL**: the login screen and Settings have an editable hub address. Leave it empty in
+  the browser to use the server that served the app; the Android app requires one. Changing it
+  signs you out, and the hub must be reachable (CORS is open on both hub implementations).
 
 ## Local development
 

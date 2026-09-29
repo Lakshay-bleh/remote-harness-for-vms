@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useStore } from '../store';
-import { getHubUrl, isNative, setHubUrl } from '../api';
+import { checkHubReachable, getHubUrl, isNative, normalizeHubUrl, setHubUrl } from '../api';
 import { useEscanor } from '../escanor/EscanorProvider';
 
 export default function Login() {
@@ -13,16 +13,19 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  async function applyHubUrl() {
+    const url = normalizeHubUrl(hubUrl);
+    if (native && !url) throw new Error('Enter your hub URL first');
+    if (url && url !== getHubUrl()) await checkHubReachable(url);
+    setHubUrl(url);
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      if (native) {
-        const url = hubUrl.trim();
-        if (!/^https?:\/\//.test(url)) throw new Error('Hub URL must start with http:// or https://');
-        setHubUrl(url);
-      }
+      await applyHubUrl();
       await actions.login(password);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
@@ -35,11 +38,7 @@ export default function Login() {
     setBusy(true);
     setError(null);
     try {
-      if (native) {
-        const url = hubUrl.trim();
-        if (!/^https?:\/\//.test(url)) throw new Error('Hub URL must start with http:// or https://');
-        setHubUrl(url);
-      }
+      await applyHubUrl();
       await signInWithGoogle();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign-in failed');
@@ -63,18 +62,16 @@ export default function Login() {
             <p className="text-sm text-muted">Sign in to control your sessions</p>
           </div>
         </div>
-        {native && (
-          <input
-            type="url"
-            inputMode="url"
-            autoCapitalize="none"
-            autoCorrect="off"
-            value={hubUrl}
-            onChange={(e) => setHubUrlInput(e.target.value)}
-            placeholder="Hub URL (https://hub.example.com)"
-            className="mb-3 w-full rounded-md border border-hairline bg-canvas px-4 py-3 text-base text-ink outline-none transition placeholder:text-muted-soft focus:border-primary focus:ring-4 focus:ring-primary/15"
-          />
-        )}
+        <input
+          type="url"
+          inputMode="url"
+          autoCapitalize="none"
+          autoCorrect="off"
+          value={hubUrl}
+          onChange={(e) => setHubUrlInput(e.target.value)}
+          placeholder={native ? 'Hub URL (https://hub.example.com)' : 'Hub URL (leave empty to use this server)'}
+          className="mb-3 w-full rounded-md border border-hairline bg-canvas px-4 py-3 text-base text-ink outline-none transition placeholder:text-muted-soft focus:border-primary focus:ring-4 focus:ring-primary/15"
+        />
         <button
           type="button"
           onClick={() => void google()}

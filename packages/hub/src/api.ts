@@ -74,6 +74,25 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
 
   router.use(requireAuth);
 
+  router.get('/mcp', (_req, res) => {
+    res.json({ servers: db.listMcpServers().map((s) => ({ name: s.name, url: s.url })) });
+  });
+
+  router.post('/mcp/escanor', (req, res) => {
+    const { url, token } = req.body ?? {};
+    if (typeof token !== 'string' || !token || typeof url !== 'string' || !/^https?:\/\//.test(url)) {
+      res.status(400).json({ error: 'url (http/https) and token required' });
+      return;
+    }
+    db.setMcpServer('escanor', url, token);
+    res.json({ ok: true });
+  });
+
+  router.delete('/mcp/escanor', (_req, res) => {
+    db.removeMcpServer('escanor');
+    res.json({ ok: true });
+  });
+
   router.get('/vms', (_req, res) => {
     const vms = db.listVms().map((v) => ({ ...v, connected: agentServer.isConnected(v.id) }));
     res.json(vms);

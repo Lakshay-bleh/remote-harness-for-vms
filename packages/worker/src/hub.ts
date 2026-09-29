@@ -3,6 +3,8 @@ import type {
   AgentToHubMessage,
   ClaudeAccount,
   HubToAgentMessage,
+  HubUserInput,
+  McpServerConfig,
   HubToBrowserMessage,
   ImageAttachment,
   MessageDto,
@@ -17,7 +19,7 @@ type AgentAttachment = { vmId?: string; vmName?: string };
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, content-type',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
 };
 
 function json(body: unknown, status = 200): Response {
@@ -75,6 +77,12 @@ export class Hub extends DurableObject<Env> {
       CREATE TABLE IF NOT EXISTS auth_tokens (
         token TEXT PRIMARY KEY,
         created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mcp_servers (
+        name TEXT PRIMARY KEY,
+        url TEXT NOT NULL,
+        token TEXT NOT NULL,
+        updated_at TEXT NOT NULL
       );
     `);
     // Answered by the runtime without waking the object, so idle browser tabs stay connected cheaply.
@@ -176,11 +184,19 @@ export class Hub extends DurableObject<Env> {
     const ws = this.agentFor(vmId);
     if (!ws) return false;
     try {
-      ws.send(JSON.stringify(msg));
+      ws.send(JSON.stringify(msg.type === 'user_input' ? this.withMcpServers(msg) : msg));
       return true;
     } catch {
       return false;
     }
+  }
+
+  private withMcpServers(msg: HubUserInput): HubUserInput {
+    const rows = this.sql.exec('SELECT name, url, token FROM mcp_servers ORDER BY name').toArray() as { name: string; url: string; token: string }[];
+    if (rows.length === 0) return msg;
+    const mcpServers: Record<string, McpServerConfig> = {};
+    for (const r of rows) mcpServers[r.name] = { type: 'http', url: r.url, headers: { Authorization: `Bearer ${r.token}` } };
+    return { ...msg, mcpServers };
   }
 
   private broadcast(msg: HubToBrowserMessage) {
@@ -413,6 +429,24 @@ export class Hub extends DurableObject<Env> {
 
     const header = request.headers.get('authorization') ?? '';
     if (!this.isValidToken(header.startsWith('Bearer ') ? header.slice(7) : '')) return json({ error: 'Unauthorized' }, 401);
+
+    if (method === 'GET' && path === '/mcp') {
+      const rows = this.sql.exec('SELECT name, url FROM mcp_servers ORDER BY name').toArray();
+      return json({ servers: rows });
+    }
+    if (method === 'POST' && path === '/mcp/escanor') {
+      const { url, token } = body as { url?: unknown; token?: unknown };
+      if (typeof token !== 'string' || !token || typeof url !== 'string' || !/^https?:\/\//.test(url)) return json({ error: 'url (http/https) and token required' }, 400);
+      this.sql.exec(
+        'INSERT INTO mcp_servers (name, url, token, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET url = excluded.url, token = excluded.token, updated_at = excluded.updated_at',
+        'escanor', url, token, this.now(),
+      );
+      return json({ ok: true });
+    }
+    if (method === 'DELETE' && path === '/mcp/escanor') {
+      this.sql.exec("DELETE FROM mcp_servers WHERE name = 'escanor'");
+      return json({ ok: true });
+    }
 
     if (method === 'GET' && path === '/vms') {
       const rows = this.sql
