@@ -15,6 +15,18 @@ const { createApiRouter } = await import('./api.js');
 const db = openDb(config.dataDir);
 
 const app = express();
+// The native Android app calls the hub cross-origin. Auth is a bearer token (no cookies),
+// so allowing any origin doesn't widen what an attacker without the token can do.
+app.use('/api', (req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'authorization, content-type');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(204);
+    return;
+  }
+  next();
+});
 app.use(express.json({ limit: '20mb' }));
 
 const httpServer = createServer(app);

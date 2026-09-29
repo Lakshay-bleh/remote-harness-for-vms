@@ -1,5 +1,5 @@
 import type { HubToBrowserMessage } from '@remote-harness/shared';
-import { getToken } from './api';
+import { getToken, getHubUrl } from './api';
 
 type Handler = (msg: HubToBrowserMessage) => void;
 
@@ -14,8 +14,9 @@ export class HubSocket {
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
     const token = getToken();
     if (!token) return;
-    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${proto}://${window.location.host}/ws?token=${encodeURIComponent(token)}`);
+    const hub = getHubUrl();
+    const base = hub ? hub.replace(/^http/, 'ws') : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`;
+    const ws = new WebSocket(`${base}/ws?token=${encodeURIComponent(token)}`);
     this.ws = ws;
 
     ws.onmessage = (evt) => {

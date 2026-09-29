@@ -2,17 +2,31 @@ import type { MessageDto } from '@remote-harness/shared';
 
 export type Block = Record<string, any>;
 
+export type ToolResult = { text: string; isError: boolean };
+
+export type ToolItem = {
+  kind: 'tool';
+  key: string;
+  block: Block; // the tool_use block
+  result?: ToolResult;
+  sub: Block[]; // tool_use blocks a subagent ran on behalf of this call
+};
+
 export type DisplayItem =
   | { kind: 'user'; key: string; createdAt: string; blocks: Block[] }
-  | { kind: 'assistant'; key: string; createdAt: string; blocks: Block[]; model?: string }
-  | { kind: 'tool_result'; key: string; createdAt: string; blocks: Block[] }
-  | { kind: 'system_init'; key: string; createdAt: string; data: any }
-  | { kind: 'result'; key: string; createdAt: string; data: any }
+  | { kind: 'text'; key: string; text: string }
+  | { kind: 'thinking'; key: string; text: string }
+  | ToolItem
+  | { kind: 'group'; key: string; tools: ToolItem[] }
+  | { kind: 'turn_end'; key: string; data: any }
+  | { kind: 'system'; key: string; text: string }
   | { kind: 'permission_request'; key: string; createdAt: string; data: any }
-  | { kind: 'error'; key: string; createdAt: string; text: string }
-  | { kind: 'raw'; key: string; createdAt: string; data: any };
+  | { kind: 'error'; key: string; text: string };
 
-const SKIPPED_TYPES = new Set(['stream_event']);
+// Tools the CLI folds into "Searched for 2 patterns, read 3 files".
+const COLLAPSIBLE = new Set(['Read', 'Grep', 'Glob']);
+// TodoWrite is shown as a pinned task list, never as a tool line.
+export const HIDDEN_TOOLS = new Set(['TodoWrite', 'AskUserQuestion', 'ExitPlanMode']);
 
 function normalizeBlocks(content: unknown): Block[] {
   if (Array.isArray(content)) return content;
@@ -20,10 +34,51 @@ function normalizeBlocks(content: unknown): Block[] {
   return [];
 }
 
+export function resultText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((c: Block) => (c?.type === 'text' ? c.text : c?.type === 'image' ? '[Image]' : JSON.stringify(c)))
+      .join('\n');
+  }
+  return '';
+}
+
 export function groupMessages(rows: MessageDto[]): DisplayItem[] {
+  // Pass 1: index every tool_result by the tool_use it answers.
+  const results = new Map<string, ToolResult>();
+  for (const row of rows) {
+    const m = row.message as any;
+    if (m?.type !== 'user' || m.local) continue;
+    for (const b of normalizeBlocks(m.message?.content)) {
+      if (b.type === 'tool_result' && b.tool_use_id) {
+        results.set(b.tool_use_id, { text: resultText(b.content), isError: Boolean(b.is_error) });
+      }
+    }
+  }
+
+  // Pass 2: subagent tool uses hang off their parent Agent/Task call.
+  const subByParent = new Map<string, Block[]>();
+  for (const row of rows) {
+    const m = row.message as any;
+    if (m?.type !== 'assistant' || !m.parent_tool_use_id) continue;
+    const list = subByParent.get(m.parent_tool_use_id) ?? [];
+    for (const b of normalizeBlocks(m.message?.content)) if (b.type === 'tool_use') list.push(b);
+    subByParent.set(m.parent_tool_use_id, list);
+  }
+
   const items: DisplayItem[] = [];
-  const assistantIndexByTurn = new Map<string, number>();
   let sawInit = false;
+  let pending: ToolItem[] = []; // open read/search group
+  let deferred: DisplayItem[] = []; // thinking absorbed into the open group
+
+  const flush = () => {
+    if (pending.length === 1) items.push(pending[0]);
+    else if (pending.length > 1) items.push({ kind: 'group', key: `g-${pending[0].key}`, tools: pending });
+    items.push(...deferred);
+    pending = [];
+    deferred = [];
+  };
 
   for (const row of rows) {
     const m = row.message as any;
@@ -31,34 +86,52 @@ export function groupMessages(rows: MessageDto[]): DisplayItem[] {
     if (!m || typeof m !== 'object') continue;
 
     if (m.type === 'user' && m.local) {
+      flush();
       items.push({ kind: 'user', key, createdAt: row.createdAt, blocks: normalizeBlocks(m.message?.content) });
       continue;
     }
-    if (m.type === 'user') {
-      items.push({ kind: 'tool_result', key, createdAt: row.createdAt, blocks: normalizeBlocks(m.message?.content) });
+    if (m.type === 'assistant') {
+      if (m.parent_tool_use_id) continue;
+      normalizeBlocks(m.message?.content).forEach((b, i) => {
+        const bk = `${key}-${i}`;
+        if (b.type === 'tool_use') {
+          if (HIDDEN_TOOLS.has(b.name)) return;
+          const tool: ToolItem = { kind: 'tool', key: b.id ?? bk, block: b, result: results.get(b.id), sub: subByParent.get(b.id) ?? [] };
+          if (COLLAPSIBLE.has(b.name)) {
+            pending.push(tool);
+          } else {
+            flush();
+            items.push(tool);
+          }
+        } else if (b.type === 'thinking') {
+          const text = String(b.thinking ?? '').trim();
+          if (!text) return;
+          const item: DisplayItem = { kind: 'thinking', key: bk, text };
+          if (pending.length) deferred.push(item);
+          else items.push(item);
+        } else if (b.type === 'text') {
+          if (!String(b.text ?? '').trim()) return;
+          flush();
+          items.push({ kind: 'text', key: bk, text: b.text });
+        }
+      });
       continue;
     }
-    if (m.type === 'assistant') {
-      const turnId: string = m.message?.id ?? key;
-      const idx = assistantIndexByTurn.get(turnId);
-      const newBlocks = normalizeBlocks(m.message?.content);
-      const existing = idx !== undefined ? items[idx] : undefined;
-      if (existing && existing.kind === 'assistant') {
-        existing.blocks = [...existing.blocks, ...newBlocks];
-      } else {
-        assistantIndexByTurn.set(turnId, items.length);
-        items.push({ kind: 'assistant', key: `t-${turnId}`, createdAt: row.createdAt, blocks: newBlocks, model: m.message?.model });
+    if (m.type === 'system') {
+      if (m.subtype === 'init') {
+        if (sawInit) continue;
+        sawInit = true;
+        flush();
+        items.push({ kind: 'system', key, text: `Session started · ${m.model} · ${m.cwd}` });
+      } else if (m.subtype === 'compact_boundary') {
+        flush();
+        items.push({ kind: 'system', key, text: 'Conversation compacted' });
       }
       continue;
     }
-    if (m.type === 'system' && m.subtype === 'init') {
-      if (sawInit) continue;
-      sawInit = true;
-      items.push({ kind: 'system_init', key, createdAt: row.createdAt, data: m });
-      continue;
-    }
     if (m.type === 'result') {
-      items.push({ kind: 'result', key, createdAt: row.createdAt, data: m });
+      flush();
+      items.push({ kind: 'turn_end', key, data: m });
       continue;
     }
     if (m.type === 'permission_request') {
@@ -66,11 +139,27 @@ export function groupMessages(rows: MessageDto[]): DisplayItem[] {
       continue;
     }
     if (m.type === 'error') {
-      items.push({ kind: 'error', key, createdAt: row.createdAt, text: m.message });
-      continue;
+      flush();
+      items.push({ kind: 'error', key, text: m.message });
     }
-    if (SKIPPED_TYPES.has(m.type)) continue;
-    items.push({ kind: 'raw', key, createdAt: row.createdAt, data: m });
+    // user tool_result rows, stream_event, and other SDK chatter are consumed above or ignored.
   }
+  flush();
   return items;
+}
+
+export type Todo = { content: string; status: 'pending' | 'in_progress' | 'completed'; activeForm?: string };
+
+// The latest TodoWrite list issued after the most recent user prompt.
+export function latestTodos(rows: MessageDto[]): Todo[] | null {
+  let todos: Todo[] | null = null;
+  for (const row of rows) {
+    const m = row.message as any;
+    if (m?.type === 'user' && m.local) todos = null;
+    if (m?.type !== 'assistant' || m.parent_tool_use_id) continue;
+    for (const b of normalizeBlocks(m.message?.content)) {
+      if (b.type === 'tool_use' && b.name === 'TodoWrite' && Array.isArray(b.input?.todos)) todos = b.input.todos;
+    }
+  }
+  return todos;
 }

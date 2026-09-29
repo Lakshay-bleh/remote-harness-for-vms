@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Remote Harness</string>
+    <string name="title_activity_main">Remote Harness</string>
+    <string name="package_name">io.visey.remoteharness</string>
+    <string name="custom_url_scheme">io.visey.remoteharness</string>
+</resources>

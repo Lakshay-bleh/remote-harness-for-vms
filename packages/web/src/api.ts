@@ -1,6 +1,21 @@
 import type { ImageAttachment, MessageDto, SessionDto, VmDto } from '@remote-harness/shared';
 
 const TOKEN_KEY = 'rh_token';
+const HUB_URL_KEY = 'rh_hub_url';
+
+// In the browser the hub serves this app, so calls are same-origin. In the native
+// Android app there is no such origin, so the user enters the hub's address once.
+export const isNative = (): boolean => Boolean((window as any).Capacitor?.isNativePlatform?.());
+
+export function getHubUrl(): string {
+  return (localStorage.getItem(HUB_URL_KEY) ?? '').replace(/\/+$/, '');
+}
+
+export function setHubUrl(url: string): void {
+  const clean = url.trim().replace(/\/+$/, '');
+  if (clean) localStorage.setItem(HUB_URL_KEY, clean);
+  else localStorage.removeItem(HUB_URL_KEY);
+}
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -12,7 +27,7 @@ export function setToken(token: string | null): void {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`/api${path}`, {
+  const res = await fetch(`${getHubUrl()}/api${path}`, {
     ...init,
     headers: {
       'content-type': 'application/json',

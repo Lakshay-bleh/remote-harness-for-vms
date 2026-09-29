@@ -85,7 +85,7 @@ into `$PROFILES_DIR` instead of re-running setup — see `packages/agent/.env.ex
 - **Permissions**: tool calls Claude would normally ask you about (Bash, Edit, Write,
   etc.) are routed to the app as an inline "Permission requested" card with Allow/Deny.
   The chat composer also has pill selectors for permission mode (Default / Auto / Accept
-  edits / Bypass permissions / Plan / Don't ask), model (Sonnet 5 / Opus 5.5 / Haiku 4.5 /
+  edits / Bypass permissions / Plan / Don't ask), model (Sonnet 5.5 / Opus 5.5 / Haiku 4.5 /
   Fable 5.1 / provider default), and reasoning effort (Low / Medium / High / xHigh / Max),
   matching Claude Code's own UI — changes apply live, mid-session.
 - **Multiple sessions per VM**: each chat in the sidebar is an independent Claude Code
@@ -103,4 +103,14 @@ into `$PROFILES_DIR` instead of re-running setup — see `packages/agent/.env.ex
 npm run dev:hub    # hub on :8787
 npm run dev:web    # vite dev server on :5173, proxies /api and /ws to the hub
 npm run dev:agent  # agent, pointed at HUB_URL in packages/agent/.env
+```
+
+## Android app
+
+The web UI also ships as a native Android app (Capacitor). It has a **Hub URL** field on the
+login screen — enter the address where your hub runs, then the password.
+
+```bash
+# needs JDK 21 + Android SDK (JAVA_HOME / ANDROID_HOME set)
+npm run build:apk    # -> packages/web/android/app/build/outputs/apk/debug/app-debug.apk
 ```

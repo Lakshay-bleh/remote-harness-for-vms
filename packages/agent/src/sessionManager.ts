@@ -105,6 +105,8 @@ export class SessionManager {
     const options: Options = {
       cwd,
       permissionMode: 'default',
+      // Ask for summarized thinking so the web UI can show it like the CLI's transcript view.
+      thinking: { type: 'adaptive', display: 'summarized' },
       canUseTool: async (toolName, toolInput, opts) => {
         const decision = await this.requestPermission(
           () => resolvedSessionId,

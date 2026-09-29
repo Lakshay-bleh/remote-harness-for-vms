@@ -38,6 +38,7 @@ export default {
           DEFAULT: '#faf9f5',
           soft: '#a09d96',
         },
+        permission: '#5b63c7',
         'accent-teal': '#5db8a6',
         'accent-amber': '#e8a55a',
         success: '#5db872',
@@ -62,6 +63,10 @@ export default {
         elevated: '0 4px 16px -4px rgba(20, 20, 19, 0.12)',
       },
       keyframes: {
+        blink: {
+          '0%, 49%': { opacity: 1 },
+          '50%, 100%': { opacity: 0 },
+        },
         pulseDot: {
           '0%, 100%': { opacity: 0.3 },
           '50%': { opacity: 1 },
@@ -69,6 +74,7 @@ export default {
       },
       animation: {
         pulseDot: 'pulseDot 1.2s ease-in-out infinite',
+        blink: 'blink 1s steps(1) infinite',
       },
     },
   },

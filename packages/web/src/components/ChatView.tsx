@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ImageAttachment, MessageDto } from '@remote-harness/shared';
 import { useStore } from '../store';
 import { api } from '../api';
-import { groupMessages } from '../groupMessages';
-import Message, { PermissionRequest } from './Message';
+import { groupMessages, latestTodos } from '../groupMessages';
+import Message, { PermissionRequest, Spinner, TodoList, CwdContext } from './Message';
 import Composer from './Composer';
 import Dropdown, { Chip } from './Dropdown';
 
@@ -18,7 +18,7 @@ const PERMISSION_MODES = [
 
 const MODEL_OPTIONS = [
   { value: '', label: 'Default model' },
-  { value: 'claude-sonnet-5', label: 'Sonnet 5' },
+  { value: 'claude-sonnet-5-5', label: 'Sonnet 5.5' },
   { value: 'claude-opus-5-5', label: 'Opus 5.5' },
   { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
   { value: 'claude-fable-5-1', label: 'Fable 5.1' },
@@ -74,11 +74,22 @@ const FolderIcon = () => (
   </svg>
 );
 
-function isBusy(rows: MessageDto[]): boolean {
+// Returns when the in-flight turn started, or null if the session is idle.
+function busySince(rows: MessageDto[]): number | null {
   for (let i = rows.length - 1; i >= 0; i--) {
     const m = rows[i].message as any;
-    if (m?.type === 'result') return false;
-    if (m?.type === 'user' && m.local) return true;
+    if (m?.type === 'result') return null;
+    if (m?.type === 'user' && m.local) return new Date(rows[i].createdAt).getTime() || Date.now();
+  }
+  return null;
+}
+
+function lastIsThinking(rows: MessageDto[]): boolean {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const m = rows[i].message as any;
+    if (m?.type !== 'assistant') continue;
+    const c = m.message?.content;
+    return Array.isArray(c) && c[c.length - 1]?.type === 'thinking';
   }
   return false;
 }
@@ -108,12 +119,23 @@ export default function ChatView({ className, onBack }: { className: string; onB
 
   const rows = sessionId ? state.messagesBySession[sessionId] ?? [] : [];
   const items = useMemo(() => groupMessages(rows), [rows]);
-  const busy = useMemo(() => isBusy(rows), [rows]);
-  const pendingPermission = [...items]
-    .reverse()
-    .find((it) => it.kind === 'permission_request' && !state.resolvedPermissionIds.has(it.data.requestId)) as
-    | Extract<typeof items[number], { kind: 'permission_request' }>
-    | undefined;
+  const startedAt = useMemo(() => busySince(rows), [rows]);
+  const busy = startedAt !== null;
+  const todos = useMemo(() => latestTodos(rows), [rows]);
+  const inProgress = todos?.find((t) => t.status === 'in_progress');
+  // A request is only live if it hasn't been answered and no turn ended after it (an
+  // aborted tool call never reports back, so those would otherwise linger forever).
+  const unresolved = items.flatMap((it, i) =>
+    it.kind === 'permission_request' &&
+    !state.resolvedPermissionIds.has(it.data.requestId) &&
+    !items.slice(i + 1).some((x) => x.kind === 'turn_end')
+      ? [it]
+      : [],
+  );
+  const pendingPermission = unresolved[unresolved.length - 1];
+  // Answering also clears identical retries of the same tool call.
+  const twinsOf = (data: any) =>
+    unresolved.filter((u) => u.data.toolName === data.toolName && JSON.stringify(u.data.input) === JSON.stringify(data.input)).map((u) => u.data.requestId);
   const vm = state.vms.find((v) => v.id === vmId);
   const session = vmId && sessionId ? (state.sessionsByVm[vmId] ?? []).find((s) => s.id === sessionId) : undefined;
   const accounts = vm?.accounts?.length ? vm.accounts : [{ id: 'default', label: 'default' }];
@@ -122,7 +144,7 @@ export default function ChatView({ className, onBack }: { className: string; onB
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [items.length]);
+  }, [items.length, busy, rows.length]);
 
   function handleSend(text: string, images: ImageAttachment[]) {
     if (!vmId) return;
@@ -158,22 +180,28 @@ export default function ChatView({ className, onBack }: { className: string; onB
         </div>
       </div>
 
-      <div ref={scrollRef} className="flex-1 space-y-2.5 overflow-y-auto px-4 py-4">
+      <CwdContext.Provider value={session?.cwd ?? ''}>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 pb-4 pt-1">
         {items.length === 0 && (
           <div className="flex h-full items-center justify-center text-sm text-muted-soft">
             {sessionId ? 'No messages yet' : `Start a new chat on ${vm?.name}`}
           </div>
         )}
         {items.map((item) => (
-          <Message key={item.key} item={item} />
+          <Message key={item.key} item={item} live={busy} waitingForPermission={Boolean(pendingPermission)} />
         ))}
+        {todos && todos.length > 0 && <TodoList todos={todos} />}
+        {busy && !pendingPermission && (
+          <Spinner startedAt={startedAt!} thinking={lastIsThinking(rows)} task={inProgress?.activeForm ?? inProgress?.content} />
+        )}
       </div>
 
       {pendingPermission && (
         <div className="px-4 pb-2">
-          <PermissionRequest vmId={vmId} sessionId={sessionId ?? ''} data={pendingPermission.data} resolved={false} />
+          <PermissionRequest vmId={vmId} sessionId={sessionId ?? ''} data={pendingPermission.data} twins={twinsOf(pendingPermission.data)} resolved={false} />
         </div>
       )}
+      </CwdContext.Provider>
 
       <Composer
         onSend={handleSend}
