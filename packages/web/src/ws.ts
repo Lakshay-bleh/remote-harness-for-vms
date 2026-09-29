@@ -9,6 +9,7 @@ export class HubSocket {
   private ws: WebSocket | null = null;
   private handlers = new Set<Handler>();
   private stopped = false;
+  private pingTimer: ReturnType<typeof setInterval> | null = null;
 
   connect(): void {
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
@@ -19,6 +20,10 @@ export class HubSocket {
     const ws = new WebSocket(`${base}/ws?token=${encodeURIComponent(token)}`);
     this.ws = ws;
 
+    // Keeps the connection alive through Cloudflare's idle timeout; the hub answers 'pong' itself.
+    ws.onopen = () => {
+      this.pingTimer = setInterval(() => ws.readyState === WebSocket.OPEN && ws.send('ping'), 25_000);
+    };
     ws.onmessage = (evt) => {
       try {
         const msg = JSON.parse(evt.data) as HubToBrowserMessage;
@@ -28,6 +33,7 @@ export class HubSocket {
       }
     };
     ws.onclose = () => {
+      if (this.pingTimer) clearInterval(this.pingTimer);
       if (!this.stopped) setTimeout(() => this.connect(), RECONNECT_DELAY_MS);
     };
   }

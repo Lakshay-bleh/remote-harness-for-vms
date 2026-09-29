@@ -1,0 +1,23 @@
+name = "remote-harness"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+
+# The built web app (packages/web/dist) is served as static assets; only the
+# API and the two WebSocket endpoints run through the Worker.
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/ws", "/agent"]
+
+[[durable_objects.bindings]]
+name = "HUB"
+class_name = "Hub"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Hub"]
+
+# Secrets (set with `wrangler secret put`):
+#   HUB_AGENT_TOKEN  shared secret the VM agents authenticate with
+#   APP_PASSWORD     password for the web / Android app login

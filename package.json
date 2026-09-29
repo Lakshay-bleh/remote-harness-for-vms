@@ -11,6 +11,8 @@
     "dev:agent": "npm run dev -w @remote-harness/agent",
     "build:web": "npm run build -w @remote-harness/web",
     "gen:icons": "node scripts/gen-icons.mjs",
-    "build:apk": "npm run android:apk -w @remote-harness/web"
+    "build:apk": "npm run android:apk -w @remote-harness/web",
+    "dev:worker": "npm run dev -w @remote-harness/worker",
+    "deploy:worker": "npm run deploy -w @remote-harness/worker"
   }
 }

@@ -114,3 +114,20 @@ login screen — enter the address where your hub runs, then the password.
 # needs JDK 21 + Android SDK (JAVA_HOME / ANDROID_HOME set)
 npm run build:apk    # -> packages/web/android/app/build/outputs/apk/debug/app-debug.apk
 ```
+
+## Deploy the hub to Cloudflare Workers (optional)
+
+`packages/worker` is the same hub running on Cloudflare (one Durable Object with SQLite
+storage holds the database and both WebSocket groups), so you get a permanent public
+`https://` address with nothing to keep running yourself. It also serves the web UI.
+
+```bash
+cd packages/worker
+npx wrangler login
+npx wrangler secret put HUB_AGENT_TOKEN   # same value your agents use
+npx wrangler secret put APP_PASSWORD      # web / Android login password
+cd ../.. && npm run deploy:worker
+```
+
+Then point each agent at it with `HUB_URL=wss://<your-worker>.workers.dev/agent` and use
+`https://<your-worker>.workers.dev` as the Hub URL in the Android app.
