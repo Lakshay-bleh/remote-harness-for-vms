@@ -18,8 +18,12 @@ export async function startMockMcp() {
     seen.push({ auth: req.headers.authorization, rpc: body?.method, tool: body?.params?.arguments?.tool_id });
     const mcp = new McpServer({ name: 'escanor', version: '1' });
     mcp.tool('escanor_list_providers', 'List providers', async () => ({ content: [{ type: 'text', text: 'github,vercel' }] }));
+    // What the real server reports for a workspace; MOCK_MCP_CONNECTED lets a test choose it.
+    mcp.tool('escanor_connection_status', 'Which providers are connected', async () => ({
+      content: [{ type: 'text', text: JSON.stringify({ status: 'ok', connected: (process.env.MOCK_MCP_CONNECTED ?? 'github').split(',').filter(Boolean), not_connected: [], needs_refresh: [] }) }],
+    }));
     mcp.tool('escanor_invoke', 'Run one tool by id', { tool_id: z.string(), arguments: z.record(z.any()).optional() }, async ({ tool_id }) => ({
-      content: [{ type: 'text', text: `ran ${tool_id}` }],
+      content: [{ type: 'text', text: tool_id === 'sentry.get_issue_logs' ? 'ERROR greet(): TypeError: can only concatenate str (not "NoneType") -- greet.py returns the upper-cased name' : `ran ${tool_id}` }],
     }));
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on('close', () => {

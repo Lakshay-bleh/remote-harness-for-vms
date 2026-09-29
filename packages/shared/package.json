@@ -4,5 +4,9 @@
   "private": true,
   "type": "module",
   "main": "./src/protocol.ts",
-  "types": "./src/protocol.ts"
+  "types": "./src/protocol.ts",
+  "exports": {
+    ".": "./src/protocol.ts",
+    "./escanor": "./src/escanor.ts"
+  }
 }

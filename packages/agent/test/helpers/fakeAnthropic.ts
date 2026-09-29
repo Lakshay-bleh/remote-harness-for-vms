@@ -29,7 +29,13 @@ function reply(res: http.ServerResponse, model: string, block: unknown, delta: u
   ]);
 }
 
+/** One scripted tool call: what a model that has decided on a plan would do next. */
+export type Step = { tool: string; input: Record<string, unknown> };
+
 export async function startFakeAnthropic() {
+  // When set, the "model" works through these tool calls in order (one per tool result), then says "done".
+  // This is what lets a test drive a whole edit -> run -> fix -> push loop through a real Claude Code process.
+  let script: Step[] | null = null;
   // The system prompt of every generation request, so a test can check what the model was told.
   const systems: string[] = [];
   const server = http.createServer(async (req, res) => {
@@ -53,6 +59,18 @@ export async function startFakeAnthropic() {
     }
     const names: string[] = (body.tools ?? []).map((t: any) => t.name);
     systems.push(typeof body.system === 'string' ? body.system : JSON.stringify(body.system ?? ''));
+    if (script) {
+      const messages: any[] = body.messages ?? [];
+      const lastUserText = messages.map((m, i) => ({ m, i })).filter(({ m }) => m.role === 'user' && (typeof m.content === 'string' || (Array.isArray(m.content) && m.content.some((c: any) => c.type === 'text')))).at(-1)?.i ?? -1;
+      const results = messages.slice(lastUserText + 1).flatMap((m) => (Array.isArray(m.content) ? m.content : [])).filter((c: any) => c.type === 'tool_result').length;
+      const step = script[results];
+      if (step && names.includes(step.tool)) {
+        reply(res, body.model, { type: 'tool_use', id: `toolu_${++responses}`, name: step.tool, input: {} }, { type: 'input_json_delta', partial_json: JSON.stringify(step.input) }, 'tool_use');
+      } else {
+        reply(res, body.model, { type: 'text', text: '' }, { type: 'text_delta', text: step ? `tool ${step.tool} was not available` : 'done' }, 'end_turn');
+      }
+      return;
+    }
     // "invoke:<tool_id>" in the user's message makes the model call escanor_invoke with that id;
     // otherwise it calls the first Escanor tool it can see.
     const userText = JSON.stringify(body.messages?.filter((m: any) => m.role === 'user').at(-1)?.content ?? '');
@@ -72,5 +90,5 @@ export async function startFakeAnthropic() {
     }
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
-  return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, systems, close: () => server.close() };
+  return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, systems, setScript: (steps: Step[] | null) => { script = steps; }, close: () => server.close() };
 }

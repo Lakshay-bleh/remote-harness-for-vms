@@ -97,6 +97,23 @@ into `$PROFILES_DIR` instead of re-running setup — see `packages/agent/.env.ex
   `HUB_AGENT_TOKEN` for all agents — deliberately simple for personal/small-team use.
   Put the hub behind TLS if it's reachable from the internet.
 
+## The Escanor app (this fork)
+
+This fork ships the harness client as the **Escanor** app (web + Android). A person signs in with Google once and just
+chats: hub, machine and tokens are provisioned by the Escanor backend and never shown.
+
+- **Sign-in:** Escanor backend Google OAuth. Native: system browser, then the `escanor://auth/login?code=...` deep link
+  handed over by `https://www.escanor.in/auth/mobile/login`. Web: `/auth/callback` (the backend only returns to
+  `localhost` or `*.escanor.in`).
+- **Assistant:** `/ai/capabilities` and `/ai/machine` on the backend; the AI runs in a per-workspace container managed
+  by [escanor-ai](https://github.com/escanorlabs-source/escanor-ai). Changes it makes are shown in the chat.
+- **Integrations:** the same Mongo-backed credentials as the website, so connecting on web or mobile is instantly the
+  same. The assistant sees them through the Escanor MCP installed on its VM (reads are silent, changes ask first).
+- **Managed policy** (`ESCANOR_MANAGED=1` on the agent): read/search/edit inside the workspace and everyday shell
+  commands run without asking, so it can read logs, edit, run and iterate in a loop; anything that leaves the sandbox
+  (`git push`, publishing, docker, sudo, ssh, writing `curl`) and any non-read MCP call asks first.
+- **Build:** `VITE_ESCANOR_API` sets the backend (default `https://api.escanor.in/api/v1`); `npm run build:apk`.
+
 ## MCP servers on every VM (Escanor)
 
 The hub can install an MCP server into **every Claude session on every VM** — chats that are

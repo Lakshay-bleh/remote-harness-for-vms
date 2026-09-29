@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'io.visey.remoteharness',
-  appName: 'Remote Harness',
+  appName: 'Escanor',
   webDir: 'dist',
   backgroundColor: '#faf9f5',
   server: {
