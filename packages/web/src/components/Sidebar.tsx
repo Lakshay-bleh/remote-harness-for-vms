@@ -103,7 +103,7 @@ export default function Sidebar({ className, onSelectSession }: { className: str
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search"
-            className="w-full bg-transparent text-[13px] text-ink outline-none placeholder:text-muted-soft"
+            className="w-full bg-transparent text-base text-ink outline-none placeholder:text-muted-soft md:text-[13px]"
           />
         </div>
       </div>

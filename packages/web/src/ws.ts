@@ -11,6 +11,7 @@ export class HubSocket {
   private stopped = false;
 
   connect(): void {
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
     const token = getToken();
     if (!token) return;
     const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';

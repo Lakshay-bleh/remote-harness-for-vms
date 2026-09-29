@@ -48,7 +48,13 @@ service workers on most platforms).
 
 ## 2. Install the agent on each VM
 
-Copy this repo to the VM (git clone, scp, whatever), then:
+One-liner (clones the repo into `~/remote-harness-for-vms` and runs the installer):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yashmishra2006/remote-harness-for-vms/main/packages/agent/bootstrap.sh | bash
+```
+
+Or copy this repo to the VM yourself (git clone, scp, whatever) and run the installer directly:
 
 ```bash
 ./packages/agent/install.sh

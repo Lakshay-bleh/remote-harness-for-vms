@@ -37,6 +37,7 @@ export const api = {
   login: (password: string) => request<{ token: string }>('/login', { method: 'POST', body: JSON.stringify({ password }) }),
   listVms: () => request<VmDto[]>('/vms'),
   listSessions: (vmId: string) => request<SessionDto[]>(`/vms/${vmId}/sessions`),
+  listProjects: (vmId: string) => request<string[]>(`/vms/${vmId}/projects`),
   listMessages: (vmId: string, sessionId: string) =>
     request<MessageDto[]>(`/vms/${vmId}/sessions/${sessionId}/messages`),
   createSession: (vmId: string, body: { cwd?: string; text: string; images?: ImageAttachment[]; accountId?: string }) =>

@@ -10,6 +10,7 @@ const { config } = await import('./config.js');
 const { SessionManager } = await import('./sessionManager.js');
 const { HubConnection } = await import('./wsClient.js');
 const { discoverProfiles } = await import('./profiles.js');
+const { listProjects } = await import('./projects.js');
 
 const AGENT_VERSION = '0.2.0';
 
@@ -40,6 +41,9 @@ const connection = new HubConnection(
         break;
       case 'permission_response':
         manager.resolvePermission(msg.requestId, msg.behavior, msg.message);
+        break;
+      case 'list_projects':
+        connection.send({ type: 'projects_list', requestId: msg.requestId, projects: listProjects(config.projectsRoot) });
         break;
     }
   },

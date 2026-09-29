@@ -2,6 +2,7 @@
 # Installs and starts the Remote Harness agent on this VM as a systemd service.
 # Run from a copy of this repo on the target machine:
 #   ./packages/agent/install.sh
+# Or, to clone the repo and run this in one step, see bootstrap.sh.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,6 +29,8 @@ if [ ! -f "$ENV_FILE" ]; then
   VM_NAME="${VM_NAME:-$(hostname)}"
   read -rp "Workspace root directory Claude may work in [$HOME]: " WORKSPACE_ROOT
   WORKSPACE_ROOT="${WORKSPACE_ROOT:-$HOME}"
+  read -rp "Folder to scan for projects, shown as pick-a-project options for new chats [$WORKSPACE_ROOT]: " PROJECTS_ROOT
+  PROJECTS_ROOT="${PROJECTS_ROOT:-$WORKSPACE_ROOT}"
   read -rp "ANTHROPIC_API_KEY (leave blank if this machine already ran 'claude' and logged in): " ANTHROPIC_API_KEY
 
   cat > "$ENV_FILE" <<EOF
@@ -35,6 +38,7 @@ HUB_URL=$HUB_URL
 HUB_TOKEN=$HUB_TOKEN
 VM_NAME=$VM_NAME
 WORKSPACE_ROOT=$WORKSPACE_ROOT
+PROJECTS_ROOT=$PROJECTS_ROOT
 DATA_DIR=$AGENT_DIR/data
 PROFILES_DIR=$HOME/.claude-profiles
 ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY

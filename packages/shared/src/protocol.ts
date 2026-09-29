@@ -72,13 +72,20 @@ export type AgentError = {
   message: string;
 };
 
+export type AgentProjectsList = {
+  type: 'projects_list';
+  requestId: string;
+  projects: string[]; // relative paths under the agent's workspace root
+};
+
 export type AgentToHubMessage =
   | AgentHello
   | AgentSdkMessage
   | AgentSessionCreated
   | AgentSessionEnded
   | AgentPermissionRequest
-  | AgentError;
+  | AgentError
+  | AgentProjectsList;
 
 // ---------- Hub -> Agent ----------
 
@@ -126,13 +133,19 @@ export type HubPermissionResponse = {
   message?: string;
 };
 
+export type HubListProjects = {
+  type: 'list_projects';
+  requestId: string;
+};
+
 export type HubToAgentMessage =
   | HubUserInput
   | HubInterrupt
   | HubSetPermissionMode
   | HubSetModel
   | HubSetEffort
-  | HubPermissionResponse;
+  | HubPermissionResponse
+  | HubListProjects;
 
 // ---------- Hub -> Browser (push channel) ----------
 

@@ -7,11 +7,17 @@ function required(name: string): string {
   return v;
 }
 
+const workspaceRoot = resolve(process.env.WORKSPACE_ROOT || process.env.HOME || '/');
+
 export const config = {
   hubUrl: required('HUB_URL'),
   hubToken: required('HUB_TOKEN'),
   vmName: process.env.VM_NAME?.trim() || hostname(),
-  workspaceRoot: resolve(process.env.WORKSPACE_ROOT || process.env.HOME || '/'),
+  workspaceRoot,
+  // Where the "new chat" project picker looks for subfolders. Defaults to
+  // the workspace root itself, but can be narrower (e.g. everything lives
+  // under WORKSPACE_ROOT but your actual projects are under ~/projects).
+  projectsRoot: resolve(process.env.PROJECTS_ROOT || workspaceRoot),
   dataDir: resolve(process.env.DATA_DIR || './data'),
   profilesDir: resolve(process.env.PROFILES_DIR || `${process.env.HOME}/.claude-profiles`),
 };

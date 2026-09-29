@@ -20,6 +20,7 @@ export default function Composer({
   placeholder,
   topChips,
   footerExtra,
+  onOpenSidebar,
 }: {
   onSend: (text: string, images: ImageAttachment[]) => void;
   onInterrupt: () => void;
@@ -27,6 +28,7 @@ export default function Composer({
   placeholder: string;
   topChips?: ReactNode;
   footerExtra?: ReactNode;
+  onOpenSidebar?: () => void;
 }) {
   const [text, setText] = useState('');
   const [images, setImages] = useState<ImageAttachment[]>([]);
@@ -55,7 +57,7 @@ export default function Composer({
   }
 
   return (
-    <div className="safe-bottom border-t border-hairline bg-canvas px-3 py-3">
+    <div className="safe-bottom border-t border-hairline bg-canvas px-3 pt-3">
       {images.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2">
           {images.map((img, i) => (
@@ -89,11 +91,23 @@ export default function Composer({
             }
           }}
           placeholder={placeholder}
-          className="max-h-40 w-full resize-none bg-transparent py-1 text-[14px] text-ink outline-none placeholder:text-muted-soft"
+          className="max-h-40 w-full resize-none bg-transparent py-1 text-base text-ink outline-none placeholder:text-muted-soft md:text-[14px]"
         />
-        <div className="mt-1.5 flex items-center gap-1.5">
-          <label className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted transition hover:bg-surface-card hover:text-ink">
-            <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => e.target.files && addFiles(e.target.files)} />
+        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-1.5">
+          <div className="flex items-center gap-1">
+            {onOpenSidebar && (
+              <button
+                onClick={onOpenSidebar}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted transition hover:bg-surface-card hover:text-ink md:hidden"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="1.8" />
+                  <path d="M9 4v16" stroke="currentColor" strokeWidth="1.8" />
+                </svg>
+              </button>
+            )}
+            <label className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted transition hover:bg-surface-card hover:text-ink">
+              <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => e.target.files && addFiles(e.target.files)} />
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
               <path
                 d="M21 11.5V17a4 4 0 01-4 4H7a4 4 0 01-4-4V9a4 4 0 014-4h7.5M17 3l4 4-9.5 9.5H8v-3.5L17 3z"
@@ -103,26 +117,28 @@ export default function Composer({
                 strokeLinejoin="round"
               />
             </svg>
-          </label>
-          <div className="flex-1" />
-          {footerExtra}
-          {busy ? (
-            <button onClick={onInterrupt} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-surface-dark text-on-dark transition hover:bg-surface-dark-elevated">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
-                <rect x="5" y="5" width="14" height="14" rx="2" />
-              </svg>
-            </button>
-          ) : (
-            <button
-              onClick={submit}
-              disabled={!text.trim() && images.length === 0}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-on-primary transition hover:bg-primary-active disabled:opacity-30"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                <path d="M4 12l16-8-6 8 6 8-16-8z" fill="currentColor" />
-              </svg>
-            </button>
-          )}
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            {footerExtra}
+            {busy ? (
+              <button onClick={onInterrupt} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface-dark text-on-dark transition hover:bg-surface-dark-elevated">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="5" y="5" width="14" height="14" rx="2" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                onClick={submit}
+                disabled={!text.trim() && images.length === 0}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-on-primary transition hover:bg-primary-active disabled:opacity-30"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                  <path d="M4 12l16-8-6 8 6 8-16-8z" fill="currentColor" />
+                </svg>
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

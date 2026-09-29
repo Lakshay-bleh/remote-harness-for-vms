@@ -47,6 +47,10 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
     res.json(db.listSessionsByVm(req.params.vmId));
   });
 
+  router.get('/vms/:vmId/projects', async (req, res) => {
+    res.json(await agentServer.requestProjects(req.params.vmId));
+  });
+
   router.get('/vms/:vmId/sessions/:sessionId/messages', (req, res) => {
     res.json(db.listMessages(req.params.sessionId));
   });

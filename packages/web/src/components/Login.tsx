@@ -21,7 +21,7 @@ export default function Login() {
   }
 
   return (
-    <div className="flex h-[100dvh] items-center justify-center bg-canvas px-6">
+    <div className="flex h-[100svh] items-center justify-center bg-canvas px-6">
       <form onSubmit={submit} className="w-full max-w-sm rounded-xl border border-hairline bg-canvas p-8 shadow-panel">
         <div className="mb-7 flex items-center gap-3.5">
           <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-surface-dark text-primary">
@@ -41,7 +41,7 @@ export default function Login() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Password"
-          className="mb-3 w-full rounded-md border border-hairline bg-canvas px-4 py-3 text-sm text-ink outline-none transition placeholder:text-muted-soft focus:border-primary focus:ring-4 focus:ring-primary/15"
+          className="mb-3 w-full rounded-md border border-hairline bg-canvas px-4 py-3 text-base text-ink outline-none transition placeholder:text-muted-soft focus:border-primary focus:ring-4 focus:ring-primary/15"
         />
         {error && <p className="mb-3 text-sm text-error">{error}</p>}
         <button

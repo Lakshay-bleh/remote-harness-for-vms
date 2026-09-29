@@ -1,7 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { AgentToHubMessage, AgentSessionSummary, ClaudeAccount, HubToAgentMessage } from '@remote-harness/shared';
 import type { Db } from './db.js';
+
+const PROJECTS_REQUEST_TIMEOUT_MS = 5000;
 
 export type AgentEventHandlers = {
   onHello: (vmId: string, vmName: string, accounts: ClaudeAccount[], sessions: AgentSessionSummary[]) => void;
@@ -17,6 +20,7 @@ export function createAgentServer(db: Db, token: string, handlers: AgentEventHan
   }
 
   const byVmId = new Map<string, WebSocket>();
+  const pendingProjectRequests = new Map<string, { resolve: (projects: string[]) => void }>();
 
   wss.on('connection', (ws) => {
     let vmId: string | null = null;
@@ -42,6 +46,16 @@ export function createAgentServer(db: Db, token: string, handlers: AgentEventHan
       }
 
       if (!vmId) return; // must hello first
+
+      if (msg.type === 'projects_list') {
+        const pending = pendingProjectRequests.get(msg.requestId);
+        if (pending) {
+          pendingProjectRequests.delete(msg.requestId);
+          pending.resolve(msg.projects);
+        }
+        return;
+      }
+
       handlers.onEvent(vmId, msg);
     });
 
@@ -67,6 +81,24 @@ export function createAgentServer(db: Db, token: string, handlers: AgentEventHan
     },
     connectedVmIds(): string[] {
       return [...byVmId.keys()];
+    },
+    requestProjects(vmId: string): Promise<string[]> {
+      const ws = byVmId.get(vmId);
+      if (!ws || ws.readyState !== WebSocket.OPEN) return Promise.resolve([]);
+      const requestId = randomUUID();
+      ws.send(JSON.stringify({ type: 'list_projects', requestId }));
+      return new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          pendingProjectRequests.delete(requestId);
+          resolve([]);
+        }, PROJECTS_REQUEST_TIMEOUT_MS);
+        pendingProjectRequests.set(requestId, {
+          resolve: (projects) => {
+            clearTimeout(timer);
+            resolve(projects);
+          },
+        });
+      });
     },
   };
 }

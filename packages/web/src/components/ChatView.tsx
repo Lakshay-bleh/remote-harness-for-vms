@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ImageAttachment, MessageDto } from '@remote-harness/shared';
 import { useStore } from '../store';
+import { api } from '../api';
 import { groupMessages } from '../groupMessages';
 import Message from './Message';
 import Composer from './Composer';
@@ -67,6 +68,12 @@ const GaugeIcon = () => (
   </svg>
 );
 
+const FolderIcon = () => (
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
+    <path d="M3 6a1 1 0 011-1h5l2 2h9a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V6z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+  </svg>
+);
+
 function isBusy(rows: MessageDto[]): boolean {
   for (let i = rows.length - 1; i >= 0; i--) {
     const m = rows[i].message as any;
@@ -83,12 +90,21 @@ export default function ChatView({ className, onBack }: { className: string; onB
   const [mode, setMode] = useState('default');
   const [model, setModel] = useState('');
   const [effort, setEffort] = useState('');
+  const [project, setProject] = useState('');
+  const [projects, setProjects] = useState<string[]>([]);
 
   useEffect(() => {
     setMode('default');
     setModel('');
     setEffort('');
+    setProject('');
   }, [sessionId]);
+
+  useEffect(() => {
+    if (!vmId) return;
+    setProjects([]);
+    api.listProjects(vmId).then(setProjects).catch(() => setProjects([]));
+  }, [vmId]);
 
   const rows = sessionId ? state.messagesBySession[sessionId] ?? [] : [];
   const items = useMemo(() => groupMessages(rows), [rows]);
@@ -106,8 +122,10 @@ export default function ChatView({ className, onBack }: { className: string; onB
   function handleSend(text: string, images: ImageAttachment[]) {
     if (!vmId) return;
     if (sessionId) actions.sendMessage(vmId, sessionId, text, images);
-    else actions.startNewChat(vmId, undefined, text, images, accountId);
+    else actions.startNewChat(vmId, project || undefined, text, images, accountId);
   }
+
+  const projectOptions = [{ value: '', label: 'Workspace root' }, ...projects.map((p) => ({ value: p, label: p }))];
 
   if (!vmId) {
     return (
@@ -151,10 +169,19 @@ export default function ChatView({ className, onBack }: { className: string; onB
         onInterrupt={() => sessionId && actions.interrupt(vmId, sessionId)}
         busy={busy}
         placeholder={sessionId ? 'Message Claude…' : 'Start a new conversation…'}
+        onOpenSidebar={onBack}
         topChips={
           <>
             <Chip icon={<ServerIcon />} label={vm?.name ?? ''} />
             <Chip icon={<PersonIcon />} label={accountLabel ?? ''} />
+            {!sessionId && (
+              <Dropdown
+                icon={<FolderIcon />}
+                value={project}
+                options={projectOptions}
+                onChange={setProject}
+              />
+            )}
             <Dropdown
               icon={<ShieldIcon />}
               value={mode}

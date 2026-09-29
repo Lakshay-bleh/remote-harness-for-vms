@@ -111,7 +111,6 @@ function buildActions(dispatch: React.Dispatch<Action>) {
       const { token } = await api.login(password);
       setToken(token);
       dispatch({ type: 'set_authed', authed: true });
-      hubSocket.connect();
     },
     logout() {
       setToken(null);
