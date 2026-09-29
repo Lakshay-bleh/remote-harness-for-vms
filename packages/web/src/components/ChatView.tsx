@@ -3,7 +3,7 @@ import type { ImageAttachment, MessageDto } from '@remote-harness/shared';
 import { useStore } from '../store';
 import { api } from '../api';
 import { groupMessages } from '../groupMessages';
-import Message from './Message';
+import Message, { PermissionRequest } from './Message';
 import Composer from './Composer';
 import Dropdown, { Chip } from './Dropdown';
 
@@ -109,6 +109,11 @@ export default function ChatView({ className, onBack }: { className: string; onB
   const rows = sessionId ? state.messagesBySession[sessionId] ?? [] : [];
   const items = useMemo(() => groupMessages(rows), [rows]);
   const busy = useMemo(() => isBusy(rows), [rows]);
+  const pendingPermission = [...items]
+    .reverse()
+    .find((it) => it.kind === 'permission_request' && !state.resolvedPermissionIds.has(it.data.requestId)) as
+    | Extract<typeof items[number], { kind: 'permission_request' }>
+    | undefined;
   const vm = state.vms.find((v) => v.id === vmId);
   const session = vmId && sessionId ? (state.sessionsByVm[vmId] ?? []).find((s) => s.id === sessionId) : undefined;
   const accounts = vm?.accounts?.length ? vm.accounts : [{ id: 'default', label: 'default' }];
@@ -160,9 +165,15 @@ export default function ChatView({ className, onBack }: { className: string; onB
           </div>
         )}
         {items.map((item) => (
-          <Message key={item.key} item={item} vmId={vmId} sessionId={sessionId ?? ''} />
+          <Message key={item.key} item={item} />
         ))}
       </div>
+
+      {pendingPermission && (
+        <div className="px-4 pb-2">
+          <PermissionRequest vmId={vmId} sessionId={sessionId ?? ''} data={pendingPermission.data} resolved={false} />
+        </div>
+      )}
 
       <Composer
         onSend={handleSend}
