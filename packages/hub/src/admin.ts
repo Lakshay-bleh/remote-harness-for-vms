@@ -7,7 +7,7 @@ import type { BrowserServer } from './browserServer.js';
 // The multi-tenant control plane. It exists only when HUB_ADMIN_TOKEN is set, and only the operator
 // (in practice: Escanor's backend) holds that token. Everything a tenant can do is under /api with its
 // own tokens; nothing here is reachable with one.
-export function createAdminRouter(db: Db, agentServer: AgentServer, browserServer: BrowserServer, adminToken: string) {
+export function createAdminRouter(db: Db, agentServer: AgentServer, browserServer: BrowserServer, adminToken: string, minMachineTtlSeconds = 60) {
   const router = Router();
 
   router.use((req: Request, res: Response, next: NextFunction) => {
@@ -59,8 +59,8 @@ export function createAdminRouter(db: Db, agentServer: AgentServer, browserServe
       res.status(400).json({ error: 'vmName must be letters, digits, dot, dash and underscore' });
       return;
     }
-    if (!Number.isFinite(ttlSeconds) || ttlSeconds < 60 || ttlSeconds > 172_800) {
-      res.status(400).json({ error: 'ttlSeconds must be between 60 and 172800' });
+    if (!Number.isFinite(ttlSeconds) || ttlSeconds < minMachineTtlSeconds || ttlSeconds > 172_800) {
+      res.status(400).json({ error: `ttlSeconds must be between ${minMachineTtlSeconds} and 172800` });
       return;
     }
     const made = db.issueMachineCredentials(req.params.id, vmName, ttlSeconds, String(req.body?.label ?? 'machine'));

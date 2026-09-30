@@ -119,7 +119,7 @@ const agentServer = createAgentServer(db, config.hubAgentToken, {
   },
 });
 
-app.use('/admin', createAdminRouter(db, agentServer, browserServer, config.hubAdminToken));
+app.use('/admin', createAdminRouter(db, agentServer, browserServer, config.hubAdminToken, config.machineMinTtlSeconds));
 app.use('/api', createApiRouter(db, agentServer, browserServer, config.appPassword));
 app.use(express.static(config.webDist));
 app.get('*', (_req, res) => {

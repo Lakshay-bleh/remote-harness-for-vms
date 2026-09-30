@@ -27,8 +27,8 @@ before(async () => {
   port = 19000 + Math.floor(Math.random() * 900);
   proc = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
     cwd: new URL('..', import.meta.url).pathname,
-    env: { ...process.env, PORT: String(port), HUB_AGENT_TOKEN: 'legacy-agent', APP_PASSWORD: 'pw', DATA_DIR: dir, WEB_DIST: dir, HUB_ADMIN_TOKEN: ADMIN },
-    stdio: 'ignore',
+    env: { ...process.env, PORT: String(port), HUB_AGENT_TOKEN: 'legacy-agent', APP_PASSWORD: 'pw', DATA_DIR: dir, WEB_DIST: dir, HUB_ADMIN_TOKEN: ADMIN, HUB_MACHINE_MIN_TTL_SECONDS: '1' },
+    stdio: ['ignore', 'ignore', process.env.HUB_TEST_STDERR ? 'inherit' : 'ignore'],
   });
   url = `http://127.0.0.1:${port}`;
   for (let i = 0; i < 80; i++) {
@@ -70,7 +70,7 @@ test('only the admin can issue machine credentials, and only with sane inputs', 
   assert.equal((await post(bearer(A.apiToken), { vmName: 'm1', ttlSeconds: 600 })).status, 401, 'a tenant token is not an admin token');
   assert.equal((await post(admin, { vmName: 'bad name; rm -rf /', ttlSeconds: 600 })).status, 400);
   assert.equal((await post(admin, { vmName: '../x', ttlSeconds: 600 })).status, 400);
-  assert.equal((await post(admin, { vmName: 'm1', ttlSeconds: 5 })).status, 400);
+  assert.equal((await post(admin, { vmName: 'm1', ttlSeconds: 0 })).status, 400);
   assert.equal((await post(admin, { vmName: 'm1', ttlSeconds: 10 ** 9 })).status, 400);
   assert.equal((await post(admin, { vmName: 'm1', ttlSeconds: 600 }, 't_nope')).status, 404);
   const ok = await post(admin, { vmName: 'm1', ttlSeconds: 600 });
@@ -170,18 +170,13 @@ test('issuing again for the same machine replaces the first pair and hangs up wh
 });
 
 test('a credential stops working when it expires, and an open connection is closed when it does', async () => {
-  const m = (await (await issue(A.id, 'inc-6', 60)).json()) as Machine;
+  const m = (await (await issue(A.id, 'inc-6', 1)).json()) as Machine;
   const live = agent(m.agentToken, 'inc-6');
-  await live.ready;
-  // Move the expiry into the past, as time passing would.
-  const { DatabaseSync } = await import('node:sqlite');
-  const db = new DatabaseSync(join(dir, 'hub.sqlite'));
-  db.exec('PRAGMA busy_timeout = 5000');
-  db.prepare('UPDATE machine_credentials SET expires_at = ? WHERE vm_name = ?').run(new Date(Date.now() - 1000).toISOString(), 'inc-6');
-  db.close();
+  assert.equal(await live.ready, true);
+  assert.equal((await fetch(`${url}/api/vms`, { headers: bearer(m.apiToken) })).status, 200);
+  assert.equal((await live.closed).reason, 'credential expired', 'the hub hangs up when the credential ends');
   assert.equal((await fetch(`${url}/api/vms`, { headers: bearer(m.apiToken) })).status, 401);
   assert.equal(await agent(m.agentToken, 'inc-6').ready, false);
-  live.ws.close();
 });
 
 test('the browser channel gives a machine token only its own machine\'s events', async () => {
