@@ -29,6 +29,14 @@ packages/
 - The **web app** is a single-page PWA. Install it to your phone's home screen for a
   native-feeling app; it also works as a normal desktop browser tab.
 
+## Download the Android app
+
+Grab the latest `escanor-vX.Y.Z.apk` from the repository's **Releases** page, open it on
+your phone (allow installs from your browser or file manager when asked), then enter your
+hub's address. Releases are built by `.github/workflows/release.yml` whenever a `v*` tag is
+pushed; the APK is debug-signed, which is fine for sideloading. To build one yourself, run
+`npm run build:apk` with the Android SDK installed.
+
 ## 1. Run the hub
 
 ```bash

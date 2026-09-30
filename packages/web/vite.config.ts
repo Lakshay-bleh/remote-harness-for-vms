@@ -9,7 +9,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon-mask.svg'],
+      includeAssets: ['icon-192.png'],
       manifest: {
         name: 'Escanor',
         short_name: 'Escanor',

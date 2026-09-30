@@ -1,0 +1,54 @@
+# Builds the Escanor Android app and publishes it as a GitHub Release.
+# Trigger: push a tag like v1.3.0 (the tag name becomes the release name).
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to (re)build and release, e.g. v1.3.0
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - name: Build the web app and sync it into the Android project
+        run: npm run android:sync -w @remote-harness/web
+      - name: Assemble the APK
+        working-directory: packages/web/android
+        run: ./gradlew assembleDebug --no-daemon
+      - name: Name the APK after the release
+        run: |
+          mkdir -p dist
+          cp packages/web/android/app/build/outputs/apk/debug/app-debug.apk "dist/escanor-${TAG}.apk"
+          sha256sum "dist/escanor-${TAG}.apk" | tee "dist/escanor-${TAG}.apk.sha256"
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="Escanor ${TAG} for Android. Download the .apk, allow installs from your browser or file manager, and open it. This build is debug-signed for sideloading."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --title "Escanor ${TAG}" --notes "$notes"
+          fi
