@@ -4,7 +4,7 @@ import { useStore } from '../store';
 import EscanorConnect from './EscanorConnect';
 import { ConnectMachineSheet } from '../escanor/ConnectMachine';
 import { useManagedHub } from '../escanor/ManagedMachines';
-import { ScreenHeader } from '../escanor/ui';
+import { Logo, ScreenHeader } from '../escanor/ui';
 
 function relativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -91,13 +91,8 @@ export default function Sidebar({ className, onSelectSession }: { className: str
     <div className={`${className} ${managed ? '' : 'safe-top'} w-full flex-col border-r border-hairline bg-surface-soft md:w-80`}>
       {managed && <ScreenHeader title="Machines" />}
       {!managed && <div className="flex items-center gap-2.5 px-5 pb-3 pt-5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-surface-dark text-primary">
-          <svg width="14" height="14" viewBox="0 0 100 100" fill="none">
-            <path d="M35 22 L60 50 L35 78" stroke="currentColor" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round" />
-            <rect x="60" y="66" width="10" height="20" rx="5" fill="currentColor" />
-          </svg>
-        </div>
-        <h1 className="text-[15px] font-semibold tracking-tight text-ink">Remote Harness</h1>
+        <Logo size={32} />
+        <h1 className="text-[15px] font-semibold tracking-tight text-ink">Escanor</h1>
       </div>}
 
       <div className="px-3 pb-2 pt-3">

@@ -25,6 +25,8 @@ export default {
           DEFAULT: '#242320',
           soft: '#181816',
         },
+        // Borders of controls (inputs, the composer, quiet buttons): one value, so every field looks the same.
+        'line-strong': '#3e3c37',
         canvas: '#050505',
         surface: {
           soft: '#090908',

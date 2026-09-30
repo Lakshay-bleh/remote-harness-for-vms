@@ -89,7 +89,7 @@ function Composer({ running, onSend, onStop }: { running: boolean; onSend: (t: s
   const box = useRef<HTMLTextAreaElement>(null);
   const submit = () => { if (text.trim()) { onSend(text); setText(''); if (box.current) box.current.style.height = 'auto'; } };
   return (
-    <form className="mx-auto flex w-full max-w-3xl items-end gap-2 rounded-3xl border border-[#3e3c37] bg-surface-dark-soft py-1.5 pl-4 pr-1.5 transition focus-within:border-primary/60 focus-within:ring-4 focus-within:ring-primary/10" onSubmit={(e) => { e.preventDefault(); submit(); }}>
+    <form className="mx-auto flex w-full max-w-3xl items-end gap-2 rounded-3xl border border-line-strong bg-surface-dark-soft py-1.5 pl-4 pr-1.5 transition focus-within:border-primary/60 focus-within:ring-4 focus-within:ring-primary/10" onSubmit={(e) => { e.preventDefault(); submit(); }}>
       <textarea
         ref={box}
         value={text}

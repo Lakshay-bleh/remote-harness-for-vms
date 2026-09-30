@@ -3,13 +3,12 @@ import remarkGfm from 'remark-gfm';
 import { List } from '@phosphor-icons/react';
 import { createContext, useContext, type ReactNode } from 'react';
 
-export const Logo = ({ size = 44 }: { size?: number }) => (
-  <div className="flex items-center justify-center rounded-lg border border-hairline bg-surface-dark text-primary" style={{ width: size, height: size }}>
-    <svg width={size * 0.52} height={size * 0.52} viewBox="0 0 100 100" fill="none" aria-hidden>
-      <path d="M35 22 L60 50 L35 78" stroke="currentColor" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round" />
-      <rect x="60" y="66" width="10" height="20" rx="5" fill="currentColor" />
-    </svg>
-  </div>
+/**
+ * The Escanor mark: the eclipse, the same artwork as the app icon and the website. It carries its own black-and-gold
+ * palette on a transparent background, so it sits on any surface. Use this everywhere; do not draw another mark.
+ */
+export const Logo = ({ size = 44, className = '' }: { size?: number; className?: string }) => (
+  <img src="/brand-mark.png" alt="" aria-hidden="true" width={size} height={size} draggable={false} className={`shrink-0 select-none object-contain ${className}`} style={{ width: size, height: size }} />
 );
 
 /** An assistant answer. Markdown only: raw HTML is never rendered, and links must be http(s). */
@@ -27,7 +26,7 @@ export function Md({ text }: { text: string }) {
 }
 
 export function Button({ children, onClick, kind = 'primary', disabled, type = 'button', className = '' }: { children: ReactNode; onClick?: () => void; kind?: 'primary' | 'quiet' | 'danger'; disabled?: boolean; type?: 'button' | 'submit'; className?: string }) {
-  const look = kind === 'primary' ? 'btn-sheen bg-primary text-on-primary hover:-translate-y-px hover:shadow-[0_12px_28px_-12px_rgb(242_167_59/0.65)]' : kind === 'danger' ? 'border border-error/40 text-error hover:bg-error/10' : 'border border-[#3e3c37] text-ink hover:bg-surface-card';
+  const look = kind === 'primary' ? 'btn-sheen bg-primary text-on-primary hover:-translate-y-px hover:shadow-[0_12px_28px_-12px_rgb(242_167_59/0.65)]' : kind === 'danger' ? 'border border-error/40 text-error hover:bg-error/10' : 'border border-line-strong text-ink hover:bg-surface-card';
   return (
     <button type={type} onClick={onClick} disabled={disabled} className={`rounded-pill px-5 py-2.5 text-sm font-medium transition duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/25 disabled:opacity-40 disabled:active:scale-100 ${look} ${className}`}>
       {children}
