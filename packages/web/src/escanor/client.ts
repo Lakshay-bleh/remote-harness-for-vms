@@ -178,6 +178,10 @@ export const escanor = {
   integrationAuthorizeUrl: (providerId: string) => request<{ authorization_url: string }>(`/auth/integrations/${enc(providerId)}/authorize?platform=mobile`).then((r) => r.authorization_url),
   disconnect: (providerId: string) => request<{ disconnected: boolean }>(`/auth/integrations/${enc(providerId)}`, { method: 'DELETE' }),
 
+  // -- the app's own logs, sent to the workspace's monitoring (what to send is the workspace's choice)
+  telemetryConfig: () => request<import('./telemetry').ClientConfig>('/observability/client-config'),
+  sendLogs: (entries: import('./telemetry').ClientEntry[], keepalive = false) => request<{ accepted: number }>('/observability/client', { ...json({ source: 'app', entries }), keepalive }),
+
   // -- other AI apps
   mcpConnections: () => request<McpConnection[]>('/agent/mcp/connections'),
   createMcpInstall: (name: string) => request<McpInstall>('/agent/mcp/install', json({ name })),

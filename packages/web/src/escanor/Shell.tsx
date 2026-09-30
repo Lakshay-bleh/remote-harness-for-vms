@@ -6,6 +6,7 @@ import { escanor } from './client';
 import { useLoad } from './hooks';
 import IntegrationsView from './IntegrationsView';
 import { useEscanorSession } from './session';
+import TelemetryBoot from './TelemetryBoot';
 import { Logo, NavContext } from './ui';
 
 export type Tab = 'assistant' | 'connections' | 'machines' | 'account';
@@ -119,6 +120,7 @@ export default function Shell({ machines }: { machines: React.ReactNode }) {
 
   return (
     <NavContext.Provider value={{ open: () => setDrawer(true) }}>
+      <TelemetryBoot />
       <div className="flex h-[100svh] overflow-hidden bg-canvas text-ink">
         <aside className="safe-top hidden w-[76px] shrink-0 border-r border-hairline bg-surface-soft md:block lg:w-72">
           <div className="hidden h-full lg:block">{nav(true)}</div>
