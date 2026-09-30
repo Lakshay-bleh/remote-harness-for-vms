@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing tag to (re)build and release, e.g. v1.3.0
+        description: Release name, e.g. v1.3.0. Built from the branch you run this on; the tag is created if it does not exist.
         required: true
 
 permissions:
@@ -22,7 +22,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.TAG }}
+          # A pushed tag builds itself; a manual run builds the branch it was started on.
+          ref: ${{ github.event_name == 'push' && env.TAG || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -50,5 +51,5 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber
           else
-            gh release create "$TAG" dist/* --title "Escanor ${TAG}" --notes "$notes"
+            gh release create "$TAG" dist/* --target "${GITHUB_SHA}" --title "Escanor ${TAG}" --notes "$notes"
           fi
