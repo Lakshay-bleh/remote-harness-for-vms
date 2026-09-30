@@ -100,7 +100,7 @@ export default function Sidebar({ className, onSelectSession }: { className: str
         <h1 className="text-[15px] font-semibold tracking-tight text-ink">Remote Harness</h1>
       </div>}
 
-      <div className="px-3 pb-2">
+      <div className="px-3 pb-2 pt-3">
         <div className="flex items-center gap-2 rounded-md border border-hairline bg-canvas px-3 py-2 transition focus-within:border-primary">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="shrink-0 text-muted-soft">
             <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
