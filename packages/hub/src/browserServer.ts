@@ -1,25 +1,34 @@
 import type { IncomingMessage } from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { HubToBrowserMessage } from '@remote-harness/shared';
-import type { Db } from './db.js';
+import type { Db, MachineScope } from './db.js';
 
 export function createBrowserServer(db: Db) {
   const wss = new WebSocketServer({ noServer: true });
 
-  function authorize(req: IncomingMessage): string | null {
+  function authorizeScoped(req: IncomingMessage): { tenantId: string; machine?: MachineScope } | null {
     const url = new URL(req.url ?? '', 'http://localhost');
-    return db.tenantForApiToken(url.searchParams.get('token') ?? '');
+    const token = url.searchParams.get('token') ?? '';
+    const tenantId = db.tenantForApiToken(token);
+    if (tenantId) return { tenantId };
+    const machine = db.machineForApiToken(token);
+    return machine ? { tenantId: machine.tenantId, machine } : null;
   }
+  const authorize = (req: IncomingMessage): string | null => authorizeScoped(req)?.tenantId ?? null;
 
-  // A browser only ever hears about its own tenant.
-  const clients = new Map<WebSocket, string>();
+  // A browser only ever hears about its own tenant; a machine-scoped token only about its own machine.
+  const clients = new Map<WebSocket, { tenantId: string; machine?: MachineScope }>();
   wss.on('connection', (ws, req) => {
-    const tenantId = authorize(req);
-    if (!tenantId) {
+    const auth = authorizeScoped(req);
+    if (!auth) {
       ws.close(1008, 'unauthorized');
       return;
     }
-    clients.set(ws, tenantId);
+    clients.set(ws, auth);
+    if (auth.machine) {
+      const timer = setTimeout(() => ws.close(1008, 'credential expired'), Math.max(0, Date.parse(auth.machine.expiresAt) - Date.now()));
+      ws.on('close', () => clearTimeout(timer));
+    }
     ws.on('close', () => clients.delete(ws));
   });
 
@@ -28,12 +37,20 @@ export function createBrowserServer(db: Db) {
     authorize,
     broadcast(tenantId: string, msg: HubToBrowserMessage): void {
       const payload = JSON.stringify(msg);
-      for (const [ws, t] of clients) {
-        if (t === tenantId && ws.readyState === WebSocket.OPEN) ws.send(payload);
+      const vmId = 'vmId' in msg ? (msg as { vmId?: string }).vmId : undefined;
+      // The name of the machine the message is about, looked up once, for the clients limited to a machine.
+      const vmName = vmId ? db.for(tenantId).listVms().find((v) => v.id === vmId)?.name : undefined;
+      for (const [ws, c] of clients) {
+        if (c.tenantId !== tenantId || ws.readyState !== WebSocket.OPEN) continue;
+        if (c.machine && (!vmName || vmName !== c.machine.vmName)) continue;
+        ws.send(payload);
       }
     },
     disconnectTenant(tenantId: string): void {
-      for (const [ws, t] of clients) if (t === tenantId) ws.close(1008, 'tenant removed');
+      for (const [ws, c] of clients) if (c.tenantId === tenantId) ws.close(1008, 'tenant removed');
+    },
+    disconnectMachine(tenantId: string, vmName: string): void {
+      for (const [ws, c] of clients) if (c.tenantId === tenantId && c.machine?.vmName === vmName) ws.close(1008, 'credential revoked');
     },
   };
 }

@@ -90,9 +90,11 @@ export class SessionManager {
     dataDir: string,
     private profiles: ClaudeProfile[],
     private send: (msg: AgentToHubMessage) => void,
-    private opts: { managed?: boolean; guide?: string } = {},
+    private opts: { managed?: boolean; guide?: string; mcpOverride?: Omit<ManagedMcpServer, 'updatedAt'> | null } = {},
   ) {
     this.registry = new SessionRegistry(dataDir);
+    // Present from the first session on, before the hub has pushed anything.
+    if (opts.mcpOverride) this.mcpServers.set(opts.mcpOverride.name, { ...opts.mcpOverride, updatedAt: new Date().toISOString() });
   }
 
   private resolveProfile(accountId: string | undefined): ClaudeProfile {
@@ -157,6 +159,8 @@ export class SessionManager {
       // The hub validates already; a bad entry here must never reach a session's config.
       if (/^https?:\/\//.test(s.url) && /^[a-z0-9][a-z0-9_-]{0,31}$/.test(s.name)) next.set(s.name, s);
     }
+    // This machine's own entry wins over the hub's of the same name, and is never dropped by a push that omits it.
+    if (this.opts.mcpOverride) next.set(this.opts.mcpOverride.name, { ...this.opts.mcpOverride, updatedAt: new Date().toISOString() });
     this.mcpServers = next;
     const config = this.sdkMcpConfig();
     const configJson = JSON.stringify(config);

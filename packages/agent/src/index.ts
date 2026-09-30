@@ -28,7 +28,7 @@ function readGuide(): string {
   }
 }
 
-const manager = new SessionManager(config.workspaceRoot, config.dataDir, profiles, (msg) => connection.send(msg), { managed: config.managed, guide: readGuide() });
+const manager = new SessionManager(config.workspaceRoot, config.dataDir, profiles, (msg) => connection.send(msg), { managed: config.managed, guide: readGuide(), mcpOverride: config.mcpOverride });
 
 const connection = new HubConnection(
   config.hubUrl,

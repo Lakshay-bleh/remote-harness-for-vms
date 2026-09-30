@@ -15,6 +15,12 @@ const newSecret = () => randomBytes(32).toString('base64url');
 
 export type TenantDto = { id: string; label: string; createdAt: string };
 
+/** What a machine-scoped credential is limited to. */
+export type MachineScope = { tenantId: string; vmName: string; expiresAt: string };
+
+/** A machine's name is an identifier, not free text: it ends up in URLs, log lines and prompts. */
+export const MACHINE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+
 function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
   return (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === column);
 }
@@ -105,6 +111,18 @@ export function openDb(dataDir: string) {
     CREATE TABLE IF NOT EXISTS vm_agent_version (
       vm_id TEXT PRIMARY KEY,
       version TEXT NOT NULL
+    );
+    -- Credentials for one machine of a tenant (an incident's), and nothing else. Only hashes are kept.
+    CREATE TABLE IF NOT EXISTS machine_credentials (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      vm_name TEXT NOT NULL,
+      label TEXT NOT NULL,
+      agent_hash TEXT UNIQUE NOT NULL,
+      api_hash TEXT UNIQUE NOT NULL,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE (tenant_id, vm_name)
     );
     CREATE TABLE IF NOT EXISTS vm_mcp_status (
       vm_id TEXT PRIMARY KEY,
@@ -351,6 +369,54 @@ export function openDb(dataDir: string) {
       return b?.t ?? null;
     },
 
+    // ---- credentials for one machine ----
+
+    /**
+     * Credentials that let a process register as `vmName` and nothing else, and let its holder see and drive that one
+     * machine and nothing else. They expire by themselves. Issuing again for the same machine replaces the earlier pair.
+     * The plaintext is returned once; only hashes are kept.
+     */
+    issueMachineCredentials(tenantId: string, vmName: string, ttlSeconds: number, label: string): { id: string; vmName: string; agentToken: string; apiToken: string; expiresAt: string } | null {
+      if (!db.prepare('SELECT 1 FROM tenants WHERE id = ?').get(tenantId) || !MACHINE_NAME.test(vmName)) return null;
+      const now = Date.now();
+      db.prepare('DELETE FROM machine_credentials WHERE expires_at < ?').run(new Date(now - 86_400_000).toISOString());
+      db.prepare('DELETE FROM machine_credentials WHERE tenant_id = ? AND vm_name = ?').run(tenantId, vmName);
+      const made = {
+        id: randomUUID(),
+        vmName,
+        agentToken: newSecret(),
+        apiToken: newSecret(),
+        expiresAt: new Date(now + ttlSeconds * 1000).toISOString(),
+      };
+      db.prepare('INSERT INTO machine_credentials (id, tenant_id, vm_name, label, agent_hash, api_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+        made.id,
+        tenantId,
+        vmName,
+        label.slice(0, 100),
+        sha256(made.agentToken),
+        sha256(made.apiToken),
+        made.expiresAt,
+        new Date(now).toISOString(),
+      );
+      return made;
+    },
+
+    revokeMachineCredentials(tenantId: string, vmName: string): boolean {
+      return Number(db.prepare('DELETE FROM machine_credentials WHERE tenant_id = ? AND vm_name = ?').run(tenantId, vmName).changes) > 0;
+    },
+
+    machineForAgentToken(token: string): MachineScope | null {
+      if (!token) return null;
+      const row = db.prepare('SELECT tenant_id as tenantId, vm_name as vmName, expires_at as expiresAt FROM machine_credentials WHERE agent_hash = ?').get(sha256(token)) as MachineScope | undefined;
+      return row && row.expiresAt > new Date().toISOString() ? row : null;
+    },
+
+    machineForApiToken(token: string): MachineScope | null {
+      if (!token) return null;
+      const row = db.prepare('SELECT tenant_id as tenantId, vm_name as vmName, expires_at as expiresAt FROM machine_credentials WHERE api_hash = ?').get(sha256(token)) as MachineScope | undefined;
+      return row && row.expiresAt > new Date().toISOString() ? row : null;
+    },
+
     tenantForAgentToken(token: string): string | null {
       if (!token) return null;
       const row = db.prepare('SELECT id FROM tenants WHERE agent_token_hash = ?').get(sha256(token)) as { id: string } | undefined;
@@ -389,7 +455,7 @@ export function openDb(dataDir: string) {
       if (id === DEFAULT_TENANT || !db.prepare('SELECT 1 FROM tenants WHERE id = ?').get(id)) return false;
       db.prepare('DELETE FROM vm_mcp_status WHERE vm_id IN (SELECT id FROM vms WHERE tenant_id = ?)').run(id);
       db.prepare('DELETE FROM vm_agent_version WHERE vm_id IN (SELECT id FROM vms WHERE tenant_id = ?)').run(id);
-      for (const table of ['messages', 'sessions', 'vms', 'mcp_servers', 'auth_tokens', 'api_tokens', 'session_aliases']) {
+      for (const table of ['messages', 'sessions', 'vms', 'mcp_servers', 'auth_tokens', 'api_tokens', 'session_aliases', 'machine_credentials']) {
         db.prepare(`DELETE FROM ${table} WHERE tenant_id = ?`).run(id);
       }
       db.prepare('DELETE FROM tenants WHERE id = ?').run(id);

@@ -39,15 +39,38 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
     const header = req.header('authorization') ?? '';
     const token = header.startsWith('Bearer ') ? header.slice(7) : '';
     const tenantId = db.tenantForApiToken(token);
-    if (!tenantId) {
+    if (tenantId) {
+      res.locals.tenantId = tenantId;
+      next();
+      return;
+    }
+    // A token issued for one machine: it may see and drive that machine, and nothing else of the tenant's.
+    const machine = db.machineForApiToken(token);
+    if (!machine) {
       res.status(401).json({ error: 'Unauthorized' });
       return;
     }
-    res.locals.tenantId = tenantId;
+    res.locals.tenantId = machine.tenantId;
+    res.locals.machine = machine;
     next();
   }
 
   router.use(requireAuth);
+
+  // What a machine-scoped token may reach: the machine list (filtered to itself), the MCP overview, and the routes under
+  // its own machine. Never tokens, logout, or changes to the tenant's MCP servers.
+  router.use((req, res, next) => {
+    if (!res.locals.machine) {
+      next();
+      return;
+    }
+    const readOnlyOk = req.method === 'GET' && (req.path === '/vms' || req.path === '/mcp-servers');
+    if (readOnlyOk || req.path.startsWith('/vms/')) {
+      next();
+      return;
+    }
+    res.status(403).json({ error: 'This credential is limited to one machine.' });
+  });
 
   // Everything below acts for the caller's tenant only.
   const T = (res: Response) => db.for(res.locals.tenantId as string);
@@ -56,7 +79,9 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
   // A VM id in a URL must be one of the caller's. Without this, knowing (or guessing) another tenant's
   // VM id would be enough to message its machine, since sockets are looked up by VM id alone.
   router.param('vmId', (_req, res, next, vmId) => {
-    if (!T(res).hasVm(vmId)) {
+    const own = T(res).listVms().find((v) => v.id === vmId);
+    // A machine-scoped token reaches its own machine only; another one of the tenant's looks like it does not exist.
+    if (!own || (res.locals.machine && own.name !== (res.locals.machine as { vmName: string }).vmName)) {
       res.status(404).json({ error: 'Unknown VM' });
       return;
     }
@@ -85,7 +110,11 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
   });
 
   router.get('/vms', (_req, res) => {
-    const vms = T(res).listVms().map((v) => ({ ...v, connected: agentServer.isConnected(v.id) }));
+    const only = (res.locals.machine as { vmName: string } | undefined)?.vmName;
+    const vms = T(res)
+      .listVms()
+      .filter((v) => !only || v.name === only)
+      .map((v) => ({ ...v, connected: agentServer.isConnected(v.id) }));
     res.json(vms);
   });
 
@@ -107,7 +136,7 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
   router.get('/mcp-servers', (_req, res) => {
     const overview: McpOverviewDto = {
       servers: T(res).listMcpServers().map(toMcpServerDto),
-      vms: T(res).listVms().map((v) => {
+      vms: T(res).listVms().filter((v) => !res.locals.machine || v.name === (res.locals.machine as { vmName: string }).vmName).map((v) => {
         const status = T(res).getVmMcpStatus(v.id);
         return {
           vmId: v.id,
