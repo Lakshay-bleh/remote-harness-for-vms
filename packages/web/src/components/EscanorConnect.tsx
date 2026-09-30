@@ -32,7 +32,7 @@ function isPrivateAddress(url: string): boolean {
   }
 }
 
-function CopyRow({ label, value, secret }: { label: string; value: string; secret?: boolean }) {
+export function CopyRow({ label, value, secret }: { label: string; value: string; secret?: boolean }) {
   const [copied, setCopied] = useState(false);
   const [shown, setShown] = useState(false);
 
@@ -202,7 +202,7 @@ export default function EscanorConnect() {
 
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4"
           onClick={() => setOpen(false)}
         >
           <div

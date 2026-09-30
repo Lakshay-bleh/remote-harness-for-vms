@@ -36,6 +36,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
   if (res.status === 401) {
+    // On Escanor's hosted hub there is no password to type: the app fetches a fresh token from Escanor instead.
+    if (localStorage.getItem('rh_managed') === '1') {
+      window.dispatchEvent(new Event('rh-managed-unauthorized'));
+      throw new Error('Reconnecting to your hub…');
+    }
     setToken(null);
     window.location.reload();
     throw new Error('Unauthorized');

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { isNative } from '../api';
 import { ApiError, escanor, type CatalogProvider } from './client';
 import { useLoad } from './hooks';
-import { Button, Notice, Sheet, Spinner } from './ui';
+import { Button, Notice, ScreenHeader, Sheet, Spinner } from './ui';
 
 const PAGE = 30;
 
@@ -26,22 +26,23 @@ export default function IntegrationsView() {
   }, [catalog.data, query, caps.data]);
 
   return (
-    <div className="h-full overflow-y-auto px-4 py-4">
-      <h1 className="font-display text-2xl text-ink">Connections</h1>
-      <p className="mt-1 text-sm text-muted">{caps.data?.summary ?? 'What your assistant can work with.'} Connect a service once — it works here, on the web and for your assistant.</p>
+    <div className="flex h-full flex-col">
+    <ScreenHeader title="Connections" />
+    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+      <p className="text-sm text-muted">{caps.data?.summary ?? 'What your assistant can work with.'} Connect a service once and it works here, on the web and for your assistant.</p>
       {notice && <div className="mt-3"><Notice>{notice}</Notice></div>}
       {caps.error && <div className="mt-3"><Notice tone="error">{caps.error}</Notice></div>}
 
       {connected.length > 0 && (
         <section className="mt-5">
-          <h2 className="mb-2 text-[12px] font-medium uppercase tracking-wide text-muted">Connected</h2>
+          <h2 className="mb-2 text-sm font-medium text-ink">Connected</h2>
           <ul className="divide-y divide-hairline rounded-lg border border-hairline">
             {connected.map((c) => (
               <li key={c.provider_id} className="flex items-center justify-between gap-3 px-3.5 py-3">
                 <div className="min-w-0">
                   <p className="truncate text-[15px] text-ink">{c.name}</p>
                   <p className={`text-[12px] ${c.needs_reconnect ? 'text-warning' : c.available_to_assistant ? 'text-success' : 'text-muted'}`}>
-                    {c.needs_reconnect ? 'Needs reconnecting' : c.available_to_assistant ? 'Your assistant can use this' : c.available_to_assistant === false ? 'Connected — no assistant tools for it yet' : 'Connected'}
+                    {c.needs_reconnect ? 'Needs reconnecting' : c.available_to_assistant ? 'Your assistant can use this' : c.available_to_assistant === false ? 'Connected, no assistant tools for it yet' : 'Connected'}
                   </p>
                 </div>
                 <button
@@ -57,7 +58,7 @@ export default function IntegrationsView() {
       )}
 
       <section className="mt-6">
-        <h2 className="mb-2 text-[12px] font-medium uppercase tracking-wide text-muted">Add a service</h2>
+        <h2 className="mb-2 text-sm font-medium text-ink">Add a service</h2>
         <input value={query} onChange={(e) => { setQuery(e.target.value); setShown(PAGE); }} placeholder="Search GitHub, Vercel, Sentry…" aria-label="Search services" className="mb-3 w-full rounded-md border border-hairline px-3.5 py-2.5 text-base outline-none focus:border-primary focus:ring-4 focus:ring-primary/15" />
         {catalog.loading && <Spinner />}
         {catalog.error && <Notice tone="error">{catalog.error}</Notice>}
@@ -76,6 +77,7 @@ export default function IntegrationsView() {
       </section>
 
       {connecting && <ConnectSheet provider={connecting} onClose={() => setConnecting(null)} onConnected={(name) => { setConnecting(null); setNotice(`${name} connected.`); caps.reload(); }} />}
+    </div>
     </div>
   );
 }

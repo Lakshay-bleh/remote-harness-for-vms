@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from './store';
 import Login from './components/Login';
 import Sidebar from './components/Sidebar';
@@ -6,6 +6,9 @@ import ChatView from './components/ChatView';
 import Shell from './escanor/Shell';
 import Welcome from './escanor/Welcome';
 import { hasStoredSession } from './escanor/client';
+import ManagedMachines from './escanor/ManagedMachines';
+import { clearManaged, isManaged } from './escanor/managed';
+import { hubSocket } from './ws';
 import { SessionProvider, useEscanorSession } from './escanor/session';
 import { Logo, Spinner } from './escanor/ui';
 
@@ -32,16 +35,33 @@ function HubApp({ embedded = false, onBack }: { embedded?: boolean; onBack?: () 
 
 function Root() {
   const session = useEscanorSession();
-  const { state } = useStore();
-  // Someone who only ever used their own hub keeps landing there, exactly as before.
-  const [ownHub, setOwnHub] = useState(state.authed && !hasStoredSession());
+  const { state, actions } = useStore();
+  // Someone who only ever used their own hub keeps landing there, exactly as before. Credentials of Escanor's
+  // hosted hub are not "their own hub": without an Escanor sign-in they are never shown.
+  const [ownHub, setOwnHub] = useState(state.authed && !hasStoredSession() && !isManaged());
+
+  // Signing out of Escanor takes the hosted hub's credentials -- and the last person's chats -- with it.
+  useEffect(() => {
+    if (session.status === 'signed_out' && clearManaged()) {
+      hubSocket.stop();
+      actions.dispatch({ type: 'set_authed', authed: false });
+    }
+  }, [session.status, actions]);
 
   if (ownHub) return <HubApp onBack={() => setOwnHub(false)} />;
   if (session.status === 'loading') {
     return <div className="flex h-[100svh] items-center justify-center bg-canvas"><div className="flex flex-col items-center gap-4"><Logo /><Spinner /></div></div>;
   }
   if (session.status === 'signed_out') return <Welcome onAdvanced={() => setOwnHub(true)} />;
-  return <Shell machines={<HubApp embedded />} />;
+  return (
+    <Shell
+      machines={
+        <ManagedMachines fallback={<HubApp embedded />}>
+          <HubApp embedded />
+        </ManagedMachines>
+      }
+    />
+  );
 }
 
 export default function App() {

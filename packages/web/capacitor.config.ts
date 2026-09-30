@@ -4,7 +4,7 @@ const config: CapacitorConfig = {
   appId: 'io.visey.remoteharness',
   appName: 'Escanor',
   webDir: 'dist',
-  backgroundColor: '#faf9f5',
+  backgroundColor: '#050505',
   server: {
     // http scheme + cleartext so the app can talk to either an http:// or https:// hub
     // without the webview blocking it as mixed content.

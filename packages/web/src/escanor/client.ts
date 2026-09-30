@@ -1,5 +1,6 @@
 import type { AssistantCapabilities, AssistantConversation, AssistantMessages, AssistantStatus, AssistantUsage, MachineView } from '@remote-harness/shared/escanor';
 import { escanorApiBase } from './config';
+import type { ManagedHub } from './managed';
 
 const ACCESS = 'escanor_access';
 const REFRESH = 'escanor_refresh';
@@ -155,6 +156,9 @@ export const escanor = {
     tokens.clear();
     if (refresh) await request('/auth/logout', json({ refresh_token: refresh }), { auth: false }).catch(() => undefined);
   },
+
+  // -- the hosted hub: the address and this person's tokens for their VMs
+  managedHub: () => request<ManagedHub>('/agent/hub/managed'),
 
   // -- the assistant
   status: () => request<AssistantStatus>('/ai/status'),

@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ClaudeAccount, SessionDto } from '@remote-harness/shared';
 import { useStore } from '../store';
 import EscanorConnect from './EscanorConnect';
+import { ConnectMachineSheet } from '../escanor/ConnectMachine';
+import { useManagedHub } from '../escanor/ManagedMachines';
+import { ScreenHeader } from '../escanor/ui';
 
 function relativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -47,6 +50,8 @@ export default function Sidebar({ className, onSelectSession }: { className: str
   const { state, actions } = useStore();
   const [expandedVmId, setExpandedVmId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const managed = useManagedHub();
+  const [connecting, setConnecting] = useState(false);
 
   useEffect(() => {
     actions.refreshVms();
@@ -83,8 +88,9 @@ export default function Sidebar({ className, onSelectSession }: { className: str
   }
 
   return (
-    <div className={`${className} safe-top w-full flex-col border-r border-hairline bg-surface-soft md:w-80`}>
-      <div className="flex items-center gap-2.5 px-5 pb-3 pt-5">
+    <div className={`${className} ${managed ? '' : 'safe-top'} w-full flex-col border-r border-hairline bg-surface-soft md:w-80`}>
+      {managed && <ScreenHeader title="Machines" />}
+      {!managed && <div className="flex items-center gap-2.5 px-5 pb-3 pt-5">
         <div className="flex h-8 w-8 items-center justify-center rounded-md bg-surface-dark text-primary">
           <svg width="14" height="14" viewBox="0 0 100 100" fill="none">
             <path d="M35 22 L60 50 L35 78" stroke="currentColor" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round" />
@@ -92,7 +98,7 @@ export default function Sidebar({ className, onSelectSession }: { className: str
           </svg>
         </div>
         <h1 className="text-[15px] font-semibold tracking-tight text-ink">Remote Harness</h1>
-      </div>
+      </div>}
 
       <div className="px-3 pb-2">
         <div className="flex items-center gap-2 rounded-md border border-hairline bg-canvas px-3 py-2 transition focus-within:border-primary">
@@ -111,7 +117,18 @@ export default function Sidebar({ className, onSelectSession }: { className: str
 
       <div className="flex-1 overflow-y-auto px-2.5 pb-4">
         {state.vms.length === 0 && (
-          <p className="px-3 py-6 text-sm text-muted-soft">No VMs connected yet. Install the agent on a server to see it here.</p>
+          managed ? (
+            <div className="px-3 py-6">
+              <p className="text-[15px] font-medium text-ink">No machines yet</p>
+              <p className="mt-1 text-sm leading-relaxed text-muted">Put the agent on a server and it shows up here, ready to chat with. Your hub and secret are already set up.</p>
+              <button type="button" onClick={() => setConnecting(true)} className="mt-4 w-full rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-on-primary transition hover:bg-primary-active">Connect a machine</button>
+              {managed.guide_url && (
+                <a href={managed.guide_url} target="_blank" rel="noreferrer noopener" className="mt-2 block text-center text-[13px] text-primary underline">Read the setup guide</a>
+              )}
+            </div>
+          ) : (
+            <p className="px-3 py-6 text-sm text-muted-soft">No VMs connected yet. Install the agent on a server to see it here.</p>
+          )
         )}
         {state.vms.map((vm) => {
           const sessions = state.sessionsByVm[vm.id] ?? [];
@@ -168,16 +185,26 @@ export default function Sidebar({ className, onSelectSession }: { className: str
       </div>
 
       <div className="border-t border-hairline px-2.5 py-2.5">
-        <EscanorConnect />
-        <button
-          type="button"
-          onClick={() => actions.logout()}
-          className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-[13px] text-muted transition hover:bg-surface-card hover:text-ink"
-        >
-          <span className="h-2 w-2 shrink-0" />
-          Sign out
-        </button>
+        {managed ? (
+          // Escanor is already installed on a hosted hub and signing out is Escanor's, from the Account tab.
+          <button type="button" onClick={() => setConnecting(true)} className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-[13px] text-body transition hover:bg-surface-card">
+            <span className="text-base leading-none text-primary">+</span> Connect a machine
+          </button>
+        ) : (
+          <>
+            <EscanorConnect />
+            <button
+              type="button"
+              onClick={() => actions.logout()}
+              className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-[13px] text-muted transition hover:bg-surface-card hover:text-ink"
+            >
+              <span className="h-2 w-2 shrink-0" />
+              Sign out
+            </button>
+          </>
+        )}
       </div>
+      {connecting && <ConnectMachineSheet onClose={() => setConnecting(false)} />}
     </div>
   );
 }

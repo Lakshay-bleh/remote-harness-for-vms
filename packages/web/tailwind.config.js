@@ -1,53 +1,55 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  darkMode: 'media',
+  darkMode: 'class',
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {
-        // Escanor-derived warm cream-canvas palette (see design.md)
+        // Escanor's dark theme, taken from the website's landing scope: an off-black page, warm off-white ink and
+        // a single gold signal. Names are unchanged so every screen picks it up together.
         primary: {
-          DEFAULT: '#cc785c',
-          active: '#a9583e',
-          disabled: '#e6dfd8',
+          DEFAULT: '#f2a73b',
+          active: '#e39a2c',
+          disabled: '#3e3c37',
         },
-        ink: '#141413',
+        ink: '#f3f1ec',
         body: {
-          DEFAULT: '#3d3d3a',
-          strong: '#252523',
+          DEFAULT: '#beb2b1',
+          strong: '#e2dfd8',
         },
         muted: {
-          DEFAULT: '#6c6a64',
-          soft: '#8e8b82',
+          DEFAULT: '#98948b',
+          soft: '#7e7b73',
         },
         hairline: {
-          DEFAULT: '#e6dfd8',
-          soft: '#ebe6df',
+          DEFAULT: '#242320',
+          soft: '#181816',
         },
-        canvas: '#faf9f5',
+        canvas: '#050505',
         surface: {
-          soft: '#f5f0e8',
-          card: '#efe9de',
-          'cream-strong': '#e8e0d2',
-          dark: '#181715',
-          'dark-elevated': '#252320',
-          'dark-soft': '#1f1e1b',
+          soft: '#090908',
+          card: '#151513',
+          'cream-strong': '#1f1e1b',
+          dark: '#080807',
+          'dark-elevated': '#151513',
+          'dark-soft': '#0c0c0b',
         },
-        'on-primary': '#ffffff',
+        'on-primary': '#180e02',
         'on-dark': {
-          DEFAULT: '#faf9f5',
-          soft: '#a09d96',
+          DEFAULT: '#f3f1ec',
+          soft: '#98948b',
         },
-        permission: '#5b63c7',
+        permission: '#8b93ff',
         'accent-teal': '#5db8a6',
         'accent-amber': '#e8a55a',
         success: '#5db872',
-        warning: '#d4a017',
-        error: '#c64545',
+        warning: '#e0b040',
+        error: '#ef6b62',
       },
       fontFamily: {
-        display: ['"Cormorant Garamond"', '"EB Garamond"', 'Georgia', 'serif'],
-        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        // One family throughout, as on the website.
+        display: ['Gellix', 'Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        sans: ['Gellix', 'Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
       },
       borderRadius: {
@@ -59,8 +61,8 @@ export default {
         pill: '9999px',
       },
       boxShadow: {
-        panel: '0 1px 3px rgba(20, 20, 19, 0.08)',
-        elevated: '0 4px 16px -4px rgba(20, 20, 19, 0.12)',
+        panel: '0 1px 3px rgba(0, 0, 0, 0.5)',
+        elevated: '0 8px 24px -8px rgba(0, 0, 0, 0.6)',
       },
       keyframes: {
         blink: {

@@ -2,7 +2,7 @@ import { escanor } from './client';
 import { useLoad } from './hooks';
 import { ago, Notice, Sheet, Spinner } from './ui';
 
-const LABEL: Record<string, string> = { running: 'Running', starting: 'Starting', sleeping: 'Asleep — wakes when you chat', stopped: 'Stopped', unavailable: 'Unavailable', unknown: 'Not started yet' };
+const LABEL: Record<string, string> = { running: 'Running', starting: 'Starting', sleeping: 'Asleep, wakes when you chat', stopped: 'Stopped', unavailable: 'Unavailable', unknown: 'Not started yet' };
 const EVENT: Record<string, string> = {
   'machine.started': 'Machine started', 'machine.woke': 'Machine woke up', 'machine.slept': 'Machine went to sleep',
   'git.push': 'Pushed a branch', 'git.push_blocked': 'A push to a protected branch was blocked',
@@ -35,7 +35,7 @@ export default function MachineSheet({ onClose }: { onClose: () => void }) {
               <ul className="space-y-1.5">
                 {m.events.slice(0, 12).map((e, i) => (
                   <li key={i} className="flex justify-between gap-3 text-sm">
-                    <span className="min-w-0 text-body"><span className="text-ink">{EVENT[e.kind] ?? e.kind}</span>{e.detail ? ` — ${e.detail}` : ''}</span>
+                    <span className="min-w-0 text-body"><span className="text-ink">{EVENT[e.kind] ?? e.kind}</span>{e.detail ? ` · ${e.detail}` : ''}</span>
                     <span className="shrink-0 text-[12px] text-muted-soft">{ago(e.at)}</span>
                   </li>
                 ))}

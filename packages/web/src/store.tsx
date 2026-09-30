@@ -40,7 +40,8 @@ const initialState: State = {
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case 'set_authed':
-      return { ...state, authed: action.authed };
+      // Signing out must not leave one person's machines and chats in memory for the next to see.
+      return action.authed ? { ...state, authed: true } : { ...initialState, authed: false, resolvedPermissionIds: new Set() };
     case 'set_vms':
       return { ...state, vms: action.vms };
     case 'vm_status': {

@@ -13,6 +13,7 @@ export class HubSocket {
 
   connect(): void {
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
+    this.stopped = false;
     const token = getToken();
     if (!token) return;
     const hub = getHubUrl();
@@ -46,6 +47,7 @@ export class HubSocket {
   stop(): void {
     this.stopped = true;
     this.ws?.close();
+    this.ws = null;
   }
 }
 

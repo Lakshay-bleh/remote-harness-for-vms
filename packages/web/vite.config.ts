@@ -14,8 +14,8 @@ export default defineConfig({
         name: 'Escanor',
         short_name: 'Escanor',
         description: 'Chat with an AI that works on your accounts and code, on its own private machine.',
-        theme_color: '#faf9f5',
-        background_color: '#faf9f5',
+        theme_color: '#050505',
+        background_color: '#050505',
         display: 'standalone',
         orientation: 'portrait',
         icons: [

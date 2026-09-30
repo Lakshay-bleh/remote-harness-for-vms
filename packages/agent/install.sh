@@ -32,8 +32,13 @@ echo "==> Installing dependencies"
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "==> Configuring agent (edit $ENV_FILE later to change these)"
-  read -rp "Hub WebSocket URL (e.g. wss://your-hub.example.com/agent): " HUB_URL < "$TTY"
-  read -rp "Hub agent token (HUB_AGENT_TOKEN from the hub): " HUB_TOKEN < "$TTY"
+  # HUB_URL / HUB_TOKEN in the environment skip these two questions (the Escanor app hands out a command that sets them).
+  if [ -z "${HUB_URL:-}" ]; then
+    read -rp "Hub WebSocket URL (e.g. wss://your-hub.example.com/agent): " HUB_URL < "$TTY"
+  fi
+  if [ -z "${HUB_TOKEN:-}" ]; then
+    read -rp "Hub agent token (HUB_AGENT_TOKEN from the hub): " HUB_TOKEN < "$TTY"
+  fi
   read -rp "Name for this VM [$(hostname)]: " VM_NAME < "$TTY"
   VM_NAME="${VM_NAME:-$(hostname)}"
   read -rp "Workspace root directory Claude may work in [$HOME]: " WORKSPACE_ROOT < "$TTY"
@@ -55,6 +60,11 @@ EOF
   echo "    wrote $ENV_FILE"
 else
   echo "==> Found existing $ENV_FILE, leaving it as-is"
+  # ...except the hub details when they were passed in, e.g. after the token was rotated.
+  if [ -n "${HUB_URL:-}" ] && [ -n "${HUB_TOKEN:-}" ]; then
+    sed -i "s|^HUB_URL=.*|HUB_URL=$HUB_URL|; s|^HUB_TOKEN=.*|HUB_TOKEN=$HUB_TOKEN|" "$ENV_FILE"
+    echo "    updated HUB_URL and HUB_TOKEN"
+  fi
 fi
 
 PROFILES_DIR="$HOME/.claude-profiles"
