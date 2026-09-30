@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { resolve, relative, isAbsolute } from 'node:path';
 import { query, type McpServerConfig, type Options, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
-import { isReadOnlyMcpCall } from '@remote-harness/shared';
+import { isReadOnlyMcpCall, mcpToolIdMatches } from '@remote-harness/shared';
 import { isSandboxAutoAllowed } from './sandboxPolicy.js';
 import type {
   AgentMcpServerStatus,
@@ -148,6 +148,8 @@ export class SessionManager {
       if (s.autoAllow !== false) return true;
       // Not blanket-approved, but calls that only read may still go through without a card.
       if (s.autoAllowReads && isReadOnlyMcpCall(toolName.slice(prefix.length), input)) return true;
+      // A playbook's own tools: named by the operator ahead of time, so no card.
+      if (s.autoAllowTools?.length && toolName.slice(prefix.length) === 'escanor_invoke' && mcpToolIdMatches(s.autoAllowTools, typeof input?.tool_id === 'string' ? input.tool_id : '')) return true;
     }
     return false;
   }

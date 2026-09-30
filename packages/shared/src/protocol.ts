@@ -163,6 +163,10 @@ export type ManagedMcpServer = {
   // When autoAllow is off: still pre-approve the calls that only *read* (see isReadOnlyMcpCall), so a
   // chat can look things up freely and asks only before it changes something.
   autoAllowReads?: boolean;
+  // When autoAllow is off: also pre-approve `escanor_invoke` calls whose tool_id is one of these (exact, or a
+  // trailing `*` prefix). This is how an operator's playbook lets a machine post in a channel or open a ticket
+  // without a card, while everything else that changes something still waits for a person.
+  autoAllowTools?: string[];
   alwaysLoad?: boolean; // load its tools into every prompt instead of deferring them behind tool search
   managedBy?: string; // who installed it ('escanor'); informational
   updatedAt: string;
@@ -420,6 +424,12 @@ const SENSITIVE_WORDS = new Set(['secret', 'secrets', 'password', 'passwords', '
 
 // The tools Escanor's MCP server exposes for discovery. They never change anything.
 const ESCANOR_READ_ONLY_TOOLS = new Set(['escanor_list_providers', 'escanor_connection_status', 'escanor_list_tools', 'escanor_usage_stats']);
+
+// Exact id, or a prefix when the pattern ends in `*` (and has something before it). Anything else does not match.
+export function mcpToolIdMatches(patterns: readonly string[] | undefined, toolId: string): boolean {
+  if (!toolId || !patterns) return false;
+  return patterns.some((p) => (p.length > 1 && p.endsWith('*') ? toolId.startsWith(p.slice(0, -1)) : p === toolId));
+}
 
 export function isReadOnlyMcpCall(tool: string, input: Record<string, unknown> | undefined): boolean {
   if (ESCANOR_READ_ONLY_TOOLS.has(tool)) return true;

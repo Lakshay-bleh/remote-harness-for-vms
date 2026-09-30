@@ -34,6 +34,10 @@ export function parseMcpOverride(raw: string | undefined): Omit<ManagedMcpServer
       // Fails closed: anything that changes something waits for a person, unless the entry explicitly says otherwise.
       autoAllow: o.autoAllow === true,
       autoAllowReads: o.autoAllowReads !== false,
+      // Only a list of well-formed tool ids counts; anything else is ignored, which leaves the entry stricter.
+      ...(Array.isArray(o.autoAllowTools)
+        ? { autoAllowTools: o.autoAllowTools.filter((t): t is string => typeof t === 'string' && /^[a-z0-9][a-z0-9_-]{0,39}\.(?:[a-z0-9_.-]{1,80}|[a-z0-9_.-]{0,79}\*)$/.test(t)).slice(0, 120) }
+        : {}),
       alwaysLoad: true,
       managedBy: 'override',
     };

@@ -72,3 +72,31 @@ test('without an override the hub decides, as before', async () => {
   assert.equal(state(m).sdkMcpConfig().escanor!.headers!.Authorization, 'Bearer workspace-standing-token');
   assert.equal(state(m).isAutoAllowedMcpTool('mcp__escanor__escanor_invoke', { tool_id: 'stripe.refund_charge' }), true);
 });
+
+test('tools a playbook names are approved ahead of time, for that tool id only, and nothing else changes', async () => {
+  const m = manager(
+    parseMcpOverride(JSON.stringify({ name: 'escanor', url: 'https://mcp.example/', token: 't', autoAllowTools: ['slack.post_message', 'linear.*', 'Bad Id', 7, '*', 'slack.'] })),
+  );
+  await m.setMcpServers([]);
+  const allowed = (tool: string, input: Record<string, unknown> = {}) => state(m).isAutoAllowedMcpTool(tool, input);
+  const invoke = (tool_id: unknown) => allowed('mcp__escanor__escanor_invoke', { tool_id, arguments: {} });
+  assert.equal(invoke('slack.post_message'), true);
+  assert.equal(invoke('slack.delete_message'), false, 'an exact id is exact');
+  assert.equal(invoke('linear.create_issue'), true, 'a trailing * is a prefix');
+  assert.equal(invoke('linearx.create_issue'), false, 'the prefix ends at the dot');
+  assert.equal(invoke('stripe.refund_charge'), false);
+  assert.equal(invoke(undefined), false);
+  assert.equal(invoke(['slack.post_message']), false);
+  // the list only applies to the invoke tool, and only on the entry that carries it
+  assert.equal(allowed('mcp__escanor__escanor_list_tools'), true);
+  assert.equal(allowed('mcp__other__escanor_invoke', { tool_id: 'slack.post_message' }), false);
+  assert.equal(allowed('mcp__escanor__slack.post_message', {}), false);
+});
+
+test('a list that is malformed leaves the entry as strict as before', () => {
+  const o = parseMcpOverride(JSON.stringify({ name: 'escanor', url: 'https://mcp.example/', token: 't', autoAllowTools: 'slack.post_message' }));
+  assert.equal(o?.autoAllowTools, undefined);
+  const p = parseMcpOverride(JSON.stringify({ name: 'escanor', url: 'https://mcp.example/', token: 't', autoAllowTools: ['*', 'x', 'a.b c'] }));
+  assert.deepEqual(p?.autoAllowTools, []);
+  assert.equal(parseMcpOverride(JSON.stringify({ name: 'escanor', url: 'https://mcp.example/', token: 't' }))?.autoAllowTools, undefined);
+});
