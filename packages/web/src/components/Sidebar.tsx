@@ -90,8 +90,8 @@ export default function Sidebar({ className, onSelectSession }: { className: str
 
   return (
     <div className={`${className} ${managed || embedded ? '' : 'safe-top'} w-full flex-col border-r border-hairline bg-surface-soft md:w-80`}>
-      {managed && <ScreenHeader title="Machines" />}
-      {!managed && <div className="flex items-center gap-2.5 px-5 pb-3 pt-5">
+      {(managed || embedded) && <ScreenHeader title="Machines" />}
+      {!managed && !embedded && <div className="flex items-center gap-2.5 px-5 pb-3 pt-5">
         <Logo size={32} />
         <h1 className="text-[15px] font-semibold tracking-tight text-ink">Escanor</h1>
       </div>}

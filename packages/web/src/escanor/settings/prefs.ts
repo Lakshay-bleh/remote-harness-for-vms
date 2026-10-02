@@ -80,6 +80,9 @@ export function applyPrefs(p: Prefs = current): void {
   if (typeof document !== 'undefined') document.documentElement.style.fontSize = `${TEXT_SIZE_PERCENT[p.textSize]}%`;
 }
 
+// Apply what was saved as the app starts, not only when it is changed: otherwise a chosen text size is lost on every restart.
+applyPrefs(current);
+
 export function setPrefs(patch: Partial<Prefs>): void {
   current = parsePrefs(JSON.stringify({ ...current, ...patch }));
   try {

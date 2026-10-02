@@ -22,10 +22,12 @@ function HubApp({ embedded = false, onBack }: { embedded?: boolean; onBack?: () 
 
   if (!state.authed) {
     return (
-      <div className="relative h-full">
-        <Login />
-        {onBack && <button onClick={onBack} className="absolute left-4 top-4 rounded-md px-3 py-2 text-sm text-muted hover:bg-surface-card">← Back to Escanor</button>}
-      </div>
+      <EmbeddedContext.Provider value={embedded}>
+        <div className="relative h-full">
+          <Login />
+          {onBack && <button onClick={onBack} className="absolute left-4 top-4 rounded-md px-3 py-2 text-sm text-muted hover:bg-surface-card">← Back to Escanor</button>}
+        </div>
+      </EmbeddedContext.Provider>
     );
   }
   return (

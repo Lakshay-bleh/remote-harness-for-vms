@@ -52,7 +52,7 @@ export default function SettingsView({ onGo }: { onGo: (to: 'computers' | 'machi
         </button>
 
         <Group>
-          <Row icon={<Wallet size={18} />} label="Plan and usage" value={u ? u.messages : undefined} onClick={() => setPage('usage')} />
+          <Row icon={<Wallet size={18} />} label="Plan and usage" sub={u?.messages} onClick={() => setPage('usage')} />
         </Group>
 
         <Group title="Preferences">

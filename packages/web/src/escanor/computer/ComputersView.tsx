@@ -17,7 +17,7 @@ export default function ComputersView() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <ScreenHeader title="Computers"><Button onClick={() => setPairing(true)}><Plus size={16} weight="bold" /> Add</Button></ScreenHeader>
+      <ScreenHeader title="Computers"><Button onClick={() => setPairing(true)} className="inline-flex items-center gap-1.5 whitespace-nowrap !px-4"><Plus size={16} weight="bold" /> Add</Button></ScreenHeader>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
         {computers.length === 0 ? (
           <div className="mx-auto max-w-sm py-14 text-center">

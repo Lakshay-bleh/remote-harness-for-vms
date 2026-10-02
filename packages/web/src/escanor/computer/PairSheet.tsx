@@ -20,7 +20,6 @@ type Way = 'code' | 'scan' | 'wifi';
  */
 export default function PairSheet({ onPaired, onClose }: { onPaired: (c: PairedComputer) => void; onClose: () => void }) {
   const [way, setWay] = useState<Way>('code');
-  const [why, setWhy] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [address, setAddress] = useState('');
   const [busy, setBusy] = useState(false);
@@ -51,7 +50,6 @@ export default function PairSheet({ onPaired, onClose }: { onPaired: (c: PairedC
     },
     [pair],
   );
-  const unavailable = useCallback((w: string) => (setWhy(w), setWay('code')), []);
 
   const submit = (mode: 'cloud' | 'lan') => {
     const entry = parseEntry(code);
@@ -64,13 +62,12 @@ export default function PairSheet({ onPaired, onClose }: { onPaired: (c: PairedC
       <p className="text-sm text-body">On your computer, open <b>Escanor Desktop</b>, go to <b>Phone</b> and choose <b>Pair a phone</b>. Then enter the code it shows. Both devices need to be signed in to the same Escanor account.</p>
       <div className="mt-4 space-y-3">
         {error && <Notice tone="error">{error}</Notice>}
-        {why && way === 'code' && <Notice>{why} You can type the code instead.</Notice>}
 
         {busy ? (
           <div className="flex items-center gap-3 py-8 text-sm text-muted"><Spinner /> {way === 'wifi' ? 'Connecting over your Wi-Fi…' : 'Finding your computer and pairing…'}</div>
         ) : way === 'scan' ? (
           <>
-            <QrScan onCode={scanned} onUnavailable={unavailable} />
+            <QrScan onCode={scanned} />
             <Button kind="quiet" className="w-full" onClick={() => setWay('code')}>Type the code instead</Button>
           </>
         ) : (
@@ -86,7 +83,7 @@ export default function PairSheet({ onPaired, onClose }: { onPaired: (c: PairedC
             )}
             <Button type="submit" className="w-full" disabled={!code.trim() || (way === 'wifi' && !address.trim())}>{way === 'wifi' ? 'Pair over Wi-Fi' : 'Pair'}</Button>
             <div className="flex flex-col gap-2 pt-1">
-              {way === 'code' && <Button kind="quiet" className="flex w-full items-center justify-center gap-2" onClick={() => { setError(null); setWhy(null); setWay('scan'); }}><Camera size={18} /> Scan the QR code instead</Button>}
+              {way === 'code' && <Button kind="quiet" className="flex w-full items-center justify-center gap-2" onClick={() => { setError(null); setWay('scan'); }}><Camera size={18} /> Scan the QR code instead</Button>}
               {way === 'code' ? (
                 <button type="button" onClick={() => { setError(null); setWay('wifi'); }} className="mx-auto flex items-center gap-1.5 py-1.5 text-[13px] text-muted transition hover:text-ink"><WifiHigh size={16} /> Computer on the same Wi-Fi? Pair locally</button>
               ) : (

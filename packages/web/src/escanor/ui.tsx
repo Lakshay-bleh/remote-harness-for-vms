@@ -135,9 +135,12 @@ export const GoogleIcon = ({ size = 17 }: { size?: number }) => (
 
 /** Both sign-in screens (Escanor and your own hub) share this frame: the form on the left, the eclipse on wide screens. */
 export function AuthShell({ title, subtitle, children, footer }: { title: string; subtitle: string; children: ReactNode; footer?: ReactNode }) {
+  // Inside the signed-in app (the hub's own sign-in on the Machines tab) the shell already owns the status bar and the tab bar, so
+  // this fills the space it is given instead of claiming the whole screen, which pushed the tab bar out of view.
+  const embedded = useContext(EmbeddedContext);
   return (
-    <main className="grid min-h-[100dvh] bg-canvas text-ink lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
-      <div className="safe-top relative flex min-h-[100dvh] flex-col px-6 pb-8 pt-8">
+    <main className={`grid bg-canvas text-ink lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] ${embedded ? 'h-full overflow-y-auto' : 'min-h-[100dvh]'}`}>
+      <div className={`relative flex flex-col px-6 pb-8 pt-8 ${embedded ? 'min-h-full' : 'safe-top min-h-[100dvh]'}`}>
         <Logo size={36} />
         <div className="mx-auto flex w-full max-w-[400px] flex-1 flex-col justify-center pb-10">
           <h1 className="text-2xl font-semibold tracking-tight text-ink">{title}</h1>

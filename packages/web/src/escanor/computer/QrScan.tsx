@@ -1,6 +1,6 @@
 import { Image as ImageIcon } from '@phosphor-icons/react';
 import { useEffect, useRef, useState } from 'react';
-import { Button, Notice } from '../ui';
+import { Notice } from '../ui';
 import { decodeQr } from './qr';
 
 const MAX_SIDE = 720; // frames are shrunk before decoding: faster, and a QR this size is still crisp
@@ -19,27 +19,27 @@ function readPixels(source: CanvasImageSource, w: number, h: number, canvas: HTM
  * Scans a QR code with the camera, and also from a photo of it. Frames are decoded in JavaScript, so it works in the Android app's
  * WebView. If the camera cannot start (permission refused, none present) the caller is told, and the photo option still works.
  */
-export default function QrScan({ onCode, onUnavailable }: { onCode: (text: string) => void; onUnavailable: (why: string) => void }) {
+export default function QrScan({ onCode }: { onCode: (text: string) => void }) {
   const video = useRef<HTMLVideoElement>(null);
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const [starting, setStarting] = useState(true);
   const [note, setNote] = useState<string | null>(null);
+  /** Why the camera is not running, if it is not. The photo option below still works, so the scanner stays open and says so. */
+  const [cameraProblem, setCameraProblem] = useState<string | null>(null);
   const onCodeRef = useRef(onCode);
   onCodeRef.current = onCode;
-  const onUnavailableRef = useRef(onUnavailable);
-  onUnavailableRef.current = onUnavailable;
 
   useEffect(() => {
     let stop = false;
     let stream: MediaStream | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
     (async () => {
-      if (!navigator.mediaDevices?.getUserMedia) return onUnavailableRef.current('This phone cannot use the camera here.');
+      if (!navigator.mediaDevices?.getUserMedia) return setCameraProblem('This phone cannot use the camera here.');
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
       } catch (e) {
         const denied = e instanceof DOMException && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
-        return onUnavailableRef.current(denied ? 'Camera access was not allowed. You can allow it in the phone’s settings for Escanor.' : 'The camera could not start.');
+        return setCameraProblem(denied ? 'Camera access was not allowed. You can allow it in the phone’s settings for Escanor.' : 'The camera could not start.');
       }
       const el = video.current;
       if (stop || !el) return stream.getTracks().forEach((t) => t.stop());
@@ -82,12 +82,16 @@ export default function QrScan({ onCode, onUnavailable }: { onCode: (text: strin
 
   return (
     <div className="space-y-3">
-      <div className="relative overflow-hidden rounded-lg border border-hairline bg-black">
-        <video ref={video} playsInline muted className="aspect-square w-full object-cover" />
-        {/* a frame to aim with */}
-        <div aria-hidden className="pointer-events-none absolute inset-[18%] rounded-2xl border-2 border-primary/80 shadow-[0_0_0_999px_rgba(0,0,0,0.35)]" />
-        {starting && <div className="absolute inset-0 flex items-center justify-center bg-black/70 p-3"><Notice>Starting the camera…</Notice></div>}
-      </div>
+      {cameraProblem ? (
+        <Notice tone="warn">{cameraProblem} You can still scan from a photo of the code, or type the code.</Notice>
+      ) : (
+        <div className="relative overflow-hidden rounded-lg border border-hairline bg-black">
+          <video ref={video} playsInline muted className="aspect-square w-full object-cover" />
+          {/* a frame to aim with */}
+          <div aria-hidden className="pointer-events-none absolute inset-[18%] rounded-2xl border-2 border-primary/80 shadow-[0_0_0_999px_rgba(0,0,0,0.35)]" />
+          {starting && <div className="absolute inset-0 flex items-center justify-center bg-black/70 p-3"><Notice>Starting the camera…</Notice></div>}
+        </div>
+      )}
       {note && <Notice tone="warn">{note}</Notice>}
       <label className="block">
         <input type="file" accept="image/*" className="sr-only" onChange={(e) => { void fromPhoto(e.target.files?.[0]); e.target.value = ''; }} />
