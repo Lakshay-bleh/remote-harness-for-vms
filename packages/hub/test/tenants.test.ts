@@ -39,7 +39,7 @@ const tmp = () => {
 after(() => dirs.forEach((d) => rmSync(d, { recursive: true, force: true })));
 
 let hub: Awaited<ReturnType<typeof startHub>>;
-const ADMIN = 'admin-secret';
+const ADMIN = 'admin-secret-for-tests-only-123456';
 const admin = { authorization: `Bearer ${ADMIN}`, ...json };
 type Tenant = { id: string; agentToken: string; apiToken: string };
 let A: Tenant, B: Tenant;
@@ -194,10 +194,12 @@ test('MCP servers and tokens are per tenant, and pushes only reach that tenant',
   assert.deepEqual(bOverview.servers, []);
   assert.ok(!JSON.stringify(bOverview).includes('a-secret'));
 
-  const created = await (await fetch(`${hub.url}/api/tokens`, { method: 'POST', headers: bearer(A.apiToken), body: JSON.stringify({ label: 'extra' }) })).json();
+  // An API token cannot mint further tokens (only a signed-in session can), so the tenant's own token is the one to look for.
+  assert.equal((await fetch(`${hub.url}/api/tokens`, { method: 'POST', headers: bearer(A.apiToken), body: JSON.stringify({ label: 'extra' }) })).status, 403);
   const aTokens = await (await fetch(`${hub.url}/api/tokens`, { headers: bearer(A.apiToken) })).json();
   const bTokens = await (await fetch(`${hub.url}/api/tokens`, { headers: bearer(B.apiToken) })).json();
-  assert.ok(aTokens.some((t: any) => t.id === created.id));
+  assert.ok(aTokens.length >= 1);
+  const created = aTokens[0];
   assert.ok(!bTokens.some((t: any) => t.id === created.id));
   assert.equal((await fetch(`${hub.url}/api/tokens/${created.id}`, { method: 'DELETE', headers: bearer(B.apiToken) })).status, 404, "B cannot revoke A's token");
   a.ws.close();
@@ -207,8 +209,8 @@ test('MCP servers and tokens are per tenant, and pushes only reach that tenant',
 test('a browser socket only hears about its own tenant', async () => {
   const heardA: any[] = [];
   const heardB: any[] = [];
-  const wa = new WebSocket(`ws://127.0.0.1:${hub.port}/ws?token=${A.apiToken}`);
-  const wb = new WebSocket(`ws://127.0.0.1:${hub.port}/ws?token=${B.apiToken}`);
+  const wa = new WebSocket(`ws://127.0.0.1:${hub.port}/ws`, ['escanor.hub.v1', `escanor.auth.${A.apiToken}`]);
+  const wb = new WebSocket(`ws://127.0.0.1:${hub.port}/ws`, ['escanor.hub.v1', `escanor.auth.${B.apiToken}`]);
   wa.on('message', (d) => heardA.push(JSON.parse(d.toString())));
   wb.on('message', (d) => heardB.push(JSON.parse(d.toString())));
   await Promise.all([new Promise((r) => wa.on('open', r)), new Promise((r) => wb.on('open', r))]);
@@ -217,7 +219,7 @@ test('a browser socket only hears about its own tenant', async () => {
   await settle();
   assert.ok(heardB.some((m) => m.type === 'vm_status' && m.name === 'ws-b'));
   assert.deepEqual(heardA.filter((m) => m.name === 'ws-b'), [], 'A never heard about B');
-  const bad = new WebSocket(`ws://127.0.0.1:${hub.port}/ws?token=${A.agentToken}`);
+  const bad = new WebSocket(`ws://127.0.0.1:${hub.port}/ws`, ['escanor.hub.v1', `escanor.auth.${A.agentToken}`]);
   assert.equal(await new Promise((r) => { bad.on('error', () => r('refused')); bad.on('open', () => r('open')); }), 'refused');
   wa.close();
   wb.close();

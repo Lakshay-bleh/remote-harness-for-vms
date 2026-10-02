@@ -1,8 +1,10 @@
-import { randomUUID } from 'node:crypto';
-import { resolve, relative, isAbsolute } from 'node:path';
-import { query, type McpServerConfig, type Options, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
-import { isReadOnlyMcpCall, mcpToolIdMatches } from '@remote-harness/shared';
+import { query as sdkQuery, type McpServerConfig, type Options, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import { isValidMcpServerName } from '@remote-harness/shared';
 import { isSandboxAutoAllowed } from './sandboxPolicy.js';
+import { isAutoAllowedMcpTool } from './mcpApproval.js';
+import { childEnv } from './childEnv.js';
+import { PermissionBroker } from './permissions.js';
+import { resolveInside } from './paths.js';
 import type {
   AgentMcpServerStatus,
   AgentSessionSummary,
@@ -50,10 +52,6 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-type PendingPermission = {
-  resolve: (decision: { behavior: PermissionDecision; message?: string }) => void;
-};
-
 function toUserMessage(text: string, images: ImageAttachment[] | undefined): SDKUserMessage {
   const content: Array<Record<string, unknown>> = [];
   if (text) content.push({ type: 'text', text });
@@ -77,7 +75,7 @@ function titleFrom(text: string): string {
 
 export class SessionManager {
   private live = new Map<string, LiveSession>();
-  private pendingPermissions = new Map<string, PendingPermission>();
+  private permissions: PermissionBroker;
   private registry: SessionRegistry;
   // The hub's declarative set of MCP servers. Every session, new or already running, is made to match it.
   private mcpServers = new Map<string, ManagedMcpServer>();
@@ -90,9 +88,20 @@ export class SessionManager {
     dataDir: string,
     private profiles: ClaudeProfile[],
     private send: (msg: AgentToHubMessage) => void,
-    private opts: { managed?: boolean; guide?: string; mcpOverride?: Omit<ManagedMcpServer, 'updatedAt'> | null } = {},
+    private opts: {
+      managed?: boolean;
+      guide?: string;
+      mcpOverride?: Omit<ManagedMcpServer, 'updatedAt'> | null;
+      /** Directories the sandbox policy never lets the assistant change on its own (the agent's code, data and .env). */
+      protectedPaths?: string[];
+      /** Hosts WebFetch may reach without a card in a managed worker. */
+      fetchAllow?: string[];
+      /** The SDK's query(); injectable so tests can see exactly what a session is started with. */
+      query?: typeof sdkQuery;
+    } = {},
   ) {
     this.registry = new SessionRegistry(dataDir);
+    this.permissions = new PermissionBroker((msg) => this.send(msg));
     // Present from the first session on, before the hub has pushed anything.
     if (opts.mcpOverride) this.mcpServers.set(opts.mcpOverride.name, { ...opts.mcpOverride, updatedAt: new Date().toISOString() });
   }
@@ -113,10 +122,8 @@ export class SessionManager {
   }
 
   private resolveCwd(requested: string | undefined): string {
-    const candidate = resolve(this.workspaceRoot, requested || '.');
-    const rel = relative(this.workspaceRoot, candidate);
-    const inside = rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
-    return inside ? candidate : this.workspaceRoot;
+    // Symlink-aware: a link inside the workspace pointing outside it does not make the outside part of the workspace.
+    return resolveInside(this.workspaceRoot, requested);
   }
 
   // ---------- hub-managed MCP servers ----------
@@ -136,22 +143,9 @@ export class SessionManager {
     return out;
   }
 
-  // Approval is decided per call, here, from the *current* set -- not baked into the session as an
-  // `allowedTools` rule at start. A start-time rule cannot be withdrawn from a running session, so
-  // turning auto-approve off would have kept approving in every chat already open. Deciding per call
-  // makes both directions take effect immediately, and fails closed: if this ever stops being reached
-  // (e.g. in "Don't ask" mode, which denies whatever is not pre-approved) the tool is denied, not run.
+  // Decided per call, from the *current* set (see mcpApproval.ts), so turning auto-approve off takes effect in chats already open.
   private isAutoAllowedMcpTool(toolName: string, input: Record<string, unknown>): boolean {
-    for (const s of this.mcpServers.values()) {
-      const prefix = `mcp__${s.name}__`;
-      if (!toolName.startsWith(prefix)) continue;
-      if (s.autoAllow !== false) return true;
-      // Not blanket-approved, but calls that only read may still go through without a card.
-      if (s.autoAllowReads && isReadOnlyMcpCall(toolName.slice(prefix.length), input)) return true;
-      // A playbook's own tools: named by the operator ahead of time, so no card.
-      if (s.autoAllowTools?.length && toolName.slice(prefix.length) === 'escanor_invoke' && mcpToolIdMatches(s.autoAllowTools, typeof input?.tool_id === 'string' ? input.tool_id : '')) return true;
-    }
-    return false;
+    return isAutoAllowedMcpTool(this.mcpServers.values(), toolName, input);
   }
 
   /** Replace the managed MCP servers and make every running session match, without restarting it. */
@@ -159,7 +153,7 @@ export class SessionManager {
     const next = new Map<string, ManagedMcpServer>();
     for (const s of servers) {
       // The hub validates already; a bad entry here must never reach a session's config.
-      if (/^https?:\/\//.test(s.url) && /^[a-z0-9][a-z0-9_-]{0,31}$/.test(s.name)) next.set(s.name, s);
+      if (/^https?:\/\//.test(s.url) && isValidMcpServerName(s.name)) next.set(s.name, s);
     }
     // This machine's own entry wins over the hub's of the same name, and is never dropped by a push that omits it.
     if (this.opts.mcpOverride) next.set(this.opts.mcpOverride.name, { ...this.opts.mcpOverride, updatedAt: new Date().toISOString() });
@@ -240,6 +234,16 @@ export class SessionManager {
       live.queue.push(toUserMessage(input.text, input.images));
       return;
     }
+    // Without a tempId this is a resume. If this VM has no record of the session, starting one would create a conversation
+    // the hub never learns about (no session_created is sent) and silently drop the history.
+    if (!input.tempId && !this.registry.get(input.sessionId)) {
+      this.send({
+        type: 'error',
+        sessionId: input.sessionId,
+        message: `Unknown session ${input.sessionId}: this VM has no record of it, so no new conversation was started.`,
+      });
+      return;
+    }
     this.startSession(input);
   }
 
@@ -260,14 +264,17 @@ export class SessionManager {
       // Session config is built from the *current* managed set, so a chat opened after the hub
       // changed it gets the change with no restart.
       mcpServers: this.sdkMcpConfig(),
+      // Only the servers above. Without this the CLI also loads a project's own .mcp.json, and a repo that declares a server
+      // called "escanor" would inherit the approvals meant for the real one (approval is decided by name).
+      strictMcpConfig: true,
       canUseTool: async (toolName, toolInput, opts) => {
         if (this.isAutoAllowedMcpTool(toolName, toolInput)) return { behavior: 'allow' as const, updatedInput: toolInput };
         // A managed worker is a sandbox: local work runs freely, so the assistant can edit, run and fix in a loop.
-        if (this.opts.managed && isSandboxAutoAllowed(toolName, toolInput, { root: this.workspaceRoot })) {
+        if (this.opts.managed && isSandboxAutoAllowed(toolName, toolInput, { root: this.workspaceRoot, protectedPaths: this.opts.protectedPaths, fetchAllow: this.opts.fetchAllow })) {
           return { behavior: 'allow' as const, updatedInput: toolInput };
         }
-        const decision = await this.requestPermission(
-          () => resolvedSessionId,
+        const decision = await this.permissions.request(
+          resolvedSessionId || tempId || '',
           toolName,
           toolInput,
           opts.blockedPath,
@@ -280,9 +287,10 @@ export class SessionManager {
     };
     if (this.opts.guide) options.systemPrompt = { type: 'preset', preset: 'claude_code', append: this.opts.guide };
     if (isResume) options.resume = input.sessionId;
-    if (profile.configDir) options.env = { ...process.env, CLAUDE_CONFIG_DIR: profile.configDir };
+    // Always built here: the Claude process runs model-chosen shell commands, so it must not inherit the hub credentials.
+    options.env = childEnv(process.env, profile.configDir ? { CLAUDE_CONFIG_DIR: profile.configDir } : {});
 
-    const q = query({ prompt: queue, options });
+    const q = (this.opts.query ?? sdkQuery)({ prompt: queue, options });
     queue.push(toUserMessage(input.text, input.images));
 
     const liveKey = tempId ?? input.sessionId;
@@ -372,6 +380,8 @@ export class SessionManager {
       });
     } finally {
       const sessionId = ctx.getSessionId();
+      // Cards still waiting for an answer belong to a session that no longer exists: deny them and drop the entries.
+      for (const key of new Set([sessionId, ctx.tempId, ctx.liveKey])) if (key) this.permissions.dropSession(key);
       this.live.delete(ctx.liveKey);
       if (sessionId) this.live.delete(sessionId);
       this.mcpSessionStatus.delete(ctx.session);
@@ -380,31 +390,8 @@ export class SessionManager {
     }
   }
 
-  private requestPermission(
-    getSessionId: () => string,
-    toolName: string,
-    input: Record<string, unknown>,
-    blockedPath: string | undefined,
-    signal: AbortSignal,
-  ): Promise<{ behavior: PermissionDecision; message?: string }> {
-    const requestId = randomUUID();
-    const sessionId = getSessionId();
-    this.send({ type: 'permission_request', sessionId, requestId, toolName, input, blockedPath });
-    return new Promise((resolve) => {
-      this.pendingPermissions.set(requestId, { resolve });
-      signal.addEventListener('abort', () => {
-        if (this.pendingPermissions.delete(requestId)) {
-          resolve({ behavior: 'deny', message: 'Interrupted' });
-        }
-      });
-    });
-  }
-
   resolvePermission(requestId: string, behavior: PermissionDecision, message?: string): void {
-    const pending = this.pendingPermissions.get(requestId);
-    if (!pending) return;
-    this.pendingPermissions.delete(requestId);
-    pending.resolve({ behavior, message });
+    this.permissions.resolve(requestId, behavior, message);
   }
 
   interrupt(sessionId: string): void {

@@ -102,7 +102,11 @@ test('the assistant briefing reaches the model in the system prompt', async () =
 // branch, and only then asks before publishing it and before opening the pull request.
 test('the assistant works a whole fix loop: reads, edits, runs, iterates, and asks only before publishing', async () => {
   const dir = join(root, 'loop');
-  const remote = join(dir, 'remote.git');
+  const work = join(dir, 'work');
+  mkdirSync(work, { recursive: true });
+  // The "remote" lives inside the workspace here: a real one is a URL on the git proxy, and cloning from a path outside the
+  // workspace is (rightly) something the policy asks about.
+  const remote = join(work, 'remote.git');
   const seed = join(dir, 'seed');
   const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd, stdio: 'pipe' }).toString();
   mkdirSync(seed, { recursive: true });
@@ -114,8 +118,6 @@ test('the assistant works a whole fix loop: reads, edits, runs, iterates, and as
   git(dir, 'clone', '-q', '--bare', seed, remote);
   const mainBefore = git(remote, 'rev-parse', 'main').trim();
 
-  const work = join(dir, 'work');
-  mkdirSync(work, { recursive: true });
   const h = harness({ managed: true });
   // harness() uses its own directory as the workspace; build the manager on ours instead.
   const out: AgentToHubMessage[] = [];
@@ -157,7 +159,7 @@ test('the assistant works a whole fix loop: reads, edits, runs, iterates, and as
   assert.ok(results() >= 1, 'the loop finished');
 
   // Everything local and every read ran without a card; exactly the two things that leave the sandbox asked.
-  assert.deepEqual(asked.map((a) => a.tool), ['Bash', 'mcp__escanor__escanor_invoke']);
+  assert.deepEqual(asked.map((a) => a.tool), ['Bash', 'mcp__escanor__escanor_invoke'], `asked about: ${JSON.stringify(asked.map((a) => a.input.command ?? a.input.tool_id ?? a.input))}`);
   assert.match(asked[0].input.command, /git push/);
   assert.equal(asked[1].input.tool_id, 'github.create_pull_request');
   // The assistant looked at what was connected and read the real error first.

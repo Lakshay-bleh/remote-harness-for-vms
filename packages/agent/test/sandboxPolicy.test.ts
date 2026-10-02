@@ -6,7 +6,9 @@ const root = '/data/work';
 const ok = (tool: string, input: Record<string, unknown> = {}) => isSandboxAutoAllowed(tool, input, { root });
 
 test('local reading and searching never asks', () => {
-  for (const tool of ['Read', 'Glob', 'Grep', 'LS', 'TodoWrite', 'Task', 'WebFetch', 'WebSearch']) assert.equal(ok(tool, {}), true, tool);
+  // WebFetch is not here: it is a network channel and needs an allow-listed host (see sandboxPolicy.hardening.test.ts).
+  for (const tool of ['Read', 'Glob', 'Grep', 'LS', 'TodoWrite', 'Task', 'WebSearch']) assert.equal(ok(tool, {}), true, tool);
+  assert.equal(ok('WebFetch', {}), false);
 });
 
 test('editing inside the workspace is free, outside it asks', () => {

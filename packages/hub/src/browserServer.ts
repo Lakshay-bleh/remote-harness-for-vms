@@ -3,19 +3,35 @@ import { WebSocketServer, WebSocket } from 'ws';
 import type { HubToBrowserMessage } from '@remote-harness/shared';
 import type { Db, MachineScope } from './db.js';
 
-export function createBrowserServer(db: Db) {
-  const wss = new WebSocketServer({ noServer: true, handleProtocols: p => p.has('escanor.hub.v1') ? 'escanor.hub.v1' : false });
+export type BrowserServerOptions = {
+  // The /ws?token= form puts the credential in the URL, which proxies and CDNs log. Only for old clients, and off by default.
+  allowQueryToken?: boolean;
+};
+
+export function createBrowserServer(db: Db, opts: BrowserServerOptions = {}) {
+  const wss = new WebSocketServer({
+    noServer: true,
+    // A browser only ever sends a 4-byte "ping"; anything large is abuse.
+    maxPayload: 16 * 1024,
+    handleProtocols: p => p.has('escanor.hub.v1') ? 'escanor.hub.v1' : false,
+  });
   function requestToken(req: IncomingMessage): string {
     const value = (req.headers['sec-websocket-protocol'] ?? '').split(',').map(v => v.trim()).find(v => v.startsWith('escanor.auth.'));
-    return value ? value.slice('escanor.auth.'.length) : new URL(req.url ?? '', 'http://localhost').searchParams.get('token') ?? '';
+    if (value) return value.slice('escanor.auth.'.length);
+    return opts.allowQueryToken ? new URL(req.url ?? '', 'http://localhost').searchParams.get('token') ?? '' : '';
   }
   const credentials = new WeakMap<WebSocket, string>();
-  const valid = (ws: WebSocket) => Boolean(db.tenantForApiToken(credentials.get(ws) ?? '') || db.machineForApiToken(credentials.get(ws) ?? ''));
+  // A token limited to MCP management has no business receiving every transcript the hub broadcasts.
+  const streamable = (token: string) => {
+    const c = db.credentialForApiToken(token);
+    return c !== null && c.scope === 'full';
+  };
+  const valid = (ws: WebSocket) => streamable(credentials.get(ws) ?? '') || Boolean(db.machineForApiToken(credentials.get(ws) ?? ''));
 
   function authorizeScoped(req: IncomingMessage): { tenantId: string; machine?: MachineScope } | null {
     const token = requestToken(req);
-    const tenantId = db.tenantForApiToken(token);
-    if (tenantId) return { tenantId };
+    const cred = db.credentialForApiToken(token);
+    if (cred) return cred.scope === 'full' ? { tenantId: cred.tenantId } : null;
     const machine = db.machineForApiToken(token);
     return machine ? { tenantId: machine.tenantId, machine } : null;
   }
@@ -31,6 +47,7 @@ export function createBrowserServer(db: Db) {
     }
     credentials.set(ws, requestToken(req));
     clients.set(ws, auth);
+    ws.on('error', (err) => console.error('[browser] socket error:', err.message));
     if (auth.machine) {
       const timer = setTimeout(() => ws.close(1008, 'credential expired'), Math.max(0, Date.parse(auth.machine.expiresAt) - Date.now()));
       ws.on('close', () => clearTimeout(timer));

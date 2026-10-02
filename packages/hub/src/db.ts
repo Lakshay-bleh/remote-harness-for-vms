@@ -1,8 +1,10 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { chmodSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import type { AgentMcpStatus, ApiTokenDto, ClaudeAccount, ManagedMcpServer, MessageDto, SessionDto, VmDto } from '@remote-harness/shared';
+import type { AgentMcpStatus, ApiTokenDto, ApiTokenScope, ClaudeAccount, ManagedMcpServer, MessageDto, SessionDto, VmDto } from '@remote-harness/shared';
+import { redactSecrets } from '@remote-harness/shared/validate';
+import { deriveKey, isSealed, open as unseal, seal } from './secretbox.js';
 
 // Everything a hub stores belongs to a tenant. A hub run the classic way has exactly one, 'default',
 // whose credentials are HUB_AGENT_TOKEN and APP_PASSWORD. A hub that also sets HUB_ADMIN_TOKEN can
@@ -13,7 +15,14 @@ export const DEFAULT_TENANT = 'default';
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 const sessionDigest = (s: string) => `sha256:${sha256(s)}`;
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+// A token minted for an integration is long-lived on purpose (it must keep working after the browser signs out),
+// but not forever: it expires unless the caller picks another lifetime.
+export const DEFAULT_API_TOKEN_TTL_SECONDS = 365 * 24 * 60 * 60;
+export const DEFAULT_MESSAGE_LIMIT = 2000;
 const newSecret = () => randomBytes(32).toString('base64url');
+
+/** Who a bearer token is: a browser login, or a purpose-built API token (with the scope it was issued for). */
+export type Credential = { tenantId: string; kind: 'login' | 'api'; scope: ApiTokenScope };
 
 export type TenantDto = { id: string; label: string; createdAt: string };
 
@@ -65,9 +74,21 @@ function migrate(db: DatabaseSync) {
   }
 }
 
-export function openDb(dataDir: string) {
-  mkdirSync(dataDir, { recursive: true });
-  const db = new DatabaseSync(join(dataDir, 'hub.sqlite'));
+export type DbOptions = {
+  /** When set, MCP server configs (which hold credentials) are stored AES-GCM encrypted under a key derived from this. */
+  encryptionKey?: string;
+};
+
+export function openDb(dataDir: string, opts: DbOptions = {}) {
+  mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  chmodSync(dataDir, 0o700);
+  const dbPath = join(dataDir, 'hub.sqlite');
+  const db = new DatabaseSync(dbPath);
+  chmodSync(dbPath, 0o600); // transcripts, permission inputs and credentials live here: owner-only
+  // WAL + synchronous=NORMAL commits without an fsync per write, so the synchronous insert for every streamed agent
+  // message does not stall the event loop.
+  db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000;');
+  const key = opts.encryptionKey ? deriveKey(opts.encryptionKey) : null;
 
   // Tables that predate tenants are created in their old shape first, so `migrate` has one path to handle.
   db.exec(`
@@ -158,6 +179,14 @@ export function openDb(dataDir: string) {
     `);
   }
   migrate(db);
+  if (!hasColumn(db, 'api_tokens', 'scope')) db.exec("ALTER TABLE api_tokens ADD COLUMN scope TEXT NOT NULL DEFAULT 'full'");
+  // NULL = no expiry: tokens issued before expiry existed keep working until revoked.
+  if (!hasColumn(db, 'api_tokens', 'expires_at')) db.exec('ALTER TABLE api_tokens ADD COLUMN expires_at TEXT');
+  if (key) {
+    for (const row of db.prepare('SELECT tenant_id, name, config_json FROM mcp_servers').all() as { tenant_id: string; name: string; config_json: string }[]) {
+      if (!isSealed(row.config_json)) db.prepare('UPDATE mcp_servers SET config_json = ? WHERE tenant_id = ? AND name = ?').run(seal(key, row.config_json), row.tenant_id, row.name);
+    }
+  }
   for (const table of ['auth_tokens', 'api_tokens']) {
     for (const row of db.prepare(`SELECT token FROM ${table}`).all() as { token: string }[]) {
       if (!row.token.startsWith('sha256:')) db.prepare(`UPDATE ${table} SET token = ? WHERE token = ?`).run(sessionDigest(row.token), row.token);
@@ -222,15 +251,19 @@ export function openDb(dataDir: string) {
           `INSERT INTO sessions (id, tenant_id, vm_id, cwd, title, created_at, last_message_at, status, account_id)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET status = excluded.status, last_message_at = excluded.last_message_at
-           WHERE sessions.tenant_id = excluded.tenant_id`,
+           WHERE sessions.tenant_id = excluded.tenant_id AND sessions.vm_id = excluded.vm_id`,
         ).run(s.id, t, s.vmId, s.cwd, s.title, now, now, s.status, s.accountId);
       },
 
-      touchSession(id: string, status?: string): void {
+      // vmId scopes the update to the owning VM, so one agent (or machine credential) can't touch another VM's session.
+      touchSession(id: string, status?: string, vmId?: string): void {
+        const now = new Date().toISOString();
+        const scope = vmId ? ' AND vm_id = ?' : '';
+        const extra = vmId ? [vmId] : [];
         if (status) {
-          db.prepare('UPDATE sessions SET last_message_at = ?, status = ? WHERE tenant_id = ? AND id = ?').run(new Date().toISOString(), status, t, id);
+          db.prepare(`UPDATE sessions SET last_message_at = ?, status = ? WHERE tenant_id = ? AND id = ?${scope}`).run(now, status, t, id, ...extra);
         } else {
-          db.prepare('UPDATE sessions SET last_message_at = ? WHERE tenant_id = ? AND id = ?').run(new Date().toISOString(), t, id);
+          db.prepare(`UPDATE sessions SET last_message_at = ? WHERE tenant_id = ? AND id = ?${scope}`).run(now, t, id, ...extra);
         }
       },
 
@@ -247,15 +280,15 @@ export function openDb(dataDir: string) {
         const createdAt = new Date().toISOString();
         const result = db
           .prepare('INSERT INTO messages (tenant_id, session_id, vm_id, payload, created_at) VALUES (?, ?, ?, ?, ?)')
-          .run(t, m.sessionId, m.vmId, JSON.stringify(m.message), createdAt);
+          .run(t, m.sessionId, m.vmId, JSON.stringify(redactSecrets(m.message)), createdAt);
         return { id: Number(result.lastInsertRowid), sessionId: m.sessionId, vmId: m.vmId, message: m.message, createdAt };
       },
 
       // A new chat starts under a temporary id and is re-keyed to Claude's real session id once it exists.
       // The alias is kept so a caller that only ever learned the temporary id (a backend, a script) can keep
       // using it: every session route resolves it.
-      rekeySession(oldId: string, newId: string): void {
-        db.prepare('UPDATE messages SET session_id = ? WHERE tenant_id = ? AND session_id = ?').run(newId, t, oldId);
+      rekeySession(oldId: string, newId: string, vmId: string): void {
+        db.prepare('UPDATE messages SET session_id = ? WHERE tenant_id = ? AND session_id = ? AND vm_id = ?').run(newId, t, oldId, vmId);
         if (oldId !== newId) {
           db.prepare(
             `INSERT INTO session_aliases (tenant_id, old_id, new_id) VALUES (?, ?, ?)
@@ -269,12 +302,18 @@ export function openDb(dataDir: string) {
         return row?.newId ?? id;
       },
 
-      listMessages(sessionId: string): MessageDto[] {
+      // The most recent `limit` messages, oldest first. Scoped to the VM when given, so a session id that belongs to
+      // another machine yields nothing.
+      listMessages(sessionId: string, limit = DEFAULT_MESSAGE_LIMIT, vmId?: string): MessageDto[] {
+        const scope = vmId ? ' AND vm_id = ?' : '';
+        const params: (string | number)[] = [t, sessionId, ...(vmId ? [vmId] : []), limit];
         const rows = db
           .prepare(
-            'SELECT id, session_id as sessionId, vm_id as vmId, payload, created_at as createdAt FROM messages WHERE tenant_id = ? AND session_id = ? ORDER BY id ASC',
+            `SELECT id, session_id as sessionId, vm_id as vmId, payload, created_at as createdAt FROM (
+               SELECT * FROM messages WHERE tenant_id = ? AND session_id = ?${scope} ORDER BY id DESC LIMIT ?
+             ) ORDER BY id ASC`,
           )
-          .all(t, sessionId) as { id: number; sessionId: string; vmId: string; payload: string; createdAt: string }[];
+          .all(...params) as { id: number; sessionId: string; vmId: string; payload: string; createdAt: string }[];
         return rows.map((r) => ({ id: r.id, sessionId: r.sessionId, vmId: r.vmId, createdAt: r.createdAt, message: JSON.parse(r.payload) }));
       },
 
@@ -291,20 +330,30 @@ export function openDb(dataDir: string) {
         return a + b > 0;
       },
 
-      createApiToken(label: string): { id: string; token: string; label: string; createdAt: string } {
-        const created = { id: randomUUID(), token: randomUUID() + randomUUID(), label, createdAt: new Date().toISOString() };
-        db.prepare('INSERT INTO api_tokens (id, token, label, created_at, tenant_id) VALUES (?, ?, ?, ?, ?)').run(
+      createApiToken(
+        label: string,
+        opts: { scope?: ApiTokenScope; ttlSeconds?: number } = {},
+      ): { id: string; token: string; label: string; createdAt: string; scope: ApiTokenScope; expiresAt: string | null } {
+        const scope: ApiTokenScope = opts.scope ?? 'full';
+        const now = Date.now();
+        const expiresAt = new Date(now + (opts.ttlSeconds ?? DEFAULT_API_TOKEN_TTL_SECONDS) * 1000).toISOString();
+        const created = { id: randomUUID(), token: randomUUID() + randomUUID(), label, createdAt: new Date(now).toISOString(), scope, expiresAt };
+        db.prepare('INSERT INTO api_tokens (id, token, label, created_at, tenant_id, scope, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
           created.id,
           sessionDigest(created.token),
           created.label,
           created.createdAt,
           t,
+          scope,
+          expiresAt,
         );
         return created;
       },
 
       listApiTokens(): ApiTokenDto[] {
-        return db.prepare('SELECT id, label, created_at as createdAt FROM api_tokens WHERE tenant_id = ? ORDER BY created_at DESC').all(t) as never;
+        return db
+          .prepare('SELECT id, label, created_at as createdAt, scope, expires_at as expiresAt FROM api_tokens WHERE tenant_id = ? ORDER BY created_at DESC')
+          .all(t) as never;
       },
 
       deleteApiToken(id: string): boolean {
@@ -324,16 +373,31 @@ export function openDb(dataDir: string) {
       },
 
       listMcpServers(): ManagedMcpServer[] {
-        const rows = db.prepare('SELECT config_json as configJson FROM mcp_servers WHERE tenant_id = ? ORDER BY name').all(t) as { configJson: string }[];
-        return rows.map((r) => JSON.parse(r.configJson) as ManagedMcpServer);
+        const rows = db.prepare('SELECT name, config_json as configJson FROM mcp_servers WHERE tenant_id = ? ORDER BY name').all(t) as { name: string; configJson: string }[];
+        const out: ManagedMcpServer[] = [];
+        for (const r of rows) {
+          try {
+            if (isSealed(r.configJson)) {
+              if (!key) throw new Error('no encryption key configured');
+              out.push(JSON.parse(unseal(key, r.configJson)) as ManagedMcpServer);
+            } else {
+              out.push(JSON.parse(r.configJson) as ManagedMcpServer);
+            }
+          } catch (err) {
+            // e.g. HUB_ENCRYPTION_KEY / HUB_AGENT_TOKEN was rotated: skip rather than break every push. Re-save the server.
+            console.error(`[db] cannot read MCP server "${r.name}" (${err instanceof Error ? err.message : err}); skipping it`);
+          }
+        }
+        return out;
       },
 
       putMcpServer(server: Omit<ManagedMcpServer, 'updatedAt'>): ManagedMcpServer {
         const stored: ManagedMcpServer = { ...server, updatedAt: new Date().toISOString() };
+        const json = JSON.stringify(stored);
         db.prepare(
           `INSERT INTO mcp_servers (tenant_id, name, config_json, updated_at) VALUES (?, ?, ?, ?)
            ON CONFLICT(tenant_id, name) DO UPDATE SET config_json = excluded.config_json, updated_at = excluded.updated_at`,
-        ).run(t, stored.name, JSON.stringify(stored), stored.updatedAt);
+        ).run(t, stored.name, key ? seal(key, json) : json, stored.updatedAt);
         return stored;
       },
 
@@ -368,14 +432,20 @@ export function openDb(dataDir: string) {
 
     // ---- who does a credential belong to? ----
 
-    tenantForApiToken(token: string): string | null {
+    /** What a bearer token is and what it may do, or null when it is unknown, expired or revoked. */
+    credentialForApiToken(token: string): Credential | null {
       if (!token || token.length > 512) return null;
       const digest = sessionDigest(token);
       const a = db.prepare('SELECT tenant_id as t, created_at FROM auth_tokens WHERE token = ?').get(digest) as { t: string; created_at: string } | undefined;
       const age = a ? Date.now() - Date.parse(a.created_at) : NaN;
-      if (a && Number.isFinite(age) && age >= 0 && age < SESSION_MAX_AGE_MS) return a.t;
-      const b = db.prepare('SELECT tenant_id as t FROM api_tokens WHERE token = ?').get(digest) as { t: string } | undefined;
-      return b?.t ?? null;
+      if (a && Number.isFinite(age) && age >= 0 && age < SESSION_MAX_AGE_MS) return { tenantId: a.t, kind: 'login', scope: 'full' };
+      const b = db.prepare('SELECT tenant_id as t, scope, expires_at as exp FROM api_tokens WHERE token = ?').get(digest) as { t: string; scope: ApiTokenScope; exp: string | null } | undefined;
+      if (!b || (b.exp && b.exp <= new Date().toISOString())) return null;
+      return { tenantId: b.t, kind: 'api', scope: b.scope === 'mcp' ? 'mcp' : 'full' };
+    },
+
+    tenantForApiToken(token: string): string | null {
+      return this.credentialForApiToken(token)?.tenantId ?? null;
     },
 
     // ---- credentials for one machine ----

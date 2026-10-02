@@ -1,6 +1,7 @@
-import { hostname } from 'node:os';
+import { homedir, hostname } from 'node:os';
 import { resolve } from 'node:path';
-import type { ManagedMcpServer } from '@remote-harness/shared';
+import { isValidMcpServerName, type ManagedMcpServer } from '@remote-harness/shared';
+import { workspaceRootFrom } from './paths.js';
 
 function required(name: string): string {
   const v = process.env[name];
@@ -8,7 +9,8 @@ function required(name: string): string {
   return v;
 }
 
-const workspaceRoot = resolve(process.env.WORKSPACE_ROOT || process.env.HOME || '/');
+// Throws rather than defaulting to "/" when neither WORKSPACE_ROOT nor HOME is set.
+const workspaceRoot = workspaceRootFrom(process.env);
 
 // Set by the Escanor worker container: this agent runs in a sandbox, so its local tools need no approval.
 const managed = process.env.ESCANOR_MANAGED === '1';
@@ -26,7 +28,7 @@ export function parseMcpOverride(raw: string | undefined): Omit<ManagedMcpServer
     const name = typeof o.name === 'string' ? o.name : '';
     const url = typeof o.url === 'string' ? o.url : '';
     const token = typeof o.token === 'string' ? o.token : '';
-    if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(name) || !/^https?:\/\//.test(url) || !token) return null;
+    if (!isValidMcpServerName(name) || !/^https?:\/\//.test(url) || !token) return null;
     return {
       name,
       url,
@@ -63,5 +65,10 @@ export const config = {
   // under WORKSPACE_ROOT but your actual projects are under ~/projects).
   projectsRoot: resolve(process.env.PROJECTS_ROOT || workspaceRoot),
   dataDir: resolve(process.env.DATA_DIR || './data'),
-  profilesDir: resolve(process.env.PROFILES_DIR || `${process.env.HOME}/.claude-profiles`),
+  profilesDir: resolve(process.env.PROFILES_DIR || `${homedir()}/.claude-profiles`),
+  // In a managed worker WebFetch asks unless its host is listed here (comma separated; `*.example.com` allowed).
+  fetchAllow: (process.env.ESCANOR_FETCH_ALLOW ?? '').split(',').map((h) => h.trim()).filter(Boolean),
+  // The assistant may not change these on its own, even inside its workspace: this agent's code and its data
+  // (planting code there is persistent execution as the agent's user).
+  protectedPaths: [resolve(new URL('..', import.meta.url).pathname), resolve(process.env.DATA_DIR || './data')],
 };

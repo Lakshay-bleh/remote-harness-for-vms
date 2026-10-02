@@ -45,7 +45,8 @@ test('HTTP login/logout revokes a session and prevents cached API responses', as
   const { WebSocket } = await import('ws');
   const dir = mkdtempSync(join(tmpdir(), 'escanor-hub-http-'));
   const hub = openDb(dir);
-  const browser = createBrowserServer(hub);
+  // The legacy ?token= form is off by default; it is enabled here to prove revocation still closes those sockets too.
+  const browser = createBrowserServer(hub, { allowQueryToken: true });
   const agent = createAgentServer(hub, 'a'.repeat(32), { onHello() {}, onStatusChange() {}, onEvent() {} });
   const app = express();
   app.use(express.json());

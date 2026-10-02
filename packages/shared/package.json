@@ -7,6 +7,10 @@
   "types": "./src/protocol.ts",
   "exports": {
     ".": "./src/protocol.ts",
-    "./escanor": "./src/escanor.ts"
+    "./escanor": "./src/escanor.ts",
+    "./validate": "./src/validate.ts"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test test/*.test.ts"
   }
 }
