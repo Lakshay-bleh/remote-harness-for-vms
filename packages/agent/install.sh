@@ -28,7 +28,8 @@ fi
 echo "    $(node -v) OK"
 
 echo "==> Installing dependencies"
-(cd "$REPO_ROOT" && npm install --no-fund --no-audit --workspace=@remote-harness/agent --workspace=@remote-harness/shared)
+# npm ci installs exactly what package-lock.json pins (npm install can drift to newer, unreviewed versions).
+(cd "$REPO_ROOT" && npm ci --no-fund --no-audit --workspace=@remote-harness/agent --workspace=@remote-harness/shared)
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "==> Configuring agent (edit $ENV_FILE later to change these)"
@@ -36,13 +37,16 @@ if [ ! -f "$ENV_FILE" ]; then
   read -rp "Hub agent token (HUB_AGENT_TOKEN from the hub): " HUB_TOKEN < "$TTY"
   read -rp "Name for this VM [$(hostname)]: " VM_NAME < "$TTY"
   VM_NAME="${VM_NAME:-$(hostname)}"
-  read -rp "Workspace root directory Claude may work in [$HOME]: " WORKSPACE_ROOT < "$TTY"
-  WORKSPACE_ROOT="${WORKSPACE_ROOT:-$HOME}"
+  # Not $HOME itself: that would put ~/.ssh, ~/.bashrc and this agent's own .env inside the workspace.
+  read -rp "Workspace root directory Claude may work in [$HOME/projects]: " WORKSPACE_ROOT < "$TTY"
+  WORKSPACE_ROOT="${WORKSPACE_ROOT:-$HOME/projects}"
+  mkdir -p "$WORKSPACE_ROOT"
   read -rp "Folder to scan for projects, shown as pick-a-project options for new chats [$WORKSPACE_ROOT]: " PROJECTS_ROOT < "$TTY"
   PROJECTS_ROOT="${PROJECTS_ROOT:-$WORKSPACE_ROOT}"
   read -rp "ANTHROPIC_API_KEY (leave blank if this machine already ran 'claude' and logged in): " ANTHROPIC_API_KEY < "$TTY"
 
-  cat > "$ENV_FILE" <<EOF
+  # .env holds HUB_TOKEN and ANTHROPIC_API_KEY: create it owner-only from the start.
+  (umask 077; cat > "$ENV_FILE" <<EOF
 HUB_URL=$HUB_URL
 HUB_TOKEN=$HUB_TOKEN
 VM_NAME=$VM_NAME
@@ -52,10 +56,12 @@ DATA_DIR=$AGENT_DIR/data
 PROFILES_DIR=$HOME/.claude-profiles
 ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
 EOF
+  )
   echo "    wrote $ENV_FILE"
 else
-  echo "==> Found existing $ENV_FILE, leaving it as-is"
+  echo "==> Found existing $ENV_FILE, leaving it as-is (tightening permissions to 600)"
 fi
+chmod 600 "$ENV_FILE"
 
 PROFILES_DIR="$HOME/.claude-profiles"
 BASHRC="$HOME/.bashrc"
@@ -114,6 +120,16 @@ ExecStart=$NODE_BIN $TSX_BIN $AGENT_DIR/src/index.ts
 Restart=always
 RestartSec=3
 User=$(whoami)
+# Hardening: the agent only needs the network, its own data dir and the workspace.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
 
 [Install]
 WantedBy=multi-user.target

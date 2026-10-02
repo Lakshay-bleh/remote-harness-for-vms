@@ -12,9 +12,11 @@ import {
   type Connection,
   type EscanorSession,
 } from './client';
+import { createPkcePair } from './pkce';
 
 const PENDING_KEY = 'rh_escanor_pending';
 const HUB_ID_KEY = 'rh_hub_id';
+const PKCE_KEY = 'rh_escanor_pkce_verifier';
 
 type Ctx = {
   session: EscanorSession | null;
@@ -68,6 +70,8 @@ export function EscanorProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(() => {
     tokens.clear();
     localStorage.removeItem(HUB_ID_KEY);
+    localStorage.removeItem(PKCE_KEY);
+    sessionStorage.removeItem(PKCE_KEY);
     setSession(null);
     setHubId(null);
     setCatalog(null);
@@ -172,7 +176,10 @@ export function EscanorProvider({ children }: { children: ReactNode }) {
         if (isLogin) {
           const code = params.get('code');
           if (!code) throw new Error('Missing authorization code');
-          await escanor.exchangeLoginCode(code, params.get('provider') ?? undefined);
+          const verifier = sessionStorage.getItem(PKCE_KEY) ?? localStorage.getItem(PKCE_KEY) ?? undefined;
+          sessionStorage.removeItem(PKCE_KEY);
+          localStorage.removeItem(PKCE_KEY);
+          await escanor.exchangeLoginCode(code, params.get('provider') ?? undefined, verifier);
           await completeLogin();
         } else if (integrationId) {
           const code = params.get('code');
@@ -205,7 +212,14 @@ export function EscanorProvider({ children }: { children: ReactNode }) {
     tokens.clear();
     localStorage.setItem(PENDING_KEY, 'login');
     sessionStorage.setItem(PENDING_KEY, 'login');
-    const url = await escanor.googleAuthorizeUrl(isNative() ? 'mobile' : 'web', returnUrl('auth'));
+    // Bind the login code to this app instance; kept in both stores because the native app can be killed
+    // while the system browser is open.
+    const pkce = await createPkcePair();
+    if (pkce) {
+      sessionStorage.setItem(PKCE_KEY, pkce.verifier);
+      localStorage.setItem(PKCE_KEY, pkce.verifier);
+    }
+    const url = await escanor.googleAuthorizeUrl(isNative() ? 'mobile' : 'web', returnUrl('auth'), pkce?.challenge);
     await openExternal(url);
   }, []);
 

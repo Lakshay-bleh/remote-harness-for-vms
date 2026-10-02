@@ -1,4 +1,4 @@
-import { hostname } from 'node:os';
+import { homedir, hostname } from 'node:os';
 import { resolve } from 'node:path';
 
 function required(name: string): string {
@@ -7,7 +7,9 @@ function required(name: string): string {
   return v;
 }
 
-const workspaceRoot = resolve(process.env.WORKSPACE_ROOT || process.env.HOME || '/');
+import { workspaceRootFrom } from './paths.js';
+
+const workspaceRoot = workspaceRootFrom(process.env);
 
 export const config = {
   hubUrl: required('HUB_URL'),
@@ -19,5 +21,5 @@ export const config = {
   // under WORKSPACE_ROOT but your actual projects are under ~/projects).
   projectsRoot: resolve(process.env.PROJECTS_ROOT || workspaceRoot),
   dataDir: resolve(process.env.DATA_DIR || './data'),
-  profilesDir: resolve(process.env.PROFILES_DIR || `${process.env.HOME}/.claude-profiles`),
+  profilesDir: resolve(process.env.PROFILES_DIR || `${homedir()}/.claude-profiles`),
 };

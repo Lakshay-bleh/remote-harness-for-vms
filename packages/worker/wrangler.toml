@@ -23,3 +23,4 @@ new_sqlite_classes = ["Hub"]
 #   APP_PASSWORD     password for the web / Android app login
 #   HUB_ALLOWED_EMAILS  optional: extra emails (comma separated) allowed to sign in with Escanor
 #   ESCANOR_API_URL     optional: defaults to https://api.escanor.in/api/v1
+#   ESCANOR_MCP_ALLOW_PRIVATE  optional dev-only: set to 1 to allow a loopback/private Escanor MCP URL

@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-import { resolve, relative, isAbsolute } from 'node:path';
 import { query, type Options, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import type {
   AgentSessionSummary,
@@ -13,6 +11,9 @@ import type {
 import { AsyncMessageQueue } from './queue.js';
 import { SessionRegistry } from './registry.js';
 import type { ClaudeProfile } from './profiles.js';
+import { childEnv } from './childEnv.js';
+import { PermissionBroker } from './permissions.js';
+import { resolveInside } from './paths.js';
 
 type LiveSession = {
   queue: AsyncMessageQueue<SDKUserMessage>;
@@ -21,10 +22,6 @@ type LiveSession = {
   setPermissionMode: (mode: PermissionMode) => Promise<void>;
   setModel: (model?: string) => Promise<void>;
   setEffort: (effort: EffortLevel | null) => Promise<void>;
-};
-
-type PendingPermission = {
-  resolve: (decision: { behavior: PermissionDecision; message?: string }) => void;
 };
 
 function toUserMessage(text: string, images: ImageAttachment[] | undefined): SDKUserMessage {
@@ -50,7 +47,7 @@ function titleFrom(text: string): string {
 
 export class SessionManager {
   private live = new Map<string, LiveSession>();
-  private pendingPermissions = new Map<string, PendingPermission>();
+  private permissions: PermissionBroker;
   private registry: SessionRegistry;
 
   constructor(
@@ -60,6 +57,7 @@ export class SessionManager {
     private send: (msg: AgentToHubMessage) => void,
   ) {
     this.registry = new SessionRegistry(dataDir);
+    this.permissions = new PermissionBroker((msg) => this.send(msg));
   }
 
   private resolveProfile(accountId: string | undefined): ClaudeProfile {
@@ -78,16 +76,23 @@ export class SessionManager {
   }
 
   private resolveCwd(requested: string | undefined): string {
-    const candidate = resolve(this.workspaceRoot, requested || '.');
-    const rel = relative(this.workspaceRoot, candidate);
-    const inside = rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
-    return inside ? candidate : this.workspaceRoot;
+    return resolveInside(this.workspaceRoot, requested);
   }
 
   handleUserInput(input: HubUserInput): void {
     const live = this.live.get(input.sessionId);
     if (live) {
       live.queue.push(toUserMessage(input.text, input.images));
+      return;
+    }
+    // Without a tempId this must be a resume. If we don't know the session, starting one would create a
+    // conversation the hub never learns about (no session_created is sent) and lose the history.
+    if (!input.tempId && !this.registry.get(input.sessionId)) {
+      this.send({
+        type: 'error',
+        sessionId: input.sessionId,
+        message: `Unknown session ${input.sessionId}: this VM has no record of it, so no new conversation was started.`,
+      });
       return;
     }
     this.startSession(input);
@@ -108,8 +113,8 @@ export class SessionManager {
       // Ask for summarized thinking so the web UI can show it like the CLI's transcript view.
       thinking: { type: 'adaptive', display: 'summarized' },
       canUseTool: async (toolName, toolInput, opts) => {
-        const decision = await this.requestPermission(
-          () => resolvedSessionId,
+        const decision = await this.permissions.request(
+          resolvedSessionId || tempId || '',
           toolName,
           toolInput,
           opts.blockedPath,
@@ -122,7 +127,7 @@ export class SessionManager {
     };
     if (isResume) options.resume = input.sessionId;
     if (input.mcpServers) options.mcpServers = input.mcpServers;
-    if (profile.configDir) options.env = { ...process.env, CLAUDE_CONFIG_DIR: profile.configDir };
+    options.env = childEnv(process.env, profile.configDir ? { CLAUDE_CONFIG_DIR: profile.configDir } : {});
 
     const q = query({ prompt: queue, options });
     queue.push(toUserMessage(input.text, input.images));
@@ -195,37 +200,15 @@ export class SessionManager {
       });
     } finally {
       const sessionId = ctx.getSessionId();
+      for (const key of new Set([sessionId, ctx.tempId, ctx.liveKey])) if (key) this.permissions.dropSession(key);
       this.live.delete(ctx.liveKey);
       if (sessionId) this.live.delete(sessionId);
       this.send({ type: 'session_ended', sessionId: sessionId || ctx.tempId || ctx.liveKey });
     }
   }
 
-  private requestPermission(
-    getSessionId: () => string,
-    toolName: string,
-    input: Record<string, unknown>,
-    blockedPath: string | undefined,
-    signal: AbortSignal,
-  ): Promise<{ behavior: PermissionDecision; message?: string }> {
-    const requestId = randomUUID();
-    const sessionId = getSessionId();
-    this.send({ type: 'permission_request', sessionId, requestId, toolName, input, blockedPath });
-    return new Promise((resolve) => {
-      this.pendingPermissions.set(requestId, { resolve });
-      signal.addEventListener('abort', () => {
-        if (this.pendingPermissions.delete(requestId)) {
-          resolve({ behavior: 'deny', message: 'Interrupted' });
-        }
-      });
-    });
-  }
-
   resolvePermission(requestId: string, behavior: PermissionDecision, message?: string): void {
-    const pending = this.pendingPermissions.get(requestId);
-    if (!pending) return;
-    this.pendingPermissions.delete(requestId);
-    pending.resolve({ behavior, message });
+    this.permissions.resolve(requestId, behavior, message);
   }
 
   interrupt(sessionId: string): void {

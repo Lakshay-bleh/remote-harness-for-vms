@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import LegalLinks from './LegalLinks';
 import { useStore } from '../store';
 import { checkHubReachable, getHubUrl, isNative, normalizeHubUrl, setHubUrl } from '../api';
 import { useEscanor } from '../escanor/EscanorProvider';
@@ -107,6 +108,7 @@ export default function Login() {
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
         </>)}
+        <LegalLinks />
       </form>
     </div>
   );

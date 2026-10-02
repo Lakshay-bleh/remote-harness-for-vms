@@ -40,6 +40,7 @@ const initialState: State = {
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case 'set_authed':
+      if (!action.authed) return { ...initialState, authed: false, resolvedPermissionIds: new Set() };
       return { ...state, authed: action.authed };
     case 'set_vms':
       return { ...state, vms: action.vms };
@@ -117,6 +118,9 @@ function buildActions(dispatch: React.Dispatch<Action>) {
       dispatch({ type: 'set_authed', authed: true });
     },
     logout() {
+      // Starts with the current credential before local state is cleared.
+      void api.logout().catch(() => { /* Offline sessions still expire server-side. */ });
+      hubSocket.stop();
       setToken(null);
       dispatch({ type: 'set_authed', authed: false });
     },
@@ -204,7 +208,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           break;
       }
     });
-    return unsubscribe;
+    return () => { unsubscribe(); hubSocket.stop(); };
   }, [state.authed]);
 
   const value = useMemo(() => ({ state, actions }), [state, actions]);

@@ -9,6 +9,7 @@ export interface Env {
   APP_PASSWORD: string;
   ESCANOR_API_URL?: string;
   HUB_ALLOWED_EMAILS?: string;
+  ESCANOR_MCP_ALLOW_PRIVATE?: string;
 }
 
 // Everything stateful lives in one Durable Object so that agent sockets, browser sockets

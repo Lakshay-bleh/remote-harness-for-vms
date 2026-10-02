@@ -4,5 +4,12 @@
   "private": true,
   "type": "module",
   "main": "./src/protocol.ts",
-  "types": "./src/protocol.ts"
+  "types": "./src/protocol.ts",
+  "scripts": {
+    "test": "node --import tsx --test --test-force-exit src/*.test.ts"
+  },
+  "exports": {
+    ".": "./src/protocol.ts",
+    "./validate": "./src/validate.ts"
+  }
 }

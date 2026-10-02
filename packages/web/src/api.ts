@@ -44,14 +44,20 @@ export function setToken(token: string | null): void {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${getHubUrl()}/api${path}`, {
+  const requestToken = getToken();
+  const requestHub = getHubUrl();
+  const assertCurrentSession = () => {
+    if (getToken() !== requestToken || getHubUrl() !== requestHub) throw new Error('Session changed; response discarded');
+  };
+  const res = await fetch(`${requestHub}/api${path}`, {
     ...init,
     headers: {
       'content-type': 'application/json',
-      ...(getToken() ? { authorization: `Bearer ${getToken()}` } : {}),
+      ...(requestToken ? { authorization: `Bearer ${requestToken}` } : {}),
       ...init?.headers,
     },
   });
+  assertCurrentSession();
   if (res.status === 401) {
     setToken(null);
     window.location.reload();
@@ -59,13 +65,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
+    assertCurrentSession();
     throw new Error(body.error || `Request failed: ${res.status}`);
   }
   if (res.status === 204) return undefined as T;
-  return res.json();
+  const result = await res.json();
+  assertCurrentSession();
+  return result;
 }
 
 export const api = {
+  logout: () => request<void>('/logout', { method: 'POST' }),
   login: (password: string) => request<{ token: string }>('/login', { method: 'POST', body: JSON.stringify({ password }) }),
   loginWithEscanor: (accessToken: string) =>
     request<{ token: string; hubId: string }>('/login/escanor', { method: 'POST', body: JSON.stringify({ accessToken }) }),

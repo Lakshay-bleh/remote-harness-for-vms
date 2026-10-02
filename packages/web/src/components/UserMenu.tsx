@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import LegalLinks from './LegalLinks';
 import type { EscanorSession } from '../escanor/client';
 import { useEscanor } from '../escanor/EscanorProvider';
 
@@ -23,6 +24,7 @@ export default function UserMenu({ session, onOpenSettings }: { session: Escanor
     <div ref={ref} className="relative border-t border-hairline p-2" style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))' }}>
       {open && (
         <div className="absolute inset-x-2 bottom-full mb-1 overflow-hidden rounded-lg border border-hairline bg-canvas shadow-panel">
+          <div className="px-3 pb-3"><LegalLinks /></div>
           {session && <p className="truncate border-b border-hairline px-3 py-2 text-[12px] text-muted-soft">{session.user.email}</p>}
           <button
             onClick={() => {

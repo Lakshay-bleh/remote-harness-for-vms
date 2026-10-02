@@ -124,16 +124,20 @@ async function request<T>(path: string, init?: RequestInit, retry = true): Promi
 }
 
 export const escanor = {
-  async googleAuthorizeUrl(platform: 'mobile' | 'web', redirectUri: string): Promise<string> {
+  async googleAuthorizeUrl(platform: 'mobile' | 'web', redirectUri: string, codeChallenge?: string): Promise<string> {
     const q = new URLSearchParams({ platform, redirect_uri: redirectUri });
+    if (codeChallenge) {
+      q.set('code_challenge', codeChallenge);
+      q.set('code_challenge_method', 'S256');
+    }
     const { authorization_url } = await request<{ authorization_url: string }>(`/auth/oauth/google/authorize?${q}`);
     return authorization_url;
   },
 
-  async exchangeLoginCode(code: string, provider?: string): Promise<void> {
+  async exchangeLoginCode(code: string, provider?: string, codeVerifier?: string): Promise<void> {
     const data = await request<{ access_token: string; refresh_token: string }>('/auth/oauth/exchange', {
       method: 'POST',
-      body: JSON.stringify(provider ? { code, provider } : { code }),
+      body: JSON.stringify({ code, ...(provider ? { provider } : {}), ...(codeVerifier ? { code_verifier: codeVerifier } : {}) }),
     });
     tokens.set(data.access_token, data.refresh_token);
   },

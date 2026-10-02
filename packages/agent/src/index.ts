@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import type { HubToAgentMessage } from '@remote-harness/shared';
 
@@ -11,8 +11,16 @@ const { SessionManager } = await import('./sessionManager.js');
 const { HubConnection } = await import('./wsClient.js');
 const { discoverProfiles } = await import('./profiles.js');
 const { listProjects } = await import('./projects.js');
+const { isBroadRoot } = await import('./paths.js');
 
-const AGENT_VERSION = '0.2.0';
+const AGENT_VERSION: string = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf-8')).version;
+
+if (isBroadRoot(config.workspaceRoot, process.env.HOME)) {
+  console.warn(
+    `WARNING: WORKSPACE_ROOT is ${config.workspaceRoot}, which contains ~/.ssh, shell rc files and this agent's own .env. ` +
+      'Point WORKSPACE_ROOT at a projects directory instead.',
+  );
+}
 
 const profiles = discoverProfiles(config.profilesDir);
 console.log(`Claude accounts: ${profiles.map((p) => p.id).join(', ')}`);
@@ -62,7 +70,10 @@ const connection = new HubConnection(
 
 connection.connect();
 
-process.on('SIGINT', () => {
-  connection.close();
-  process.exit(0);
-});
+// systemd stops services with SIGTERM, so handle it as well as Ctrl-C.
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(signal, () => {
+    connection.close();
+    process.exit(0);
+  });
+}
