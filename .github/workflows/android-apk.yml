@@ -29,6 +29,8 @@ jobs:
           v="${v#v}"
           case "$v" in (*[!0-9A-Za-z._-]*|'') echo "bad version"; exit 1;; esac
           echo "version=$v" >> "$GITHUB_OUTPUT"
+          # Monotonic across releases, and above the 4 that the early builds shipped with.
+          echo "code=$((100 + GITHUB_RUN_NUMBER))" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@v4
         with:
@@ -44,6 +46,9 @@ jobs:
 
       - name: Build the debug APK
         working-directory: packages/web
+        env:
+          RH_VERSION_NAME: ${{ steps.v.outputs.version }}
+          RH_VERSION_CODE: ${{ steps.v.outputs.code }}
         run: npm run android:apk
 
       - name: Name the file
