@@ -1,10 +1,15 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { readFileSync } from 'node:fs';
 import { VitePWA } from 'vite-plugin-pwa';
+
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
 
 const HUB_URL = process.env.HUB_DEV_URL || 'http://localhost:8787';
 
 export default defineConfig({
+  // The release build stamps the same version into the APK (RH_VERSION_NAME); Settings shows it.
+  define: { __APP_VERSION__: JSON.stringify(process.env.RH_VERSION_NAME || pkg.version) },
   plugins: [
     react(),
     VitePWA({

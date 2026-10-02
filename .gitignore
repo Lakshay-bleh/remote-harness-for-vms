@@ -7,3 +7,6 @@ dist/
 packages/hub/data/
 packages/agent/data/
 .claude/
+
+# Firebase app config: supplied at build time (CI secret or a local file), never committed
+packages/web/android/app/google-services.json

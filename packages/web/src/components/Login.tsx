@@ -1,14 +1,15 @@
 import LegalLinks from './LegalLinks';
-import { useState } from 'react';
+import { useContext, useState } from 'react';
 import { useStore } from '../store';
 import { getHubUrl, isNative, setHubUrl } from '../api';
-import { AuthShell, Button, Notice } from '../escanor/ui';
+import { AuthShell, Button, EmbeddedContext, Notice } from '../escanor/ui';
 
 const FIELD = 'w-full rounded-md border border-line-strong bg-surface-dark-soft px-4 py-3 text-base text-ink outline-none transition placeholder:text-muted-soft focus:border-primary focus:ring-4 focus:ring-primary/15';
 
 /** Sign in to a hub you host yourself. Same frame as the Escanor sign-in, so the two never feel like different apps. */
 export default function Login() {
   const { actions } = useStore();
+  const embedded = useContext(EmbeddedContext);
   const native = isNative();
   const [hubUrl, setHubUrlInput] = useState(getHubUrl());
   const [password, setPassword] = useState('');
@@ -50,7 +51,8 @@ export default function Login() {
         <Button type="submit" disabled={busy || !password || (native && !hubUrl)} className="w-full py-3">
           {busy ? 'Signing in…' : 'Sign in'}
         </Button>
-        <LegalLinks />
+        {/* Inside the signed-in app the notices live in Settings; only a stand-alone sign-in carries them. */}
+        {!embedded && <LegalLinks />}
       </form>
     </AuthShell>
   );

@@ -64,6 +64,8 @@ export const MAX_SKEW_MS = 5 * 60_000;
 /** The relay command the phone queues in the Escanor backend: plugin `desktop`, action `sealed`. */
 export const RELAY_PLUGIN = 'desktop';
 export const RELAY_ACTION = 'sealed';
+/** Pairing a new phone over the cloud: queued by a phone that knows the code, answered by the computer showing it. */
+export const RELAY_PAIR_ACTION = 'pair';
 
 export function isClientMsg(v: unknown): v is ClientMsg {
   if (!v || typeof v !== 'object') return false;

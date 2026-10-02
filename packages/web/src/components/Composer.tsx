@@ -1,5 +1,6 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useContext, useRef, useState, type ReactNode } from 'react';
 import type { ImageAttachment } from '@remote-harness/shared';
+import { EmbeddedContext } from '../escanor/ui';
 
 function fileToImage(file: File): Promise<ImageAttachment> {
   return new Promise((resolve, reject) => {
@@ -30,6 +31,7 @@ export default function Composer({
   footerExtra?: ReactNode;
   onOpenSidebar?: () => void;
 }) {
+  const embedded = useContext(EmbeddedContext);
   const [text, setText] = useState('');
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -57,7 +59,7 @@ export default function Composer({
   }
 
   return (
-    <div className="safe-bottom border-t border-hairline bg-canvas px-3 pt-3">
+    <div className={`${embedded ? 'pb-3' : 'safe-bottom'} border-t border-hairline bg-canvas px-3 pt-3`}>
       {images.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2">
           {images.map((img, i) => (

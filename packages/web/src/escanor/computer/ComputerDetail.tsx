@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useHardwareBack } from '../back';
 import { Button, Notice, ScreenHeader, Spinner } from '../ui';
 import type { PairedComputer } from './lib/client';
 import type { ServerMsg } from './lib/protocol';
@@ -18,6 +19,7 @@ function Meter({ value }: { value: number }) {
 
 export default function ComputerDetail({ computer, onBack, onRemove }: { computer: PairedComputer; onBack: () => void; onRemove: () => void }) {
   const link = useComputer(computer);
+  useHardwareBack(true, onBack);
   const [tab, setTab] = useState<Tab>('chat');
   const [approvals, setApprovals] = useState<Approval[]>([]);
 
@@ -58,9 +60,8 @@ export default function ComputerDetail({ computer, onBack, onRemove }: { compute
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <ScreenHeader title={computer.name}>
-        <span className={`rounded-pill px-2.5 py-1 text-[12px] ${link.state === 'online' ? 'bg-primary/10 text-primary' : 'bg-surface-card text-muted'}`}>{badge}</span>
-        <Button kind="quiet" onClick={onBack}>All computers</Button>
+      <ScreenHeader title={computer.name} onBack={onBack} subtitle={badge}>
+        <span className={`h-2.5 w-2.5 rounded-full ${link.state === 'online' ? 'bg-success' : link.state === 'connecting' ? 'bg-warning' : 'bg-line-strong'}`} aria-hidden />
       </ScreenHeader>
 
       <div className="flex gap-1 px-4 pb-2">

@@ -4,6 +4,8 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { isNative } from '../api';
 import { APP_SCHEME, loginRedirect } from './config';
 import { ApiError, escanor, hasStoredSession, SessionEnded, type EscanorUser } from './client';
+import { clearComputers } from './computer/storage';
+import { forgetPush } from './push';
 import { createPkcePair } from './pkce';
 
 // Kept in both stores: the native app can be killed while the system browser is open for Google.
@@ -25,6 +27,8 @@ interface Ctx {
   /** Start "Continue with Google". Resolves when the browser has been opened (or the page is navigating away). */
   signInWithGoogle(): Promise<void>;
   signOut(): Promise<void>;
+  /** Re-read the person from Escanor (after they changed their name). */
+  refreshUser(): Promise<void>;
   /** A request found the session dead: go back to the sign-in screen. */
   sessionEnded(): void;
   canSignInHere: boolean;
@@ -140,6 +144,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       },
       async signOut() {
         takeVerifier();
+        await forgetPush(); // before the sign-in goes: the server needs it to forget this phone
+        clearComputers(); // the device keys of this person's computers go with them; the next person on this phone starts clean
         await escanor.signOut();
         setUser(null);
         setStatus('signed_out');
@@ -147,6 +153,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       sessionEnded() {
         setUser(null);
         setStatus('signed_out');
+      },
+      async refreshUser() {
+        setUser(await escanor.me());
       },
     }),
     [status, user, error, busy, redirect.uri, redirect.supported],
