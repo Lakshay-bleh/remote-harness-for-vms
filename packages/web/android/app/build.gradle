@@ -7,8 +7,10 @@ android {
         applicationId "io.visey.remoteharness"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 4
-        versionName "1.4"
+        // The release workflow stamps the real version (RH_VERSION_NAME / RH_VERSION_CODE), so an installed app reports the
+        // release it came from. Local builds fall back to these.
+        versionCode = Integer.parseInt(System.getenv("RH_VERSION_CODE") ?: "4")
+        versionName = (System.getenv("RH_VERSION_NAME") ?: "1.4")
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
