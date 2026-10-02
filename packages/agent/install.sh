@@ -10,6 +10,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 AGENT_DIR="$SCRIPT_DIR"
 ENV_FILE="$AGENT_DIR/.env"
 SERVICE_NAME="remote-harness-agent"
+# shellcheck source=envfile.sh
+source "$SCRIPT_DIR/envfile.sh"
 
 # When this script is run as `curl ... | bash`, stdin is the script itself,
 # not the terminal, so `read` would hit EOF instantly. Read prompts from the
@@ -28,7 +30,8 @@ fi
 echo "    $(node -v) OK"
 
 echo "==> Installing dependencies"
-(cd "$REPO_ROOT" && npm install --no-fund --no-audit --workspace=@remote-harness/agent --workspace=@remote-harness/shared)
+# npm ci installs exactly what package-lock.json pins; npm install can drift to newer, unreviewed versions.
+(cd "$REPO_ROOT" && npm ci --no-fund --no-audit --workspace=@remote-harness/agent --workspace=@remote-harness/shared)
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "==> Configuring agent (edit $ENV_FILE later to change these)"
@@ -41,13 +44,24 @@ if [ ! -f "$ENV_FILE" ]; then
   fi
   read -rp "Name for this VM [$(hostname)]: " VM_NAME < "$TTY"
   VM_NAME="${VM_NAME:-$(hostname)}"
-  read -rp "Workspace root directory Claude may work in [$HOME]: " WORKSPACE_ROOT < "$TTY"
-  WORKSPACE_ROOT="${WORKSPACE_ROOT:-$HOME}"
+  # Not $HOME itself: that would put ~/.ssh, ~/.bashrc and this agent's own .env inside the workspace.
+  read -rp "Workspace root directory Claude may work in [$HOME/projects]: " WORKSPACE_ROOT < "$TTY"
+  WORKSPACE_ROOT="${WORKSPACE_ROOT:-$HOME/projects}"
+  valid_path "$WORKSPACE_ROOT" && mkdir -p "$WORKSPACE_ROOT"
   read -rp "Folder to scan for projects, shown as pick-a-project options for new chats [$WORKSPACE_ROOT]: " PROJECTS_ROOT < "$TTY"
   PROJECTS_ROOT="${PROJECTS_ROOT:-$WORKSPACE_ROOT}"
   read -rp "ANTHROPIC_API_KEY (leave blank if this machine already ran 'claude' and logged in): " ANTHROPIC_API_KEY < "$TTY"
 
-  cat > "$ENV_FILE" <<EOF
+  # Everything below ends up in a file read by the service, so refuse anything that is not what it claims to be.
+  need "hub URL (expected wss://host[:port]/path)" valid_hub_url "$HUB_URL"
+  need "hub token" valid_hub_token "$HUB_TOKEN"
+  need "VM name" valid_vm_name "$VM_NAME"
+  need "workspace root" valid_path "$WORKSPACE_ROOT"
+  need "projects folder" valid_path "$PROJECTS_ROOT"
+  need "ANTHROPIC_API_KEY" valid_api_key "$ANTHROPIC_API_KEY"
+
+  # HUB_TOKEN and ANTHROPIC_API_KEY live here: create it owner-only from the start.
+  (umask 077; cat > "$ENV_FILE" <<EOF
 HUB_URL=$HUB_URL
 HUB_TOKEN=$HUB_TOKEN
 VM_NAME=$VM_NAME
@@ -57,15 +71,20 @@ DATA_DIR=$AGENT_DIR/data
 PROFILES_DIR=$HOME/.claude-profiles
 ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
 EOF
+  )
   echo "    wrote $ENV_FILE"
 else
   echo "==> Found existing $ENV_FILE, leaving it as-is"
   # ...except the hub details when they were passed in, e.g. after the token was rotated.
   if [ -n "${HUB_URL:-}" ] && [ -n "${HUB_TOKEN:-}" ]; then
-    sed -i "s|^HUB_URL=.*|HUB_URL=$HUB_URL|; s|^HUB_TOKEN=.*|HUB_TOKEN=$HUB_TOKEN|" "$ENV_FILE"
+    need "hub URL (expected wss://host[:port]/path)" valid_hub_url "$HUB_URL"
+    need "hub token" valid_hub_token "$HUB_TOKEN"
+    set_env_var "$ENV_FILE" HUB_URL "$HUB_URL"
+    set_env_var "$ENV_FILE" HUB_TOKEN "$HUB_TOKEN"
     echo "    updated HUB_URL and HUB_TOKEN"
   fi
 fi
+chmod 600 "$ENV_FILE"
 
 PROFILES_DIR="$HOME/.claude-profiles"
 BASHRC="$HOME/.bashrc"
@@ -124,6 +143,15 @@ ExecStart=$NODE_BIN $TSX_BIN $AGENT_DIR/src/index.ts
 Restart=always
 RestartSec=3
 User=$(whoami)
+# Hardening: the agent needs the network, its own data and the workspace, not the rest of the system.
+PrivateTmp=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
 
 [Install]
 WantedBy=multi-user.target

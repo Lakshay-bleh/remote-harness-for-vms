@@ -333,7 +333,7 @@ export const MCP_SERVER_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 
 // Claude Code names a server's tools `mcp__<server>__<tool>`. A server called "a__b" would be indistinguishable from
 // tool "b__..." of server "a", so a name with "__" could inherit another server's approvals: refuse it.
-export const isValidMcpServerName = (name: string): boolean => MCP_SERVER_NAME_RE.test(name) && !name.includes('__');
+export const isValidMcpServerName = (name: string): boolean => MCP_SERVER_NAME_RE.test(name) && !name.includes('__') && !name.endsWith('_');
 
 // ---------- outbound MCP URL (SSRF guard) ----------
 
@@ -501,11 +501,11 @@ const CHANGE_WORDS = new Set([
   'archive', 'unarchive', 'lock', 'unlock', 'move', 'rename', 'copy', 'sync', 'schedule', 'submit',
   'suspend', 'resume', 'pause', 'replace', 'modify', 'edit', 'change', 'confirm', 'pay', 'refund', 'charge',
   // A read verb in front of one of these still ends in a change: list_and_drop_tables, get_and_notify, fetch_and_install.
-  'drop', 'wipe', 'erase', 'truncate', 'shred', 'format', 'notify', 'alert', 'page', 'email', 'mail', 'message', 'text', 'tweet',
-  'share', 'broadcast', 'install', 'uninstall', 'download', 'mount', 'unmount', 'shutdown', 'poweroff', 'power', 'wake',
-  'evict', 'expire', 'invalidate', 'renew', 'reissue', 'regenerate', 'issue', 'mint', 'sign', 'encrypt', 'decrypt', 'ban', 'kick',
-  'mute', 'unmute', 'block', 'unblock', 'pin', 'unpin', 'star', 'unstar', 'follow', 'unfollow', 'vote', 'comment', 'reply', 'react',
-  'insert', 'upsert', 'alter', 'grant', 'call', 'ping', 'dispatch', 'emit', 'publish', 'cast', 'bump', 'increment', 'decrement',
+  // Only unambiguous verbs: words that are also common nouns in read operations (issue, page, message, alert, email, comment,
+  // star, pin...) are left out on purpose -- the leading-read-verb rule below already refuses ids that merely mention them.
+  'drop', 'wipe', 'erase', 'truncate', 'shred', 'notify', 'install', 'uninstall', 'mount', 'unmount', 'shutdown', 'poweroff',
+  'evict', 'expire', 'invalidate', 'renew', 'reissue', 'regenerate', 'mint', 'ban', 'kick', 'mute', 'unmute', 'unblock', 'unstar',
+  'unpin', 'unfollow', 'insert', 'upsert', 'alter', 'grant', 'dispatch', 'broadcast', 'tweet', 'increment', 'decrement', 'emit',
 ]);
 
 // Words that join two operations ("list and drop"). A call that does more than one thing is not a plain read.

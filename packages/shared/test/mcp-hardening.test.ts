@@ -8,7 +8,7 @@ const parse = (name: string, body: unknown, opts?: Parameters<typeof parseMcpSer
 // ---- #5: server names ----
 
 test('server names cannot contain "__" (it is the separator in mcp__<server>__<tool>)', () => {
-  for (const n of ['a__b', 'a__', 'x__y__z']) {
+  for (const n of ['a__b', 'a__', 'x__y__z', 'a_']) {
     assert.equal(isValidMcpServerName(n), false, n);
     assert.equal(parse(n, { url: 'https://x.example/' }).ok, false, n);
   }
@@ -85,6 +85,12 @@ test('compound operations that hide a change behind a read verb are not read-onl
 test('more change verbs are recognised', () => {
   for (const id of ['db.drop_table', 'slack.notify_channel', 'disk.wipe', 'pkg.install', 'pkg.uninstall', 'mail.email_user', 'x.erase', 'x.truncate', 'ec2.shutdown', 'sms.text_user']) {
     assert.equal(invoke(id), false, id);
+  }
+});
+
+test('nouns that happen to be verbs do not make a plain read ask', () => {
+  for (const id of ['sentry.get_issue_logs', 'github.list_issues', 'github.get_issue', 'notion.get_page', 'slack.get_message', 'github.list_comments', 'sentry.get_alert', 'github.get_email', 'vercel_list_deployments']) {
+    assert.equal(invoke(id), true, id);
   }
 });
 
