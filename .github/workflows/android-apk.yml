@@ -44,6 +44,19 @@ jobs:
 
       - run: npm ci
 
+      # Push notifications: Firebase's app config comes from a repository secret, never from git. Without the secret the APK still
+      # builds; it just cannot receive push (the google-services plugin is only applied when the file exists).
+      - name: Add the Firebase app config
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > packages/web/android/app/google-services.json
+            echo "Firebase config added: push notifications will work in this build."
+          else
+            echo "::warning::GOOGLE_SERVICES_JSON secret is not set: this APK will not receive push notifications."
+          fi
+
       - name: Build the debug APK
         working-directory: packages/web
         env:

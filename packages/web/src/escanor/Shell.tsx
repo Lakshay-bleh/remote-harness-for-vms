@@ -6,6 +6,7 @@ import ComputersView from './computer/ComputersView';
 import { escanor } from './client';
 import { useLoad } from './hooks';
 import IntegrationsView from './IntegrationsView';
+import { listenPush, resumePush, type PushDest } from './push';
 import { useEscanorSession } from './session';
 import SettingsView from './settings/SettingsView';
 import { haptic } from './settings/prefs';
@@ -147,6 +148,19 @@ export default function Shell({ machines }: { machines: React.ReactNode }) {
     void escanor.remove(id).then(() => { if (id === conversationId) setConversationId(null); chats.reload(); });
   }, [list, conversationId, chats]);
 
+  // Push: register this phone again if they already allowed it, take them where a tapped notification points, and show one that
+  // arrives while the app is open as a banner (Android shows nothing itself in that case).
+  const [banner, setBanner] = useState<{ title: string; body: string; dest: PushDest } | null>(null);
+  useEffect(() => {
+    void resumePush();
+    return listenPush((dest) => show(dest), setBanner);
+  }, [show]);
+  useEffect(() => {
+    if (!banner) return;
+    const t = setTimeout(() => setBanner(null), 6000);
+    return () => clearTimeout(t);
+  }, [banner]);
+
   // The phone's back button: close the chat list, else leave a tab for Chat, else (nothing left to undo) minimise the app.
   useHardwareBack(drawer, () => setDrawer(false), 2);
   useHardwareBack(!drawer && tab !== 'assistant', () => show('assistant'), 0);
@@ -179,6 +193,13 @@ export default function Shell({ machines }: { machines: React.ReactNode }) {
         </main>
 
         <TabBar tab={tab} onPick={show} />
+
+        {banner && (
+          <button type="button" role="status" onClick={() => { show(banner.dest); setBanner(null); }} className="fixed inset-x-3 top-[calc(env(safe-area-inset-top)+8px)] z-[60] rounded-xl border border-line-strong bg-surface-card p-3.5 text-left shadow-elevated md:left-auto md:max-w-sm">
+            <span className="block truncate text-[14px] font-medium text-ink">{banner.title}</span>
+            {banner.body && <span className="mt-0.5 line-clamp-2 block text-[13px] text-body">{banner.body}</span>}
+          </button>
+        )}
 
         {/* Phones: your chats, sliding in from the left. */}
         <div className={`fixed inset-0 z-50 md:hidden ${drawer ? '' : 'pointer-events-none'}`} aria-hidden={!drawer}>

@@ -233,6 +233,11 @@ export const escanor = {
   notificationPrefs: () => request<NotificationPrefs>('/users/me/notification-preferences'),
   setNotificationPrefs: (patch: Partial<NotificationPrefs>) => request<NotificationPrefs>('/users/me/notification-preferences', { method: 'PATCH', body: JSON.stringify(patch) }),
   subscription: () => request<Subscription>('/subscription'),
+  // -- push notifications: this phone's address, whether the server can send, a test, and forgetting the phone on sign-out
+  registerPushToken: (token: string) => request<{ status: string }>('/users/me/push-token', json({ token, platform: 'android' })),
+  unregisterPushToken: (token: string) => request<{ removed: number }>('/users/me/push-token', { method: 'DELETE', body: JSON.stringify({ token }) }),
+  pushStatus: () => request<{ configured: boolean; devices: number }>('/users/me/push-status'),
+  sendTestPush: () => request<{ delivered: number }>('/users/me/push-test', { method: 'POST' }),
   exportMyData: () => request<unknown>('/me/export'),
   /** How long the backend takes to answer, in ms: the Developer screen's "is it me or the server" check. Needs no sign-in. */
   async ping(): Promise<{ ms: number; ok: boolean; status: number }> {

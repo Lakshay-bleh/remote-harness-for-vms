@@ -5,6 +5,7 @@ import { isNative } from '../api';
 import { APP_SCHEME, loginRedirect } from './config';
 import { ApiError, escanor, hasStoredSession, SessionEnded, type EscanorUser } from './client';
 import { clearComputers } from './computer/storage';
+import { forgetPush } from './push';
 import { createPkcePair } from './pkce';
 
 // Kept in both stores: the native app can be killed while the system browser is open for Google.
@@ -143,6 +144,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       },
       async signOut() {
         takeVerifier();
+        await forgetPush(); // before the sign-in goes: the server needs it to forget this phone
         clearComputers(); // the device keys of this person's computers go with them; the next person on this phone starts clean
         await escanor.signOut();
         setUser(null);

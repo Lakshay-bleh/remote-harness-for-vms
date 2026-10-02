@@ -36,6 +36,10 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
+            <!-- where Firebase puts notifications that arrive while the app is closed; the app creates this channel at start -->
+        <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="escanor_alerts" />
+        <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/ic_stat_escanor" />
+        <meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/notification_accent" />
     </application>
 
     <!-- Permissions -->
@@ -43,6 +47,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Scanning the pairing code shown by Escanor Desktop. The camera is optional: typing the code works without it. -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- push notifications (Android 13+ asks the person at runtime) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- haptic feedback (Settings > Appearance and feel) -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
