@@ -15,7 +15,8 @@ const bad = (name: string, body: unknown) => {
 
 test('a server is accepted with sensible defaults', () => {
   const s = ok('escanor', { url: 'https://mcp.escanor.in/' });
-  assert.equal(s.autoAllow, true);
+  // Approving every tool of a server is something the caller asks for; a new server starts out asking.
+  assert.equal(s.autoAllow, false);
   assert.equal(s.alwaysLoad, true);
   assert.equal(s.url, 'https://mcp.escanor.in/');
 });
@@ -38,7 +39,8 @@ test('only http(s) URLs without embedded credentials', () => {
   bad('s', { url: 'ftp://x/' });
   bad('s', { url: 'file:///etc/passwd' });
   bad('s', { url: 'https://user:pw@x.example/' });
-  ok('s', { url: 'http://127.0.0.1:8787/mcp' });
+  bad('s', { url: 'http://127.0.0.1:8787/mcp' }); // loopback / private networks only when the operator opts in
+  assert.ok(parseMcpServerInput('s', { url: 'http://127.0.0.1:8787/mcp' }, { allowPrivate: true }).ok);
 });
 
 test('headers cannot smuggle extra headers', () => {

@@ -331,6 +331,67 @@ export type McpPutResultDto = {
 
 export const MCP_SERVER_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 
+// Claude Code names a server's tools `mcp__<server>__<tool>`. A server called "a__b" would be indistinguishable from
+// tool "b__..." of server "a", so a name with "__" could inherit another server's approvals: refuse it.
+export const isValidMcpServerName = (name: string): boolean => MCP_SERVER_NAME_RE.test(name) && !name.includes('__');
+
+// ---------- outbound MCP URL (SSRF guard) ----------
+
+function ipv4(host: string): number[] | null {
+  const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return null;
+  const p = m.slice(1).map(Number);
+  return p.every((n) => n <= 255) ? p : null;
+}
+
+// Expands ::ffff:7f00:1 style IPv4-mapped addresses (what URL parsing produces) to dotted quads.
+function mappedIpv4(host: string): number[] | null {
+  const m = host.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (!m) return null;
+  const hi = parseInt(m[1], 16);
+  const lo = parseInt(m[2], 16);
+  return [hi >> 8, hi & 255, lo >> 8, lo & 255];
+}
+
+function classifyHost(rawHost: string): 'metadata' | 'private' | 'public' {
+  const host = rawHost.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+  if (host === 'metadata.google.internal' || host === 'metadata' || host.endsWith('.metadata.google.internal')) return 'metadata';
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.internal') || host.endsWith('.local')) return 'private';
+
+  const v4 = ipv4(host) ?? mappedIpv4(host);
+  if (v4) {
+    const [a, b] = v4;
+    if (a === 169 && b === 254) return 'metadata';
+    if (a === 0 || a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127)) return 'private';
+    return 'public';
+  }
+  if (host.includes(':')) {
+    if (host === '::1' || host === '::') return 'private';
+    if (/^fe[89ab]/.test(host) || host.startsWith('fd00:ec2:')) return 'metadata'; // link-local, AWS IPv6 IMDS
+    if (/^f[cd]/.test(host)) return 'private'; // unique-local
+  }
+  return 'public';
+}
+
+// The hub pushes this URL (plus a bearer token) to every VM, so it must not be pointable
+// at cloud metadata endpoints or, by default, anything on a private network.
+export function validateMcpUrl(url: unknown, opts: { allowPrivate?: boolean } = {}): { ok: true; value: string } | { ok: false; error: string } {
+  if (!typeof url === 'string' || url.length > 2048) return { ok: false, error: 'url required' };
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return { ok: false, error: 'invalid url' };
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return { ok: false, error: 'url must be http(s)' };
+  if (u.username || u.password) return { ok: false, error: 'url must not embed credentials' };
+  const kind = classifyHost(u.hostname);
+  if (kind === 'metadata') return { ok: false, error: 'url points at a link-local / metadata address' };
+  if (kind === 'private' && !opts.allowPrivate) return { ok: false, error: 'url points at a private or loopback address' };
+  return { ok: true, value: u.toString() };
+}
+
+
 // ---------- MCP server helpers (pure; used by the Node hub and the Worker hub alike) ----------
 
 const HEADER_NAME_RE = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}$/;
@@ -339,48 +400,68 @@ const MAX_HEADER_VALUE = 4096;
 
 export type ParsedMcpServerInput = { ok: true; server: Omit<ManagedMcpServer, 'updatedAt'> } | { ok: false; error: string };
 
-export function parseMcpServerInput(name: string, body: unknown): ParsedMcpServerInput {
-  if (!MCP_SERVER_NAME_RE.test(name)) {
-    return { ok: false, error: 'Server name must be 1-32 chars of a-z, 0-9, "_" or "-", starting with a letter or digit' };
+export type ParseMcpOptions = {
+  /** The entry being updated. Fields the request leaves out keep its values, so a partial update cannot reset them. */
+  existing?: ManagedMcpServer;
+  /** Accept loopback / private-network URLs (a hub that runs beside its MCP server). Metadata addresses never pass. */
+  allowPrivate?: boolean;
+};
+
+export function parseMcpServerInput(name: string, body: unknown, opts: ParseMcpOptions = {}): ParsedMcpServerInput {
+  if (!isValidMcpServerName(name)) {
+    return { ok: false, error: 'Server name must be 1-32 chars of a-z, 0-9, "_" or "-", starting with a letter or digit, and must not contain "__"' };
   }
   const b = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+  const existing = opts.existing;
 
   if (typeof b.url !== 'string') return { ok: false, error: 'url is required' };
-  let url: URL;
-  try {
-    url = new URL(b.url.trim());
-  } catch {
-    return { ok: false, error: 'url is not a valid URL' };
-  }
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') return { ok: false, error: 'url must be http(s)' };
-  if (url.username || url.password) return { ok: false, error: 'url must not embed credentials; use headers' };
+  const checked = validateMcpUrl(b.url.trim(), { allowPrivate: opts.allowPrivate });
+  if (!checked.ok) return { ok: false, error: checked.error };
 
-  let headers: Record<string, string> | undefined;
-  if (b.headers !== undefined && b.headers !== null) {
-    if (typeof b.headers !== 'object' || Array.isArray(b.headers)) return { ok: false, error: 'headers must be an object' };
-    const entries = Object.entries(b.headers as Record<string, unknown>);
-    if (entries.length > MAX_HEADERS) return { ok: false, error: `at most ${MAX_HEADERS} headers` };
-    headers = {};
-    for (const [k, v] of entries) {
-      if (!HEADER_NAME_RE.test(k)) return { ok: false, error: `invalid header name "${k}"` };
-      // A CR/LF in a value would let a caller smuggle extra headers into every MCP request.
-      if (typeof v !== 'string' || v.length > MAX_HEADER_VALUE || /[\r\n]/.test(v)) {
-        return { ok: false, error: `invalid value for header "${k}"` };
+  let headers: Record<string, string> | undefined = existing?.headers;
+  if (b.headers !== undefined) {
+    headers = undefined;
+    if (b.headers !== null) {
+      if (typeof b.headers !== 'object' || Array.isArray(b.headers)) return { ok: false, error: 'headers must be an object' };
+      const entries = Object.entries(b.headers as Record<string, unknown>);
+      if (entries.length > MAX_HEADERS) return { ok: false, error: `at most ${MAX_HEADERS} headers` };
+      headers = {};
+      for (const [k, v] of entries) {
+        if (!HEADER_NAME_RE.test(k)) return { ok: false, error: `invalid header name "${k}"` };
+        // A CR/LF in a value would let a caller smuggle extra headers into every MCP request.
+        if (typeof v !== 'string' || v.length > MAX_HEADER_VALUE || /[\r\n]/.test(v)) {
+          return { ok: false, error: `invalid value for header "${k}"` };
+        }
+        headers[k] = v;
       }
-      headers[k] = v;
     }
+  }
+
+  // A flag is a boolean or absent. Coercing (Boolean("false") === true) turned a string into blanket approval.
+  const flag = (key: 'autoAllow' | 'autoAllowReads' | 'alwaysLoad', fallback: boolean): boolean | null => {
+    const v = b[key];
+    if (v === undefined) return existing?.[key] ?? fallback;
+    return typeof v === 'boolean' ? v : null;
+  };
+  // Approving every tool of a server is something an operator asks for; a new server starts out asking.
+  const autoAllow = flag('autoAllow', false);
+  const autoAllowReads = flag('autoAllowReads', false);
+  const alwaysLoad = flag('alwaysLoad', true);
+  for (const [key, val] of [['autoAllow', autoAllow], ['autoAllowReads', autoAllowReads], ['alwaysLoad', alwaysLoad]] as const) {
+    if (val === null) return { ok: false, error: `${key} must be true or false` };
   }
 
   return {
     ok: true,
     server: {
       name,
-      url: url.toString(),
+      url: checked.value,
       headers,
-      autoAllow: b.autoAllow === undefined ? true : Boolean(b.autoAllow),
-      autoAllowReads: b.autoAllowReads === undefined ? false : Boolean(b.autoAllowReads),
-      alwaysLoad: b.alwaysLoad === undefined ? true : Boolean(b.alwaysLoad),
-      managedBy: typeof b.managedBy === 'string' ? b.managedBy.slice(0, 32) : undefined,
+      autoAllow: autoAllow as boolean,
+      autoAllowReads: autoAllowReads as boolean,
+      ...(existing?.autoAllowTools ? { autoAllowTools: existing.autoAllowTools } : {}),
+      alwaysLoad: alwaysLoad as boolean,
+      managedBy: typeof b.managedBy === 'string' ? b.managedBy.slice(0, 32) : existing?.managedBy,
     },
   };
 }
@@ -417,7 +498,30 @@ const CHANGE_WORDS = new Set([
   'register', 'deregister', 'subscribe', 'unsubscribe', 'approve', 'reject', 'commit', 'fork', 'clone',
   'archive', 'unarchive', 'lock', 'unlock', 'move', 'rename', 'copy', 'sync', 'schedule', 'submit',
   'suspend', 'resume', 'pause', 'replace', 'modify', 'edit', 'change', 'confirm', 'pay', 'refund', 'charge',
+  // A read verb in front of one of these still ends in a change: list_and_drop_tables, get_and_notify, fetch_and_install.
+  'drop', 'wipe', 'erase', 'truncate', 'shred', 'format', 'notify', 'alert', 'page', 'email', 'mail', 'message', 'text', 'tweet',
+  'share', 'broadcast', 'install', 'uninstall', 'download', 'mount', 'unmount', 'shutdown', 'poweroff', 'power', 'wake',
+  'evict', 'expire', 'invalidate', 'renew', 'reissue', 'regenerate', 'issue', 'mint', 'sign', 'encrypt', 'decrypt', 'ban', 'kick',
+  'mute', 'unmute', 'block', 'unblock', 'pin', 'unpin', 'star', 'unstar', 'follow', 'unfollow', 'vote', 'comment', 'reply', 'react',
+  'insert', 'upsert', 'alter', 'grant', 'call', 'ping', 'dispatch', 'emit', 'publish', 'cast', 'bump', 'increment', 'decrement',
 ]);
+
+// Words that join two operations ("list and drop"). A call that does more than one thing is not a plain read.
+const CONNECTOR_WORDS = new Set(['and', 'then', 'or', 'also', 'after', 'before', 'plus', 'with', 'via', 'else', 'while', 'until']);
+
+// A SQL statement or GraphQL operation that changes data, found anywhere in the arguments.
+const WRITE_IN_ARGS = /\b(?:insert|update|delete|drop|alter|truncate|create|grant|revoke|merge|replace|upsert|rename|vacuum|reindex|copy|call|exec|execute|attach|detach|pragma|mutation)\b/i;
+
+function argsContainWrite(value: unknown, depth = 0, budget = { left: 200_000 }): boolean {
+  if (depth > 12 || budget.left <= 0) return true; // too deep / too big to vet: ask
+  if (typeof value === 'string') {
+    budget.left -= value.length;
+    return WRITE_IN_ARGS.test(value);
+  }
+  if (Array.isArray(value)) return value.some((v) => argsContainWrite(v, depth + 1, budget));
+  if (value && typeof value === 'object') return Object.values(value as Record<string, unknown>).some((v) => argsContainWrite(v, depth + 1, budget));
+  return false;
+}
 
 // Reading these is itself sensitive; a person should see the request first.
 const SENSITIVE_WORDS = new Set(['secret', 'secrets', 'password', 'passwords', 'credential', 'credentials', 'token', 'tokens', 'key', 'keys', 'apikey', 'apikeys', 'private', 'ssh', 'cert', 'certificate', 'certificates', 'env', 'vault']);
@@ -444,6 +548,11 @@ export function isReadOnlyMcpCall(tool: string, input: Record<string, unknown> |
 
   const words = toolId.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
   if (words.length === 0) return false;
-  if (words.some((w) => CHANGE_WORDS.has(w) || SENSITIVE_WORDS.has(w))) return false;
-  return words.some((w) => READ_VERBS.has(w));
+  if (words.some((w) => CHANGE_WORDS.has(w) || SENSITIVE_WORDS.has(w) || CONNECTOR_WORDS.has(w))) return false;
+  // The operation has to be *led* by a read verb: the first verb in the id (ids start with a provider / resource, so look a few
+  // words in) must be one that only reads. An id with no recognisable verb is not vouched for.
+  const verb = words.slice(0, 4).find((w) => READ_VERBS.has(w));
+  if (!verb) return false;
+  // What is passed matters as much as what the tool is called: database_query with `DELETE FROM ...` is not a read.
+  return !argsContainWrite(args);
 }
