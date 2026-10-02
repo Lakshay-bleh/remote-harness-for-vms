@@ -1,5 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
-import { Router, type NextFunction, type Request, type Response } from 'express';
+import express, { Router, type NextFunction, type Request, type Response } from 'express';
 import { MACHINE_NAME, type Db } from './db.js';
 import type { AgentServer } from './agentServer.js';
 import type { BrowserServer } from './browserServer.js';
@@ -24,6 +24,8 @@ export function createAdminRouter(db: Db, agentServer: AgentServer, browserServe
     }
     next();
   });
+  // Only after the admin token checked out, and small: these bodies are a label or a machine name.
+  router.use(express.json({ limit: '64kb' }));
 
   // Returns the tenant's credentials exactly once; the hub keeps only a hash of the agent token.
   router.post('/tenants', (req, res) => {

@@ -1,10 +1,21 @@
 import { randomUUID } from 'node:crypto';
-import { Router, type Request, type Response, type NextFunction } from 'express';
-import { agentSupportsMcp, parseMcpServerInput, toMcpServerDto, type ApiTokenCreatedDto, type ImageAttachment, type McpOverviewDto, type McpPutResultDto } from '@remote-harness/shared';
-import { timingSafeEqual } from 'node:crypto';
-import { DEFAULT_TENANT, type Db } from './db.js';
+import express, { Router, type Request, type Response, type NextFunction } from 'express';
+import { agentSupportsMcp, parseMcpServerInput, toMcpServerDto, type ApiTokenCreatedDto, type ApiTokenScope, type ImageAttachment, type McpOverviewDto, type McpPutResultDto } from '@remote-harness/shared';
+import {
+  RateLimiter,
+  clampLimit,
+  isEffortLevel,
+  isIdString,
+  isPermissionBehavior,
+  isPermissionMode,
+  parseNewSession,
+  parseUserInput,
+  safeEqual,
+} from '@remote-harness/shared/validate';
+import { DEFAULT_MESSAGE_LIMIT, DEFAULT_TENANT, type Db } from './db.js';
 import type { AgentServer } from './agentServer.js';
 import type { BrowserServer } from './browserServer.js';
+import { securityHeaders } from './headers.js';
 
 function contentBlocks(text: string, images: ImageAttachment[] | undefined) {
   const blocks: Record<string, unknown>[] = [];
@@ -15,33 +26,65 @@ function contentBlocks(text: string, images: ImageAttachment[] | undefined) {
   return blocks;
 }
 
-const passwordMatches = (given: unknown, expected: string) => {
-  if (typeof given !== 'string') return false;
-  const a = Buffer.from(given);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
+export type ApiOptions = {
+  /** Honour X-Forwarded-For when keying the login limiter (only behind a proxy you control). */
+  trustProxy?: boolean;
+  /** Accept loopback / private-network MCP URLs. Metadata and link-local addresses never pass. */
+  allowPrivateMcp?: boolean;
+  loginMaxFailures?: number;
+  loginLimiter?: RateLimiter;
 };
 
-export function createApiRouter(db: Db, agentServer: AgentServer, browserServer: BrowserServer, appPassword: string) {
+const MAX_BODY_UNAUTHENTICATED = '16kb';
+const MAX_BODY_AUTHENTICATED = '20mb';
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const MAX_MESSAGE_LIMIT = 10_000;
+const MIN_TOKEN_TTL_SECONDS = 60;
+const MAX_TOKEN_TTL_SECONDS = 2 * 365 * 24 * 60 * 60;
+
+export function createApiRouter(db: Db, agentServer: AgentServer, browserServer: BrowserServer, appPassword: string, opts: ApiOptions = {}) {
   const router = Router();
-  router.use((_req, res, next) => { res.set({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' }); next(); });
+  const loginLimiter = opts.loginLimiter ?? new RateLimiter({ maxFailures: opts.loginMaxFailures ?? 10, windowMs: LOGIN_WINDOW_MS });
+  router.use(securityHeaders);
+  router.use((_req, res, next) => { res.set({ 'Cache-Control': 'no-store' }); next(); });
+
+  const clientKey = (req: Request): string => {
+    if (opts.trustProxy) {
+      const first = req.header('x-forwarded-for')?.split(',')[0]?.trim();
+      if (first) return first;
+    }
+    return req.socket.remoteAddress ?? 'unknown';
+  };
+
+  // Pre-auth endpoints only ever need a tiny body; the 20 MB parser sits behind requireAuth.
+  router.use('/login', express.json({ limit: MAX_BODY_UNAUTHENTICATED }));
 
   // Password login is the classic single-tenant hub's front door: it signs in to the default tenant.
   // Other tenants have no password; they hold API tokens issued by the admin API.
   router.post('/login', (req: Request, res: Response) => {
-    if (!passwordMatches(req.body?.password, appPassword)) {
+    const key = clientKey(req);
+    if (loginLimiter.blocked(key)) {
+      res.setHeader('Retry-After', String(LOGIN_WINDOW_MS / 1000));
+      res.status(429).json({ error: 'Too many failed sign-in attempts. Try again later.' });
+      return;
+    }
+    if (!safeEqual(req.body?.password, appPassword)) {
+      loginLimiter.fail(key);
       res.status(401).json({ error: 'Invalid password' });
       return;
     }
+    loginLimiter.succeed(key);
     res.json({ token: db.for(DEFAULT_TENANT).createAuthToken() });
   });
 
   function requireAuth(req: Request, res: Response, next: NextFunction): void {
     const header = req.header('authorization') ?? '';
     const token = header.startsWith('Bearer ') ? header.slice(7) : '';
-    const tenantId = db.tenantForApiToken(token);
-    if (tenantId) {
-      res.locals.tenantId = tenantId;
+    const cred = db.credentialForApiToken(token);
+    if (cred) {
+      res.locals.tenantId = cred.tenantId;
+      res.locals.kind = cred.kind; // 'login' (a browser session) or 'api' (a purpose-built token)
+      res.locals.scope = cred.scope;
       next();
       return;
     }
@@ -57,6 +100,21 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
   }
 
   router.use(requireAuth);
+  router.use(express.json({ limit: MAX_BODY_AUTHENTICATED }));
+
+  // A token issued for MCP management (what Escanor gets) can manage the MCP registry and nothing else: it cannot start
+  // sessions, answer permission cards or change a session's permission mode. A leak of it must not be code execution.
+  router.use((req, res, next) => {
+    if (res.locals.scope !== 'mcp') {
+      next();
+      return;
+    }
+    if (req.path === '/mcp-servers' || req.path.startsWith('/mcp-servers/')) {
+      next();
+      return;
+    }
+    res.status(403).json({ error: 'This token is limited to managing MCP servers.' });
+  });
 
   // What a machine-scoped token may reach: the machine list (filtered to itself), the MCP overview, and the routes under
   // its own machine. Never tokens, logout, or changes to the tenant's MCP servers.
@@ -98,11 +156,26 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
     res.json({ ok: true });
   });
 
-  // A token for one purpose, e.g. Escanor. Unlike a login it survives signing out, and it can be
-  // revoked on its own. The value is returned once and never listed again.
+  // A token for one purpose, e.g. Escanor. Unlike a login it survives signing out, and it can be revoked on its own. The value
+  // is returned once and never listed again. Only a signed-in browser session can mint one: a token that could mint more
+  // would let a leaked integration token keep itself alive forever. It expires, and `scope: "mcp"` limits it to the MCP registry.
   router.post('/tokens', (req, res) => {
+    if (res.locals.kind !== 'login') {
+      res.status(403).json({ error: 'Only a signed-in session can create tokens.' });
+      return;
+    }
     const label = String(req.body?.label ?? '').trim().slice(0, 60) || 'API token';
-    const created: ApiTokenCreatedDto = T(res).createApiToken(label);
+    const scope = req.body?.scope ?? 'full';
+    if (scope !== 'full' && scope !== 'mcp') {
+      res.status(400).json({ error: 'scope must be "full" or "mcp"' });
+      return;
+    }
+    const ttl = req.body?.ttlSeconds;
+    if (ttl !== undefined && (typeof ttl !== 'number' || !Number.isFinite(ttl) || ttl < MIN_TOKEN_TTL_SECONDS || ttl > MAX_TOKEN_TTL_SECONDS)) {
+      res.status(400).json({ error: `ttlSeconds must be between ${MIN_TOKEN_TTL_SECONDS} and ${MAX_TOKEN_TTL_SECONDS}` });
+      return;
+    }
+    const created: ApiTokenCreatedDto = T(res).createApiToken(label, { scope: scope as ApiTokenScope, ttlSeconds: ttl });
     res.status(201).json(created);
   });
   router.get('/tokens', (_req, res) => res.json(T(res).listApiTokens()));
@@ -157,7 +230,8 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
   });
 
   router.put('/mcp-servers/:name', (req, res) => {
-    const parsed = parseMcpServerInput(req.params.name, req.body);
+    const existing = T(res).listMcpServers().find((s) => s.name === req.params.name);
+    const parsed = parseMcpServerInput(req.params.name, req.body, { existing, allowPrivate: opts.allowPrivateMcp });
     if (!parsed.ok) {
       res.status(400).json({ error: parsed.error });
       return;
@@ -188,40 +262,39 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
   });
 
   router.get('/vms/:vmId/sessions/:sessionId/messages', (req, res) => {
-    res.json(T(res).listMessages(T(res).resolveSession(req.params.sessionId)));
+    const limit = clampLimit(req.query.limit, DEFAULT_MESSAGE_LIMIT, MAX_MESSAGE_LIMIT);
+    res.json(T(res).listMessages(T(res).resolveSession(req.params.sessionId), limit, req.params.vmId));
   });
+
+  const userMessage = (text: string, images: ImageAttachment[] | undefined) => ({
+    type: 'user',
+    local: true,
+    message: { role: 'user', content: contentBlocks(text, images) },
+  });
+
+  // Refuse before storing or broadcasting anything: otherwise a request to an offline VM leaves a message in the history
+  // that was never delivered.
+  const requireConnected = (vmId: string, res: Response): boolean => {
+    if (agentServer.isConnected(vmId)) return true;
+    res.status(503).json({ error: 'VM not connected' });
+    return false;
+  };
 
   router.post('/vms/:vmId/sessions', (req, res) => {
     const { vmId } = req.params;
-    const { cwd, text, images, accountId } = req.body ?? {};
-    if (!text && !(images?.length > 0)) {
-      res.status(400).json({ error: 'text or images required' });
+    const parsed = parseNewSession(req.body);
+    if (!parsed.ok) {
+      res.status(400).json({ error: parsed.error });
       return;
     }
+    if (!requireConnected(vmId, res)) return;
+    const { text, images, cwd, accountId } = parsed.value;
     const tempId = randomUUID();
-    const localMessage = {
-      type: 'user',
-      local: true,
-      message: { role: 'user', content: contentBlocks(text ?? '', images) },
-    };
+    const localMessage = userMessage(text, images);
     T(res).insertMessage({ sessionId: tempId, vmId, message: localMessage });
-    browserServer.broadcast(tenantOf(res), {
-      type: 'sdk_message',
-      vmId,
-      sessionId: tempId,
-      message: localMessage,
-      createdAt: new Date().toISOString(),
-    });
+    browserServer.broadcast(tenantOf(res), { type: 'sdk_message', vmId, sessionId: tempId, message: localMessage, createdAt: new Date().toISOString() });
 
-    const delivered = agentServer.sendToVm(vmId, {
-      type: 'user_input',
-      sessionId: tempId,
-      tempId,
-      cwd,
-      accountId,
-      text: text ?? '',
-      images,
-    });
+    const delivered = agentServer.sendToVm(vmId, { type: 'user_input', sessionId: tempId, tempId, cwd, accountId, text, images });
     if (!delivered) {
       res.status(503).json({ error: 'VM not connected' });
       return;
@@ -232,27 +305,19 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
   router.post('/vms/:vmId/sessions/:sessionId/messages', (req, res) => {
     const { vmId } = req.params;
     const sessionId = T(res).resolveSession(req.params.sessionId);
-    const { text, images } = req.body ?? {};
-    if (!text && !(images?.length > 0)) {
-      res.status(400).json({ error: 'text or images required' });
+    const parsed = parseUserInput(req.body);
+    if (!parsed.ok) {
+      res.status(400).json({ error: parsed.error });
       return;
     }
-    const localMessage = {
-      type: 'user',
-      local: true,
-      message: { role: 'user', content: contentBlocks(text ?? '', images) },
-    };
+    if (!requireConnected(vmId, res)) return;
+    const { text, images } = parsed.value;
+    const localMessage = userMessage(text, images);
     T(res).insertMessage({ sessionId, vmId, message: localMessage });
-    T(res).touchSession(sessionId, 'active');
-    browserServer.broadcast(tenantOf(res), {
-      type: 'sdk_message',
-      vmId,
-      sessionId,
-      message: localMessage,
-      createdAt: new Date().toISOString(),
-    });
+    T(res).touchSession(sessionId, 'active', vmId);
+    browserServer.broadcast(tenantOf(res), { type: 'sdk_message', vmId, sessionId, message: localMessage, createdAt: new Date().toISOString() });
 
-    const delivered = agentServer.sendToVm(vmId, { type: 'user_input', sessionId, text: text ?? '', images });
+    const delivered = agentServer.sendToVm(vmId, { type: 'user_input', sessionId, text, images });
     if (!delivered) {
       res.status(503).json({ error: 'VM not connected' });
       return;
@@ -266,7 +331,11 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
   });
 
   router.post('/vms/:vmId/sessions/:sessionId/model', (req, res) => {
-    const { model } = req.body ?? {};
+    const model = req.body?.model;
+    if (model !== undefined && model !== null && (typeof model !== 'string' || model.length > 200)) {
+      res.status(400).json({ error: 'model must be a string' });
+      return;
+    }
     const delivered = agentServer.sendToVm(req.params.vmId, {
       type: 'set_model',
       sessionId: T(res).resolveSession(req.params.sessionId),
@@ -276,7 +345,11 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
   });
 
   router.post('/vms/:vmId/sessions/:sessionId/effort', (req, res) => {
-    const { effort } = req.body ?? {};
+    const effort = req.body?.effort;
+    if (effort !== undefined && effort !== null && effort !== '' && !isEffortLevel(effort)) {
+      res.status(400).json({ error: 'invalid effort level' });
+      return;
+    }
     const delivered = agentServer.sendToVm(req.params.vmId, {
       type: 'set_effort',
       sessionId: T(res).resolveSession(req.params.sessionId),
@@ -286,7 +359,11 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
   });
 
   router.post('/vms/:vmId/sessions/:sessionId/permission-mode', (req, res) => {
-    const { mode } = req.body ?? {};
+    const mode = req.body?.mode;
+    if (!isPermissionMode(mode)) {
+      res.status(400).json({ error: 'invalid permission mode' });
+      return;
+    }
     const delivered = agentServer.sendToVm(req.params.vmId, {
       type: 'set_permission_mode',
       sessionId: T(res).resolveSession(req.params.sessionId),
@@ -297,19 +374,29 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
 
   router.post('/vms/:vmId/sessions/:sessionId/permission-response', (req, res) => {
     const { requestId, behavior, message } = req.body ?? {};
-    const delivered = agentServer.sendToVm(req.params.vmId, {
-      type: 'permission_response',
-      requestId,
-      behavior,
-      message,
-    });
-    browserServer.broadcast(tenantOf(res), {
-      type: 'permission_resolved',
-      vmId: req.params.vmId,
-      sessionId: T(res).resolveSession(req.params.sessionId),
-      requestId,
-    });
+    if (!isIdString(requestId) || !isPermissionBehavior(behavior) || (message !== undefined && (typeof message !== 'string' || message.length > 4000))) {
+      res.status(400).json({ error: 'requestId and behavior (allow|deny) required' });
+      return;
+    }
+    const delivered = agentServer.sendToVm(req.params.vmId, { type: 'permission_response', requestId, behavior, message });
+    // Only tell the UI the card is resolved if the agent actually received the answer; otherwise the user would see
+    // "approved" while the agent is still blocked waiting.
+    if (delivered) {
+      browserServer.broadcast(tenantOf(res), {
+        type: 'permission_resolved',
+        vmId: req.params.vmId,
+        sessionId: T(res).resolveSession(req.params.sessionId),
+        requestId,
+      });
+    }
     res.status(delivered ? 202 : 503).json({ ok: delivered });
+  });
+
+  // express.json() failures (413 too large, 400 malformed) should be JSON like everything else.
+  router.use((err: any, _req: Request, res: Response, next: NextFunction) => {
+    if (res.headersSent) return next(err);
+    const status = typeof err?.status === 'number' && err.status >= 400 && err.status < 500 ? err.status : 500;
+    res.status(status).json({ error: status === 413 ? 'Request body too large' : status === 500 ? 'Internal error' : 'Bad request' });
   });
 
   return router;

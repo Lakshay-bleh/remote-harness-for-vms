@@ -12,10 +12,13 @@ const { createAgentServer } = await import('./agentServer.js');
 const { createBrowserServer } = await import('./browserServer.js');
 const { createApiRouter } = await import('./api.js');
 const { createAdminRouter } = await import('./admin.js');
+const { securityHeaders } = await import('./headers.js');
 
-const db = openDb(config.dataDir);
+const db = openDb(config.dataDir, { encryptionKey: config.encryptionKey ?? config.hubAgentToken });
 
 const app = express();
+app.disable('x-powered-by');
+app.use(securityHeaders);
 // The native Android app calls the hub cross-origin. Auth is a bearer token (no cookies),
 // so allowing any origin doesn't widen what an attacker without the token can do.
 app.use(['/api', '/admin'], (req, res, next) => {
@@ -28,11 +31,10 @@ app.use(['/api', '/admin'], (req, res, next) => {
   }
   next();
 });
-app.use(express.json({ limit: '20mb' }));
 
 const httpServer = createServer(app);
 
-const browserServer = createBrowserServer(db);
+const browserServer = createBrowserServer(db, { allowQueryToken: config.allowQueryToken });
 
 const agentServer = createAgentServer(db, config.hubAgentToken, {
   onHello(tenantId, vmId, vmName, accounts, sessions, agentVersion) {
@@ -58,12 +60,12 @@ const agentServer = createAgentServer(db, config.hubAgentToken, {
     switch (msg.type) {
       case 'sdk_message': {
         t.insertMessage({ sessionId: msg.sessionId, vmId, message: msg.message });
-        t.touchSession(msg.sessionId, 'active');
+        t.touchSession(msg.sessionId, 'active', vmId);
         broadcast({ type: 'sdk_message', vmId, sessionId: msg.sessionId, tempId: msg.tempId, message: msg.message, createdAt: now });
         break;
       }
       case 'session_created': {
-        t.rekeySession(msg.tempId, msg.sessionId);
+        t.rekeySession(msg.tempId, msg.sessionId, vmId);
         t.upsertSession({ id: msg.sessionId, vmId, cwd: msg.cwd, title: msg.title, status: 'active', accountId: msg.accountId });
         broadcast({
           type: 'session_created',
@@ -81,7 +83,7 @@ const agentServer = createAgentServer(db, config.hubAgentToken, {
         break;
       }
       case 'session_ended': {
-        t.touchSession(msg.sessionId, 'idle');
+        t.touchSession(msg.sessionId, 'idle', vmId);
         broadcast({ type: 'session_ended', vmId, sessionId: msg.sessionId });
         break;
       }
@@ -117,10 +119,14 @@ const agentServer = createAgentServer(db, config.hubAgentToken, {
       }
     }
   },
-});
+}, { pingIntervalMs: config.agentPingMs, maxPayloadBytes: config.agentMaxPayloadBytes });
 
 app.use('/admin', createAdminRouter(db, agentServer, browserServer, config.hubAdminToken, config.machineMinTtlSeconds));
-app.use('/api', createApiRouter(db, agentServer, browserServer, config.appPassword));
+app.use('/api', createApiRouter(db, agentServer, browserServer, config.appPassword, {
+  trustProxy: config.trustProxy,
+  allowPrivateMcp: config.allowPrivateMcp,
+  loginMaxFailures: config.loginMaxFailures,
+}));
 app.use(express.static(config.webDist));
 app.get('*', (_req, res) => {
   res.sendFile('index.html', { root: config.webDist });
@@ -146,6 +152,11 @@ httpServer.on('upgrade', (req, socket, head) => {
     socket.destroy();
   }
 });
+
+// Close sockets whose session expired or was revoked even when nothing is being broadcast to them.
+setInterval(() => browserServer.closeRevokedSessions(), 60_000).unref();
+
+process.on('unhandledRejection', (err) => console.error('[hub] unhandled rejection:', err));
 
 httpServer.listen(config.port, () => {
   console.log(`Hub listening on :${config.port}`);

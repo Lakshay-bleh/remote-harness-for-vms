@@ -376,7 +376,7 @@ function classifyHost(rawHost: string): 'metadata' | 'private' | 'public' {
 // The hub pushes this URL (plus a bearer token) to every VM, so it must not be pointable
 // at cloud metadata endpoints or, by default, anything on a private network.
 export function validateMcpUrl(url: unknown, opts: { allowPrivate?: boolean } = {}): { ok: true; value: string } | { ok: false; error: string } {
-  if (!typeof url === 'string' || url.length > 2048) return { ok: false, error: 'url required' };
+  if (typeof url !== 'string' || url.length > 2048) return { ok: false, error: 'url required' };
   let u: URL;
   try {
     u = new URL(url);
@@ -473,7 +473,9 @@ export function toMcpServerDto(s: ManagedMcpServer): McpServerDto {
 
 // A token issued for one purpose (Escanor's integration), separate from a browser login so that
 // signing out never breaks it and it can be revoked on its own. The value is shown once, on creation.
-export type ApiTokenDto = { id: string; label: string; createdAt: string };
+// 'mcp' tokens may only manage the MCP-server registry (what Escanor needs); 'full' is everything a login can do except mint tokens.
+export type ApiTokenScope = 'full' | 'mcp';
+export type ApiTokenDto = { id: string; label: string; createdAt: string; scope?: ApiTokenScope; expiresAt?: string | null };
 export type ApiTokenCreatedDto = ApiTokenDto & { token: string };
 
 // ---------- Is this MCP call read-only? ----------

@@ -10,7 +10,7 @@ import WebSocket from 'ws';
 
 const json = { 'content-type': 'application/json' };
 const settle = (ms = 250) => new Promise((r) => setTimeout(r, ms));
-const ADMIN = 'admin-secret';
+const ADMIN = 'admin-secret-for-tests-only-123456';
 const admin = { authorization: `Bearer ${ADMIN}`, ...json };
 const bearer = (t: string) => ({ authorization: `Bearer ${t}`, ...json });
 
@@ -188,7 +188,7 @@ test('the browser channel gives a machine token only its own machine\'s events',
   await settle(300);
 
   const heard: Array<{ type: string; name?: string }> = [];
-  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${m.apiToken}`);
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, ['escanor.hub.v1', `escanor.auth.${m.apiToken}`]);
   ws.on('message', (d) => heard.push(JSON.parse(d.toString())));
   await new Promise((r) => ws.on('open', r));
   // Both machines connect/disconnect; the scoped listener must hear only inc-7.
@@ -198,5 +198,5 @@ test('the browser channel gives a machine token only its own machine\'s events',
   assert.ok(heard.some((h) => h.type === 'vm_status' && h.name === 'inc-7'));
   assert.ok(!heard.some((h) => h.name === 'workspace-vm-2'), 'nothing about the tenant\'s other machine');
   ws.close();
-  assert.equal(await new Promise((res) => { const bad = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${m.agentToken}`); bad.on('error', () => res('refused')); bad.on('unexpected-response', () => res('refused')); bad.on('open', () => res('open')); }), 'refused');
+  assert.equal(await new Promise((res) => { const bad = new WebSocket(`ws://127.0.0.1:${port}/ws`, ['escanor.hub.v1', `escanor.auth.${m.agentToken}`]); bad.on('error', () => res('refused')); bad.on('unexpected-response', () => res('refused')); bad.on('open', () => res('open')); }), 'refused');
 });

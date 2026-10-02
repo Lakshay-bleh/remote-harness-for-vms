@@ -2,6 +2,7 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { AgentToHubMessage, AgentSessionSummary, ClaudeAccount, HubToAgentMessage } from '@remote-harness/shared';
+import { parseAgentFrame } from '@remote-harness/shared/validate';
 import { DEFAULT_TENANT, type Db, type MachineScope } from './db.js';
 
 const PROJECTS_REQUEST_TIMEOUT_MS = 5000;
@@ -12,14 +13,38 @@ export type AgentEventHandlers = {
   onStatusChange: (tenantId: string, vmId: string, vmName: string, connected: boolean) => void;
 };
 
+export type AgentServerOptions = {
+  // How often to ping agents; one that hasn't answered by the next tick is terminated (half-open TCP otherwise reads as OPEN forever).
+  pingIntervalMs?: number;
+  maxPayloadBytes?: number;
+};
+
 const same = (a: string, b: string) => {
   const x = Buffer.from(a);
   const y = Buffer.from(b);
   return x.length === y.length && timingSafeEqual(x, y);
 };
 
-export function createAgentServer(db: Db, defaultToken: string, handlers: AgentEventHandlers) {
-  const wss = new WebSocketServer({ noServer: true });
+export function createAgentServer(db: Db, defaultToken: string, handlers: AgentEventHandlers, opts: AgentServerOptions = {}) {
+  // sdk_message frames can carry tool-result images, hence the generous default; it still bounds what a peer can make us buffer.
+  const wss = new WebSocketServer({ noServer: true, maxPayload: opts.maxPayloadBytes ?? 32 * 1024 * 1024 });
+  const alive = new WeakMap<WebSocket, boolean>();
+  const heartbeat = setInterval(() => {
+    for (const ws of wss.clients) {
+      if (alive.get(ws) === false) {
+        ws.terminate();
+        continue;
+      }
+      alive.set(ws, false);
+      try {
+        ws.ping();
+      } catch {
+        ws.terminate();
+      }
+    }
+  }, opts.pingIntervalMs ?? 30_000);
+  heartbeat.unref();
+  wss.on('close', () => clearInterval(heartbeat));
 
   /**
    * Which tenant does this agent belong to, and is it limited to one machine? null = refuse. The classic shared token is
@@ -52,6 +77,10 @@ export function createAgentServer(db: Db, defaultToken: string, handlers: AgentE
     }
     const { tenantId, machine } = auth;
     tenantOfSocket.set(ws, tenantId);
+    alive.set(ws, true);
+    ws.on('pong', () => alive.set(ws, true));
+    // ws emits 'error' (e.g. payload too large) before closing; unhandled, it would take the process down.
+    ws.on('error', (err) => console.error('[agent] socket error:', err.message));
     let vmId: string | null = null;
     let vmName: string | null = null;
     if (machine) {
@@ -62,12 +91,17 @@ export function createAgentServer(db: Db, defaultToken: string, handlers: AgentE
     }
 
     ws.on('message', (data) => {
-      let msg: AgentToHubMessage;
+      const msg = parseAgentFrame(data.toString());
+      if (!msg) return; // not JSON, not an object, or not a frame we know: ignore it
       try {
-        msg = JSON.parse(data.toString());
-      } catch {
-        return;
+        handleFrame(msg);
+      } catch (err) {
+        // One bad frame (or a storage failure) must never take the hub down for every tenant.
+        console.error('[agent] dropped frame after handler error:', err);
       }
+    });
+
+    function handleFrame(msg: AgentToHubMessage) {
       const t = db.for(tenantId);
 
       if (msg.type === 'hello') {
@@ -76,10 +110,24 @@ export function createAgentServer(db: Db, defaultToken: string, handlers: AgentE
           ws.close(1008, 'wrong machine');
           return;
         }
+        // One socket speaks for exactly one VM; a second identity would leave stale registry entries behind.
+        if (vmName !== null && msg.vmName !== vmName) {
+          ws.close(1008, 'hello identity changed');
+          return;
+        }
+        const nextId = t.upsertVm(msg.vmName);
+        const previous = byVmId.get(nextId);
+        if (previous && previous !== ws) {
+          // Two live agents with the same name (cloned VMs) would otherwise kick each other off forever. Refuse the newcomer;
+          // a dead previous connection is reaped by the heartbeat and the agent's own reconnect loop then gets in.
+          if (previous.readyState === WebSocket.OPEN && alive.get(previous) !== false) {
+            ws.close(1008, 'VM name already connected');
+            return;
+          }
+          previous.terminate();
+        }
         vmName = msg.vmName;
-        vmId = t.upsertVm(vmName);
-        const previous = byVmId.get(vmId);
-        if (previous && previous !== ws) previous.close();
+        vmId = nextId;
         byVmId.set(vmId, ws);
         tenantOfVm.set(vmId, tenantId);
         handlers.onHello(tenantId, vmId, vmName, msg.accounts, msg.sessions, String(msg.agentVersion ?? ''));
@@ -99,7 +147,7 @@ export function createAgentServer(db: Db, defaultToken: string, handlers: AgentE
       }
 
       handlers.onEvent(tenantId, vmId, msg);
-    });
+    }
 
     ws.on('close', () => {
       if (vmId && vmName) {

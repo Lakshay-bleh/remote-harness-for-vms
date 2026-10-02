@@ -67,7 +67,7 @@ test('invalid servers are refused', async () => {
 });
 
 test('a server installed before any VM exists reaches a VM that connects later, credentials included', async () => {
-  const r = await put('escanor', { url: 'https://mcp.escanor.in/', headers: { Authorization: 'Bearer secret' }, managedBy: 'escanor' });
+  const r = await put('escanor', { url: 'https://mcp.escanor.in/', headers: { Authorization: 'Bearer secret' }, managedBy: 'escanor', autoAllow: true });
   const body = await r.json();
   assert.equal(r.status, 200);
   assert.deepEqual(body.server.headerNames, ['Authorization']);
