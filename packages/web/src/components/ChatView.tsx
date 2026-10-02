@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ImageAttachment, MessageDto } from '@remote-harness/shared';
 import { useStore } from '../store';
 import { api } from '../api';
@@ -6,6 +6,8 @@ import { groupMessages, latestTodos } from '../groupMessages';
 import Message, { PermissionRequest, Spinner, TodoList, CwdContext } from './Message';
 import Composer from './Composer';
 import Dropdown, { Chip } from './Dropdown';
+import { EmbeddedContext, ScreenHeader } from '../escanor/ui';
+import { getPrefs } from '../escanor/settings/prefs';
 
 const PERMISSION_MODES = [
   { value: 'default', label: 'Default' },
@@ -98,16 +100,18 @@ export default function ChatView({ className, onBack }: { className: string; onB
   const { state, actions } = useStore();
   const { selectedVmId: vmId, selectedSessionId: sessionId, selectedAccountId } = state;
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [mode, setMode] = useState('default');
-  const [model, setModel] = useState('');
-  const [effort, setEffort] = useState('');
+  const embedded = useContext(EmbeddedContext);
+  // A new chat starts with what the person chose in Settings > New chats.
+  const [mode, setMode] = useState(() => getPrefs().defaultMode);
+  const [model, setModel] = useState(() => getPrefs().defaultModel);
+  const [effort, setEffort] = useState(() => getPrefs().defaultEffort);
   const [project, setProject] = useState('');
   const [projects, setProjects] = useState<string[]>([]);
 
   useEffect(() => {
-    setMode('default');
-    setModel('');
-    setEffort('');
+    setMode(getPrefs().defaultMode);
+    setModel(getPrefs().defaultModel);
+    setEffort(getPrefs().defaultEffort);
     setProject('');
   }, [sessionId]);
 
@@ -163,16 +167,24 @@ export default function ChatView({ className, onBack }: { className: string; onB
   }
 
   return (
-    <div className={`${className} safe-top min-w-0 flex-1 flex-col bg-canvas`}>
-      <div className="flex items-center gap-3 border-b border-hairline px-4 py-3.5">
-        <button onClick={onBack} className="-ml-1 flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-surface-card md:hidden">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
+    <div className={`${className} ${embedded ? '' : 'safe-top'} min-w-0 flex-1 flex-col bg-canvas`}>
+      <div className="md:hidden">
+        <ScreenHeader
+          title={session?.title ?? 'New chat'}
+          onBack={onBack}
+          subtitle={
+            <>
+              {vm?.name}
+              {vm && <span className={`ml-1.5 inline-block h-1.5 w-1.5 rounded-full ${vm.connected ? 'bg-success' : 'bg-hairline'}`} />}
+              {session && <span className="ml-1.5">· {session.cwd}</span>}
+            </>
+          }
+        />
+      </div>
+      <div className="hidden min-h-[56px] shrink-0 items-center gap-3 border-b border-hairline px-4 py-2 md:flex">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[14px] font-medium text-ink">{session?.title ?? 'New chat'}</p>
-          <p className="truncate text-[12px] text-muted-soft">
+          <p className="truncate font-display text-[18px] leading-tight text-ink">{session?.title ?? 'New chat'}</p>
+          <p className="truncate text-[12px] text-muted">
             {vm?.name}
             {vm && <span className={`ml-1.5 inline-block h-1.5 w-1.5 rounded-full ${vm.connected ? 'bg-success' : 'bg-hairline'}`} />}
             {session && <span className="ml-1.5">· {session.cwd}</span>}

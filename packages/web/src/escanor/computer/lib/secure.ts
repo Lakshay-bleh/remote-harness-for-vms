@@ -127,6 +127,12 @@ export function parseCode(code: string): Uint8Array {
 
 export const pairingKey = (secret: Uint8Array) => hkdf(secret, 'escanor-pair-v1', 'pairing key');
 export const pairProof = (secret: Uint8Array, nonce: string, deviceName: string) => hmac(secret, 'pair', nonce, deviceName);
+/**
+ * A short tag derived from the pairing secret. A phone sends it with a cloud pairing so that, when several computers are
+ * online in one account, only the one that is showing this code answers (the others say "not this computer" without it
+ * counting as a wrong guess). It is 32 bits of a one-way function of the secret, so it does not give the secret away.
+ */
+export const pairSelector = async (secret: Uint8Array) => b64u.encode((await hmac(secret, 'sel')).slice(0, 4));
 export const relayKey = (deviceKey: Uint8Array) => hkdf(deviceKey, 'escanor-relay-v1', 'relay key');
 
 // ---- LAN session handshake -------------------------------------------------------------------------------------------

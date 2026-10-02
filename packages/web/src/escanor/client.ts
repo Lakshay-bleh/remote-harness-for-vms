@@ -49,6 +49,22 @@ export interface McpConnection {
   managed_by?: string | null;
 }
 
+/** What the person chose to be told about; the same switches as on the website. */
+export interface NotificationPrefs {
+  push_enabled: boolean;
+  emergency_alerts: boolean;
+  server_down: boolean;
+  deployment_approvals: boolean;
+  team_pings: boolean;
+}
+
+export interface Subscription {
+  plan_name?: string;
+  plan_id?: string;
+  status?: string;
+  [k: string]: unknown;
+}
+
 export interface McpInstall {
   endpoint: string;
   token: string;
@@ -181,17 +197,52 @@ export const escanor = {
   integrationAuthorizeUrl: (providerId: string) => request<{ authorization_url: string }>(`/auth/integrations/${enc(providerId)}/authorize?platform=mobile`).then((r) => r.authorization_url),
   disconnect: (providerId: string) => request<{ disconnected: boolean }>(`/auth/integrations/${enc(providerId)}`, { method: 'DELETE' }),
 
-  // -- Escanor Desktop: a sealed (end-to-end encrypted) command for one of the person's own computers, answered when it next polls.
-  async sendToComputer(agentId: string, deviceId: string, sealed: string): Promise<string> {
-    type Cmd = { id: string; status: string; result?: { sealed?: string }; error?: string | null };
-    let cmd = await request<Cmd>('/agents/commands', json({ agent_id: agentId, plugin: 'desktop', action: 'sealed', parameters: { dev: deviceId, sealed }, approve_immediately: true, wait_for_result: true }));
+  // -- Escanor Desktop: end-to-end encrypted commands for one of the person's own computers, answered when it next polls.
+  /** Queue a command for a computer through the backend and wait for it to finish. The backend only carries what the phone sealed. */
+  async runOnComputer(agentId: string, action: string, parameters: Record<string, unknown>): Promise<Record<string, any>> {
+    type Cmd = { id: string; status: string; result?: Record<string, any>; error?: string | null };
+    let cmd = await request<Cmd>('/agents/commands', json({ agent_id: agentId, plugin: 'desktop', action, parameters, approve_immediately: true, wait_for_result: true }));
     const until = Date.now() + 120_000;
     while (cmd.status !== 'succeeded' && cmd.status !== 'failed' && cmd.status !== 'cancelled' && Date.now() < until) {
       await new Promise((r) => setTimeout(r, 1200));
       cmd = await request<Cmd>(`/agents/commands/${enc(cmd.id)}`);
     }
-    if (cmd.status !== 'succeeded' || !cmd.result?.sealed) throw new Error(cmd.status === 'failed' ? (cmd.error ?? 'The computer refused that.') : 'The computer did not answer. Is it on and online?');
-    return cmd.result.sealed;
+    if (cmd.status !== 'succeeded') throw new Error(cmd.status === 'failed' ? (cmd.error ?? 'The computer refused that.') : 'The computer did not answer. Is it on and online?');
+    return cmd.result ?? {};
+  },
+  async sendToComputer(agentId: string, deviceId: string, sealed: string): Promise<string> {
+    const r = await escanor.runOnComputer(agentId, 'sealed', { dev: deviceId, sealed });
+    if (!r.sealed) throw new Error('The computer did not answer. Is it on and online?');
+    return String(r.sealed);
+  },
+  /** The computers of this account that run Escanor Desktop (a phone signed in to the same account can find them to pair). */
+  async desktops(): Promise<Array<{ id: string; name: string; online: boolean }>> {
+    const r = await request<{ agents: Array<{ id: string; name: string; runtime_status: string; health?: { app?: string } }> }>('/agents');
+    return r.agents.filter((a) => a.health?.app === 'escanor-desktop').map((a) => ({ id: a.id, name: a.name, online: a.runtime_status === 'online' }));
+  },
+  async pairWithDesktop(agentId: string, body: { sel: string; nonce: string; proof: string; name: string }): Promise<{ deviceId: string; sealedKey: string }> {
+    const r = await escanor.runOnComputer(agentId, 'pair', body);
+    if (typeof r.deviceId !== 'string' || typeof r.sealedKey !== 'string') throw new Error('The computer did not complete the pairing.');
+    return { deviceId: r.deviceId, sealedKey: r.sealedKey };
+  },
+
+  // -- the person and their account (the same endpoints the website uses)
+  async updateProfile(name: string): Promise<{ name: string }> {
+    return request('/users/me', { method: 'PATCH', body: JSON.stringify({ name }) });
+  },
+  notificationPrefs: () => request<NotificationPrefs>('/users/me/notification-preferences'),
+  setNotificationPrefs: (patch: Partial<NotificationPrefs>) => request<NotificationPrefs>('/users/me/notification-preferences', { method: 'PATCH', body: JSON.stringify(patch) }),
+  subscription: () => request<Subscription>('/subscription'),
+  exportMyData: () => request<unknown>('/me/export'),
+  /** How long the backend takes to answer, in ms: the Developer screen's "is it me or the server" check. Needs no sign-in. */
+  async ping(): Promise<{ ms: number; ok: boolean; status: number }> {
+    const t = performance.now();
+    try {
+      const res = await fetch(`${escanorApiBase().replace(/\/api\/v1$/, '')}/health`, { cache: 'no-store' });
+      return { ms: Math.round(performance.now() - t), ok: res.ok, status: res.status };
+    } catch {
+      return { ms: Math.round(performance.now() - t), ok: false, status: 0 };
+    }
   },
 
   // -- other AI apps

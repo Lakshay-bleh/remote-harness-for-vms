@@ -1,7 +1,8 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { List } from '@phosphor-icons/react';
-import { createContext, useContext, type ReactNode } from 'react';
+import { CaretLeft, List } from '@phosphor-icons/react';
+import { useHardwareBack } from './back';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 
 /**
  * The Escanor mark: the eclipse, the same artwork as the app icon and the website. It carries its own black-and-gold
@@ -42,6 +43,7 @@ export function Notice({ tone = 'info', children }: { tone?: 'info' | 'error' | 
 export const Spinner = () => <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-hairline border-t-primary" role="status" aria-label="Loading" />;
 
 export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  useHardwareBack(true, onClose);
   return (
     <div className="fixed inset-0 z-40 flex flex-col justify-end bg-black/60 md:items-center md:justify-center" onClick={onClose}>
       <div role="dialog" aria-label={title} className="safe-bottom flex max-h-[85svh] w-full flex-col rounded-t-xl bg-canvas md:max-w-lg md:rounded-xl" onClick={(e) => e.stopPropagation()}>
@@ -65,28 +67,61 @@ export function ago(iso: string | number | null | undefined): string {
   return h < 24 ? `${h}h ago` : `${Math.floor(h / 24)}d ago`;
 }
 
-/** Lets any screen header open the navigation drawer on phones. Null where the sidebar is always visible. */
+/** Lets a screen header open the chat list on phones. Null where the sidebar is always visible. */
 export const NavContext = createContext<{ open: () => void } | null>(null);
+
+/**
+ * True for screens drawn inside another screen's frame (the machines list and chat inside the app shell). The shell already keeps
+ * clear of the status bar, so these must not add the safe-area inset a second time: that was the blank band above their headers.
+ */
+export const EmbeddedContext = createContext(false);
 
 export function MenuButton() {
   const nav = useContext(NavContext);
   if (!nav) return null;
   return (
-    <button onClick={nav.open} aria-label="Open menu" className="-ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-pill text-body transition hover:bg-surface-card hover:text-ink active:scale-90 md:hidden">
+    <button onClick={nav.open} aria-label="Chats" className="-ml-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-pill text-body transition hover:bg-surface-card hover:text-ink active:scale-90 md:hidden">
       <List size={22} />
     </button>
   );
 }
 
-/** The title bar every main screen shares, so moving between screens never changes the ground under you. */
-export function ScreenHeader({ title, children }: { title: string; children?: ReactNode }) {
+export function BackButton({ onClick, label = 'Back' }: { onClick: () => void; label?: string }) {
   return (
-    <header className="flex min-h-[52px] items-center gap-2 border-b border-hairline px-4 py-2.5">
-      <MenuButton />
-      <h1 className="min-w-0 flex-1 truncate font-display text-2xl leading-tight text-ink">{title}</h1>
-      {children}
+    <button onClick={onClick} aria-label={label} className="-ml-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-pill text-body transition hover:bg-surface-card hover:text-ink active:scale-90">
+      <CaretLeft size={22} weight="bold" />
+    </button>
+  );
+}
+
+/**
+ * The title bar every screen shares, so moving between screens never changes the ground under you. One bar, one height: a back
+ * arrow (when the screen is a step inside another), the title with an optional line under it, then any actions on the right.
+ */
+export function ScreenHeader({ title, subtitle, onBack, menu = false, children }: { title: string; subtitle?: ReactNode; onBack?: () => void; menu?: boolean; children?: ReactNode }) {
+  return (
+    <header className="flex min-h-[56px] shrink-0 items-center gap-1.5 border-b border-hairline px-4 py-2">
+      {onBack ? <BackButton onClick={onBack} /> : menu ? <MenuButton /> : null}
+      <div className="min-w-0 flex-1">
+        <h1 className="truncate font-display text-[21px] leading-tight text-ink">{title}</h1>
+        {subtitle ? <p className="truncate text-[12px] leading-tight text-muted">{subtitle}</p> : null}
+      </div>
+      {children ? <div className="flex shrink-0 items-center gap-2">{children}</div> : null}
     </header>
   );
+}
+
+/** True while the on-screen keyboard is up, so fixed bars (the tab bar) can get out of its way. */
+export function useKeyboardOpen(): boolean {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const check = () => setOpen(window.innerHeight - vv.height > 140);
+    vv.addEventListener('resize', check);
+    return () => vv.removeEventListener('resize', check);
+  }, []);
+  return open;
 }
 
 export const GoogleIcon = ({ size = 17 }: { size?: number }) => (

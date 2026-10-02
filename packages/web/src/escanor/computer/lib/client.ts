@@ -9,7 +9,7 @@
 import type { ClientMsg, PairingPayload, ServerMsg } from './protocol';
 import { phoneRedeem } from './redeem';
 import { openRelayResponse, sealRelayRequest } from './relay-seal';
-import { b64u, clientProof, open, parseCode, randomBytes, seal, serverProof, sessionKey, timingSafeEqual } from './secure';
+import { b64u, clientProof, open, pairSelector, parseCode, randomBytes, seal, serverProof, sessionKey, timingSafeEqual } from './secure';
 
 export interface PairedComputer {
   /** The device id this phone was given. */
@@ -65,6 +65,37 @@ export async function pairWithPayload(payload: PairingPayload, deviceName: strin
     }
   }
   throw lastError;
+}
+
+/** What the phone needs from the Escanor backend to pair through the cloud. The app implements it with its signed-in API client. */
+export interface CloudDirectory {
+  /** The computers of this account that run Escanor Desktop, and whether each is online right now. */
+  computers(): Promise<Array<{ id: string; name: string; online: boolean }>>;
+  /** Queue a pairing for one computer and return its answer. Rejects with the computer's own plain message ("Not this computer.", "That code did not match."). */
+  pair(agentId: string, body: { sel: string; nonce: string; proof: string; name: string }): Promise<{ deviceId: string; sealedKey: string }>;
+}
+
+/**
+ * Pair using only the code: no address, no shared Wi-Fi, so it works from anywhere there is internet. The phone is signed in to the
+ * same Escanor account as the computer; it asks each online computer of that account, and only the one showing this code answers.
+ * The code itself never leaves the phone (only a proof of it), and the device key comes back sealed under a key derived from it.
+ * A scanned QR also names the computer (`hint.agentId`) and its local addresses, which are kept for the "same Wi-Fi" route.
+ */
+export async function pairWithCode(code: string, deviceName: string, cloud: CloudDirectory, hint: { agentId?: string | null; machine?: string; lan?: string[] } = {}): Promise<PairedComputer> {
+  const secret = parseCode(code);
+  const sel = await pairSelector(secret);
+  const known = hint.agentId ? [{ id: hint.agentId, name: hint.machine ?? 'My computer' }] : (await cloud.computers()).filter((c) => c.online);
+  if (known.length === 0) throw new Error('No computer with Escanor Desktop is online in your account. Open it, sign in to the same account, and turn on "Away from home".');
+  for (const target of known) {
+    try {
+      const got = await phoneRedeem(secret, deviceName, (body) => cloud.pair(target.id, { sel, nonce: body.nonce, proof: body.proof, name: body.device.name }));
+      return { id: got.deviceId, name: target.name, key: b64u.encode(got.key), lan: hint.lan ?? [], agentId: target.id, pairedAt: new Date().toISOString() };
+    } catch (e) {
+      if (e instanceof Error && e.message === 'Not this computer.') continue; // somebody else's code: ask the next one
+      throw e;
+    }
+  }
+  throw new Error('That code is not showing on any of your computers. Check it, and that the computer is signed in to the same account.');
 }
 
 type Pending = { resolve: (m: ServerMsg[]) => void; reject: (e: Error) => void; match: (m: ServerMsg) => boolean; got: ServerMsg[]; done: (got: ServerMsg[]) => boolean };

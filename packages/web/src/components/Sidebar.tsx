@@ -1,11 +1,10 @@
-import LegalLinks from './LegalLinks';
-import { useEffect, useMemo, useState } from 'react';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import type { ClaudeAccount, SessionDto } from '@remote-harness/shared';
 import { useStore } from '../store';
 import EscanorConnect from './EscanorConnect';
 import { ConnectMachineSheet } from '../escanor/ConnectMachine';
 import { useManagedHub } from '../escanor/ManagedMachines';
-import { Logo, ScreenHeader } from '../escanor/ui';
+import { EmbeddedContext, Logo, ScreenHeader } from '../escanor/ui';
 
 function relativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -52,6 +51,7 @@ export default function Sidebar({ className, onSelectSession }: { className: str
   const [expandedVmId, setExpandedVmId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const managed = useManagedHub();
+  const embedded = useContext(EmbeddedContext);
   const [connecting, setConnecting] = useState(false);
 
   useEffect(() => {
@@ -89,7 +89,7 @@ export default function Sidebar({ className, onSelectSession }: { className: str
   }
 
   return (
-    <div className={`${className} ${managed ? '' : 'safe-top'} w-full flex-col border-r border-hairline bg-surface-soft md:w-80`}>
+    <div className={`${className} ${managed || embedded ? '' : 'safe-top'} w-full flex-col border-r border-hairline bg-surface-soft md:w-80`}>
       {managed && <ScreenHeader title="Machines" />}
       {!managed && <div className="flex items-center gap-2.5 px-5 pb-3 pt-5">
         <Logo size={32} />
@@ -200,7 +200,6 @@ export default function Sidebar({ className, onSelectSession }: { className: str
           </>
         )}
       </div>
-      <div className="px-3 pb-3"><LegalLinks /></div>
       {connecting && <ConnectMachineSheet onClose={() => setConnecting(false)} />}
     </div>
   );

@@ -10,12 +10,15 @@ import ManagedMachines from './escanor/ManagedMachines';
 import { clearManaged, isManaged } from './escanor/managed';
 import { hubSocket } from './ws';
 import { SessionProvider, useEscanorSession } from './escanor/session';
-import { Logo, Spinner } from './escanor/ui';
+import { useHardwareBack } from './escanor/back';
+import { EmbeddedContext, Logo, Spinner } from './escanor/ui';
 
 /** The Remote Harness: sessions on machines you run yourself, through your own hub. Unchanged behaviour. */
 function HubApp({ embedded = false, onBack }: { embedded?: boolean; onBack?: () => void }) {
   const { state } = useStore();
   const [pane, setPane] = useState<'sidebar' | 'chat'>('sidebar');
+  // On a phone the machine's chat is a step inside the machines list: the back button returns to the list.
+  useHardwareBack(state.authed && pane === 'chat', () => setPane('sidebar'));
 
   if (!state.authed) {
     return (
@@ -26,10 +29,12 @@ function HubApp({ embedded = false, onBack }: { embedded?: boolean; onBack?: () 
     );
   }
   return (
-    <div className={`flex overflow-hidden bg-canvas text-ink ${embedded ? 'h-full' : 'h-[100svh]'}`}>
-      <Sidebar className={`${pane === 'chat' ? 'hidden' : 'flex'} md:flex`} onSelectSession={() => setPane('chat')} />
-      <ChatView className={`${pane === 'sidebar' ? 'hidden' : 'flex'} md:flex`} onBack={() => setPane('sidebar')} />
-    </div>
+    <EmbeddedContext.Provider value={embedded}>
+      <div className={`flex overflow-hidden bg-canvas text-ink ${embedded ? 'h-full' : 'h-[100svh]'}`}>
+        <Sidebar className={`${pane === 'chat' ? 'hidden' : 'flex'} md:flex`} onSelectSession={() => setPane('chat')} />
+        <ChatView className={`${pane === 'sidebar' ? 'hidden' : 'flex'} md:flex`} onBack={() => setPane('sidebar')} />
+      </div>
+    </EmbeddedContext.Provider>
   );
 }
 
