@@ -1,18 +1,20 @@
 import { isNative } from '../api';
 
-const API_KEY = 'escanor_api_url';
+const LEGACY_OVERRIDE_KEY = 'escanor_api_url';
 const DEFAULT_API = 'https://api.escanor.in/api/v1';
 
-/** Where the Escanor backend is. Overridable for development (`localStorage.escanor_api_url`) or at build time. */
-export function escanorApiBase(): string {
-  const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(API_KEY) : null;
-  const built = (import.meta as { env?: Record<string, string> }).env?.VITE_ESCANOR_API;
-  return (stored || built || DEFAULT_API).replace(/\/+$/, '');
+// The app used to let a custom server be typed in Developer settings. That sent the person's sign-in to whatever address was entered,
+// and nothing needed it, so it is gone: forget any address saved by an older version.
+try {
+  if (typeof localStorage !== 'undefined') localStorage.removeItem(LEGACY_OVERRIDE_KEY);
+} catch {
+  // storage unavailable: nothing to forget
 }
 
-export function setEscanorApiBase(url: string | null): void {
-  if (url && /^https?:\/\//.test(url)) localStorage.setItem(API_KEY, url.trim());
-  else localStorage.removeItem(API_KEY);
+/** Where the Escanor backend is: always Escanor's own server. Only a build made for development (VITE_ESCANOR_API) points elsewhere. */
+export function escanorApiBase(): string {
+  const built = (import.meta as { env?: Record<string, string> }).env?.VITE_ESCANOR_API;
+  return (built || DEFAULT_API).replace(/\/+$/, '');
 }
 
 /** Custom scheme the Android app owns; the Escanor site's /auth/mobile page hands the login code to it. */

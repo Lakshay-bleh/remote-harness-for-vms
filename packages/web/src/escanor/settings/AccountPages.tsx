@@ -3,7 +3,6 @@ import { useState } from 'react';
 import { describeUsage } from '@remote-harness/shared/escanor';
 import { escanor } from '../client';
 import { useLoad } from '../hooks';
-import { openWeb } from '../links';
 import { useEscanorSession } from '../session';
 import { Button, Notice, Sheet, Spinner } from '../ui';
 import { Avatar, ConfirmSheet, Group, Page, Row } from './parts';
@@ -48,11 +47,6 @@ export function AccountPage({ onBack }: { onBack: () => void }) {
         <Row label="Sign-in" value="Google" />
       </Group>
 
-      <Group title="On the web" footer="Billing, team members and data requests are managed on the Escanor website.">
-        <Row label="Account settings" onClick={() => void openWeb('/dashboard/settings')} />
-        <Row label="Billing and plan" onClick={() => void openWeb('/dashboard/settings/billing')} />
-      </Group>
-
       <Group>
         <Row icon={<SignOut size={18} />} label="Sign out" danger onClick={() => setConfirmOut(true)} />
       </Group>
@@ -72,7 +66,7 @@ export function AccountPage({ onBack }: { onBack: () => void }) {
 }
 
 /** What the plan is and what today's use looks like: the same numbers as the website. */
-export function UsagePage({ onBack }: { onBack: () => void }) {
+export function UsagePage({ onBack, onBilling }: { onBack: () => void; onBilling: () => void }) {
   const usage = useLoad(() => escanor.usage(), 60000);
   const plan = useLoad(() => escanor.subscription().catch(() => null), 0);
   const u = usage.data ? describeUsage(usage.data) : null;
@@ -81,10 +75,10 @@ export function UsagePage({ onBack }: { onBack: () => void }) {
 
   return (
     <Page title="Plan and usage" onBack={onBack}>
-      <Group title="Plan" footer="Change your plan on the website.">
+      <Group title="Plan" footer="Change or cancel your plan under Plan and billing.">
         <Row label="Current plan" value={plan.loading && !plan.data ? <Spinner /> : String(plan.data?.plan_name ?? 'Free')} />
         {plan.data?.status ? <Row label="Status" value={<span className="capitalize">{String(plan.data.status).replace(/_/g, ' ')}</span>} /> : null}
-        <Row label="Manage plan" onClick={() => void openWeb('/dashboard/settings/billing')} />
+        <Row label="Plan and billing" onClick={onBilling} />
       </Group>
 
       <section>
