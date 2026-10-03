@@ -13,6 +13,9 @@ export type SettingsScreen = 'wifi' | 'bluetooth' | 'display' | 'sound' | 'batte
 
 export type PhoneAction =
   | { type: 'open_app'; name: string }
+  /** An app the server already chose, by its package: nothing left to match. */
+  | { type: 'open_package'; package: string; label: string }
+  | { type: 'open_url'; url: string }
   | { type: 'call'; who: string }
   | { type: 'alarm'; hour: number; minute: number }
   | { type: 'timer'; seconds: number }
