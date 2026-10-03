@@ -11,6 +11,7 @@ import IntegrationsView from './IntegrationsView';
 import { listenPush, resumePush, type PushDest } from './push';
 import { useEscanorSession } from './session';
 import SettingsView from './settings/SettingsView';
+import VoiceOrb from './voice/VoiceOrb';
 import { getPrefs, haptic } from './settings/prefs';
 import { Logo, NavContext, useKeyboardOpen } from './ui';
 
@@ -135,6 +136,12 @@ export default function Shell({ machines }: { machines: React.ReactNode }) {
 
   const show = useCallback((t: Tab) => { setTab(t); setVisited((v) => (v.has(t) ? v : new Set(v).add(t))); setDrawer(false); }, []);
   const openChat = useCallback((id: string | null) => { setConversationId(id); show('assistant'); }, [show]);
+  /** A voice request for the Escanor assistant: start that conversation and show it. */
+  const askAssistant = useCallback(async (text: string) => {
+    const r = await escanor.send(text);
+    chats.reload();
+    openChat(r.conversation_id);
+  }, [chats, openChat]);
   const removeChat = useCallback((id: string, name: string) => {
     if (!window.confirm(`Delete “${name}”? This cannot be undone.`)) return;
     void escanor.remove(id).then(() => { if (id === conversationId) setConversationId(null); chats.reload(); });
@@ -185,6 +192,9 @@ export default function Shell({ machines }: { machines: React.ReactNode }) {
         </main>
 
         <TabBar tab={tab} onPick={show} />
+
+        {/* Escanor's voice, on every screen. */}
+        <VoiceOrb go={show} onAssistant={askAssistant} />
 
         {banner && (
           <button type="button" role="status" onClick={() => { show(banner.dest); setBanner(null); }} className="fixed inset-x-3 top-[calc(env(safe-area-inset-top)+8px)] z-[60] rounded-xl border border-line-strong bg-surface-card p-3.5 text-left shadow-elevated md:left-auto md:max-w-sm">
