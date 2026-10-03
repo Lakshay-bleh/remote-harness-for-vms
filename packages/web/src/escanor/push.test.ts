@@ -24,3 +24,23 @@ describe('stateFromPermission', () => {
     assert.equal(stateFromPermission('something new'), 'off');
   });
 });
+
+import { channelState } from './push';
+
+describe('channelState (is the Alerts channel able to show anything?)', () => {
+  const ch = (importance: number, id = 'escanor_alerts') => ({ id, importance });
+  it('is fine at default importance or above', () => {
+    for (const i of [3, 4, 5]) assert.equal(channelState([ch(i)]), 'ok', String(i));
+  });
+  it('says blocked when the person switched the channel off', () => {
+    assert.equal(channelState([ch(0)]), 'blocked');
+  });
+  it('says quiet when it can only appear silently', () => {
+    for (const i of [1, 2]) assert.equal(channelState([ch(i)]), 'quiet', String(i));
+  });
+  it('says missing when the channel was never created, and ignores other channels', () => {
+    assert.equal(channelState([]), 'missing');
+    assert.equal(channelState([ch(4, 'something_else')]), 'missing');
+    assert.equal(channelState(undefined), 'missing');
+  });
+});

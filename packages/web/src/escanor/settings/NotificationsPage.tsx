@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { escanor, type NotificationPrefs } from '../client';
 import { useLoad } from '../hooks';
 import { Notice, Spinner } from '../ui';
-import { enablePush, pushState, type PushState } from '../push';
+import { alertChannelState, enablePush, pushState, type ChannelState, type PushState } from '../push';
 import { Group, Page, Row, SwitchRow } from './parts';
 
 const KINDS: Array<{ key: Exclude<keyof NotificationPrefs, 'push_enabled'>; label: string; sub: string; icon: JSX.Element }> = [
@@ -19,7 +19,10 @@ function ThisPhone() {
   const [state, setState] = useState<PushState | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const [channel, setChannel] = useState<ChannelState | null>(null);
   useEffect(() => { void pushState().then(setState); }, []);
+  // Android can silence the Alerts channel behind the app's back, and then "On" above would be a lie. Ask it, every time this opens.
+  useEffect(() => { if (state === 'on') void alertChannelState().then(setChannel); }, [state]);
 
   if (state === null || (server.loading && !server.data)) return null;
   if (state === 'unsupported') return <Notice>Alerts on a phone need the Escanor Android app. Your choices below are saved to your account either way.</Notice>;
@@ -48,10 +51,11 @@ function ThisPhone() {
 
   return (
     <>
-      <Group title="On this phone" footer={state === 'denied' ? 'Notifications are blocked for Escanor. Allow them in Android Settings, under Apps, Escanor, Notifications.' : undefined}>
+      <Group title="On this phone" footer={state === 'on' && channel === 'ok' ? 'If a test still does not show when the app is closed, check Android Settings: Battery, Escanor, Unrestricted; and Apps, Escanor, Notifications.' : state === 'denied' ? 'Notifications are blocked for Escanor. Allow them in Android Settings, under Apps, Escanor, Notifications.' : undefined}>
         {state === 'on' ? (
           <>
             <Row icon={<DeviceMobile size={18} />} label="Notifications on this phone" value={<span className="text-success">On</span>} />
+            {channel && channel !== 'ok' && <Row icon={<WarningOctagon size={18} />} label={channel === 'blocked' ? 'The Alerts channel is switched off' : channel === 'quiet' ? 'Alerts are set to silent' : 'The Alerts channel is not set up'} sub={channel === 'missing' ? 'Turn notifications off and on again, or reopen the app.' : 'In Android Settings: Apps, Escanor, Notifications, Alerts. Turn it on and set it to make sound or pop up.'} />}
             <Row icon={<PaperPlaneTilt size={18} />} label="Send a test notification" onClick={() => void test()} disabled={busy} chevron={false} />
           </>
         ) : state === 'denied' ? (
