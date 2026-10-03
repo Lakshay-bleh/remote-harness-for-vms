@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { describeUsage } from '@remote-harness/shared/escanor';
 import { escanor } from '../client';
 import { useLoad } from '../hooks';
-import { LINKS, openExternal } from '../links';
+import { openWeb } from '../links';
 import { useEscanorSession } from '../session';
 import { Button, Notice, Sheet, Spinner } from '../ui';
 import { Avatar, ConfirmSheet, Group, Page, Row } from './parts';
@@ -49,8 +49,8 @@ export function AccountPage({ onBack }: { onBack: () => void }) {
       </Group>
 
       <Group title="On the web" footer="Billing, team members and data requests are managed on the Escanor website.">
-        <Row label="Account settings" onClick={() => openExternal(LINKS.accountSettings)} />
-        <Row label="Billing and plan" onClick={() => openExternal(LINKS.billing)} />
+        <Row label="Account settings" onClick={() => void openWeb('/dashboard/settings')} />
+        <Row label="Billing and plan" onClick={() => void openWeb('/dashboard/settings/billing')} />
       </Group>
 
       <Group>
@@ -84,7 +84,7 @@ export function UsagePage({ onBack }: { onBack: () => void }) {
       <Group title="Plan" footer="Change your plan on the website.">
         <Row label="Current plan" value={plan.loading && !plan.data ? <Spinner /> : String(plan.data?.plan_name ?? 'Free')} />
         {plan.data?.status ? <Row label="Status" value={<span className="capitalize">{String(plan.data.status).replace(/_/g, ' ')}</span>} /> : null}
-        <Row label="Manage plan" onClick={() => openExternal(LINKS.billing)} />
+        <Row label="Manage plan" onClick={() => void openWeb('/dashboard/settings/billing')} />
       </Group>
 
       <section>

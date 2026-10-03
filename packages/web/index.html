@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" style="color-scheme: dark; background: #050505">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
@@ -15,6 +15,17 @@
       rel="stylesheet"
     />
     <title>Escanor</title>
+    <script>
+      // Apply the saved theme before the first paint, so a light-theme phone does not flash dark on every start.
+      try {
+        var p = JSON.parse(localStorage.getItem('escanor.prefs.v1') || '{}');
+        var t = p.theme === 'light' || p.theme === 'black' ? p.theme : p.theme === 'system' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : 'dark';
+        document.documentElement.dataset.theme = t;
+        document.documentElement.style.colorScheme = t === 'light' ? 'light' : 'dark';
+        var m = document.querySelector('meta[name="theme-color"]');
+        if (m) m.setAttribute('content', t === 'light' ? '#faf8f4' : t === 'black' ? '#000000' : '#050505');
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

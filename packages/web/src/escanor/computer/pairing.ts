@@ -1,4 +1,5 @@
-import { pairWithCode, pairWithPayload, type ClientEnv, type CloudDirectory, type PairedComputer } from './lib/client';
+import { normalizeLanAddress, pairByAddress, pairWithCode, pairWithPayload, type ClientEnv, type CloudDirectory, type PairedComputer } from './lib/client';
+import type { LanAskOptions } from './lib/lan-pair';
 import type { PairingPayload } from './lib/protocol';
 import { formatCode, parseCode } from './lib/secure';
 
@@ -31,12 +32,14 @@ export function parseEntry(text: string): PairEntry | null {
   }
 }
 
-/** `host:port` or null. Tolerates a pasted `http://…/`. */
-export function normalizeAddress(text: string): string | null {
-  const t = text.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
-  const m = /^([A-Za-z0-9.-]+):(\d{2,5})$/.exec(t);
-  return m && Number(m[2]) <= 65535 ? `${m[1]}:${m[2]}` : null;
-}
+/** `host:port` or null: the address of a computer on the local network. The port is optional, and a pasted `http://…/` is fine. */
+export const normalizeAddress = normalizeLanAddress;
+
+/**
+ * Pair with a computer on the same Wi-Fi knowing only its address, with no code: the person approves on the computer after checking
+ * that it shows the same confirmation number as this phone (`onConfirm` receives it).
+ */
+export const pairOnWifi = (address: string, deviceName: string, o: LanAskOptions & { env?: ClientEnv } = {}): Promise<PairedComputer> => pairByAddress(address, deviceName, o);
 
 export interface PairOptions {
   /** `cloud` (the default): the code alone, from anywhere. `lan`: straight to the computer over the same Wi-Fi. */
@@ -57,7 +60,7 @@ export async function pairComputer(entry: PairEntry, deviceName: string, o: Pair
   if (o.mode === 'lan') {
     const typed = o.lanAddress ? normalizeAddress(o.lanAddress) : null;
     const addresses = p?.lan.length ? p.lan : typed ? [typed] : [];
-    if (addresses.length === 0) throw new Error('Enter the address shown on your computer, like 192.168.1.20:47625.');
+    if (addresses.length === 0) throw new Error('Enter the address shown on your computer, like 192.168.1.20.');
     return local(addresses);
   }
   try {

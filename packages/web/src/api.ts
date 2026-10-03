@@ -7,12 +7,22 @@ const HUB_URL_KEY = 'rh_hub_url';
 // Android app there is no such origin, so the user enters the hub's address once.
 export const isNative = (): boolean => Boolean((window as any).Capacitor?.isNativePlatform?.());
 
+/** In the phone app a hub must be https: its token and every message cross the internet, and the app also talks plain http to a
+ *  computer on the local network, so this is what keeps the two apart. (In a browser the hub serves the page itself.) */
+export function hubUrlProblem(url: string, native = isNative()): string | null {
+  if (!native || !url.trim()) return null;
+  return /^https:\/\//i.test(url.trim()) ? null : 'A hub must start with https://. Put it behind TLS (a reverse proxy, a tunnel or the Cloudflare Worker hub).';
+}
+
 export function getHubUrl(): string {
-  return (localStorage.getItem(HUB_URL_KEY) ?? '').replace(/\/+$/, '');
+  const url = (localStorage.getItem(HUB_URL_KEY) ?? '').replace(/\/+$/, '');
+  return hubUrlProblem(url) ? '' : url; // an old plain-http address saved before this rule is ignored, not used
 }
 
 export function setHubUrl(url: string): void {
   const clean = url.trim().replace(/\/+$/, '');
+  const problem = hubUrlProblem(clean);
+  if (problem) throw new Error(problem);
   if (clean) localStorage.setItem(HUB_URL_KEY, clean);
   else localStorage.removeItem(HUB_URL_KEY);
 }

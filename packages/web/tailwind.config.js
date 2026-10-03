@@ -5,48 +5,49 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Escanor's dark theme, taken from the website's landing scope: an off-black page, warm off-white ink and
-        // a single gold signal. Names are unchanged so every screen picks it up together.
+        // Every colour is "R G B" in a CSS variable (palettes in styles.css), so themes switch without touching a screen and
+        // opacity utilities such as bg-primary/15 keep working. Names are unchanged.
         primary: {
-          DEFAULT: '#f2a73b',
-          active: '#e39a2c',
-          disabled: '#3e3c37',
+          DEFAULT: 'rgb(var(--c-primary) / <alpha-value>)',
+          active: 'rgb(var(--c-primary-active) / <alpha-value>)',
+          disabled: 'rgb(var(--c-primary-disabled) / <alpha-value>)',
         },
-        ink: '#f3f1ec',
+        ink: 'rgb(var(--c-ink) / <alpha-value>)',
         body: {
-          DEFAULT: '#beb2b1',
-          strong: '#e2dfd8',
+          DEFAULT: 'rgb(var(--c-body) / <alpha-value>)',
+          strong: 'rgb(var(--c-body-strong) / <alpha-value>)',
         },
         muted: {
-          DEFAULT: '#98948b',
-          soft: '#7e7b73',
+          DEFAULT: 'rgb(var(--c-muted) / <alpha-value>)',
+          soft: 'rgb(var(--c-muted-soft) / <alpha-value>)',
         },
         hairline: {
-          DEFAULT: '#242320',
-          soft: '#181816',
+          DEFAULT: 'rgb(var(--c-hairline) / <alpha-value>)',
+          soft: 'rgb(var(--c-hairline-soft) / <alpha-value>)',
         },
         // Borders of controls (inputs, the composer, quiet buttons): one value, so every field looks the same.
-        'line-strong': '#3e3c37',
-        canvas: '#050505',
+        'line-strong': 'rgb(var(--c-line-strong) / <alpha-value>)',
+        canvas: 'rgb(var(--c-canvas) / <alpha-value>)',
         surface: {
-          soft: '#090908',
-          card: '#151513',
-          'cream-strong': '#1f1e1b',
-          dark: '#080807',
-          'dark-elevated': '#151513',
-          'dark-soft': '#0c0c0b',
+          soft: 'rgb(var(--c-surface-soft) / <alpha-value>)',
+          card: 'rgb(var(--c-surface-card) / <alpha-value>)',
+          'cream-strong': 'rgb(var(--c-surface-strong) / <alpha-value>)',
+          // Code windows and tool output stay dark in every theme.
+          dark: 'rgb(var(--c-code) / <alpha-value>)',
+          'dark-elevated': 'rgb(var(--c-code-elevated) / <alpha-value>)',
+          'dark-soft': 'rgb(var(--c-field) / <alpha-value>)',
         },
-        'on-primary': '#180e02',
+        'on-primary': 'rgb(var(--c-on-primary) / <alpha-value>)',
         'on-dark': {
-          DEFAULT: '#f3f1ec',
-          soft: '#98948b',
+          DEFAULT: 'rgb(var(--c-on-code) / <alpha-value>)',
+          soft: 'rgb(var(--c-on-code-soft) / <alpha-value>)',
         },
-        permission: '#8b93ff',
-        'accent-teal': '#5db8a6',
-        'accent-amber': '#e8a55a',
-        success: '#5db872',
-        warning: '#e0b040',
-        error: '#ef6b62',
+        permission: 'rgb(var(--c-permission) / <alpha-value>)',
+        'accent-teal': 'rgb(var(--c-teal) / <alpha-value>)',
+        'accent-amber': 'rgb(var(--c-amber) / <alpha-value>)',
+        success: 'rgb(var(--c-success) / <alpha-value>)',
+        warning: 'rgb(var(--c-warning) / <alpha-value>)',
+        error: 'rgb(var(--c-error) / <alpha-value>)',
       },
       fontFamily: {
         // One family throughout, as on the website.

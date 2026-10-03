@@ -6,41 +6,116 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Palettes: "R G B". Dark is the default and what shows before the saved theme is applied. */
 :root {
   color-scheme: dark;
+  --c-primary: 242 167 59;
+  --c-primary-active: 227 154 44;
+  --c-primary-disabled: 62 60 55;
+  --c-on-primary: 24 14 2;
+  --c-ink: 243 241 236;
+  --c-body: 190 178 177;
+  --c-body-strong: 226 223 216;
+  --c-muted: 152 148 139;
+  --c-muted-soft: 126 123 115;
+  --c-hairline: 36 35 32;
+  --c-hairline-soft: 24 24 22;
+  --c-line-strong: 62 60 55;
+  --c-canvas: 5 5 5;
+  --c-surface-soft: 9 9 8;
+  --c-surface-card: 21 21 19;
+  --c-surface-strong: 31 30 27;
+  --c-code: 8 8 7;
+  --c-code-elevated: 21 21 19;
+  --c-field: 12 12 11;
+  --c-on-code: 243 241 236;
+  --c-on-code-soft: 152 148 139;
+  --c-permission: 139 147 255;
+  --c-teal: 93 184 166;
+  --c-amber: 232 165 90;
+  --c-success: 93 184 114;
+  --c-warning: 224 176 64;
+  --c-error: 239 107 98;
+  --c-inline-code: 255 216 142;
+}
+
+:root[data-theme='black'] {
+  --c-primary-disabled: 44 44 42;
+  --c-hairline: 30 30 29;
+  --c-hairline-soft: 18 18 17;
+  --c-line-strong: 52 52 50;
+  --c-canvas: 0 0 0;
+  --c-surface-soft: 4 4 4;
+  --c-surface-card: 14 14 13;
+  --c-surface-strong: 24 24 23;
+  --c-code: 10 10 9;
+  --c-field: 6 6 6;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --c-primary-disabled: 214 208 196;
+  --c-ink: 28 26 22;
+  --c-body: 78 72 64;
+  --c-body-strong: 40 37 32;
+  --c-muted: 108 102 92;
+  --c-muted-soft: 140 134 123;
+  --c-hairline: 229 223 212;
+  --c-hairline-soft: 238 233 224;
+  --c-line-strong: 205 197 183;
+  --c-canvas: 250 248 244;
+  --c-surface-soft: 244 241 235;
+  --c-surface-card: 255 255 255;
+  --c-surface-strong: 236 231 221;
+  --c-field: 255 255 255;
+  --c-permission: 84 92 220;
+  --c-teal: 28 130 112;
+  --c-amber: 184 116 20;
+  --c-success: 34 128 58;
+  --c-warning: 168 116 10;
+  --c-error: 205 50 42;
+  --c-inline-code: 150 84 6;
+}
+
+/* "Reduce motion": no slides, fades or spins beyond what is needed to show something is loading. */
+.reduce-motion *, .reduce-motion *::before, .reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
 }
 
 html, body, #root {
   height: 100%;
-  background: #050505;
+  background: rgb(var(--c-canvas));
 }
 
 body {
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: none;
   font-family: Gellix, Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: #f3f1ec;
+  color: rgb(var(--c-ink));
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #3e3c37 transparent;
+  scrollbar-color: rgb(var(--c-line-strong)) transparent;
 }
 *::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 *::-webkit-scrollbar-thumb {
-  background: #3e3c37;
+  background: rgb(var(--c-line-strong));
   border-radius: 999px;
 }
 
 /* Dark surfaces (code windows, tool-output chrome) get their own darker scrollbar */
 .on-dark-scroll {
-  scrollbar-color: #3a3733 transparent;
+  scrollbar-color: rgb(var(--c-line-strong)) transparent;
 }
 .on-dark-scroll::-webkit-scrollbar-thumb {
-  background: #3a3733;
+  background: rgb(var(--c-line-strong));
 }
 
 .safe-top {
@@ -57,8 +132,9 @@ body {
   margin-bottom: 0;
 }
 .markdown pre {
-  background: #080807 !important;
-  border: 1px solid #242320;
+  background: rgb(var(--c-code)) !important;
+  color: rgb(var(--c-on-code));
+  border: 1px solid rgb(var(--c-hairline));
   border-radius: 0.75rem;
   padding: 0.75rem 1rem;
   overflow-x: auto;
@@ -69,8 +145,8 @@ body {
   font-size: 0.85em;
 }
 .markdown :not(pre) > code {
-  background: rgba(243, 241, 236, 0.08);
-  color: #ffd88e;
+  background: rgb(var(--c-ink) / 0.08);
+  color: rgb(var(--c-inline-code));
   padding: 0.1em 0.4em;
   border-radius: 0.35em;
 }
@@ -81,7 +157,7 @@ body {
   margin: 0.4em 0;
 }
 .markdown a {
-  color: #f2a73b;
+  color: rgb(var(--c-primary));
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -98,7 +174,7 @@ body {
 }
 .markdown th, .markdown td {
   padding: 0.25em 0.6em;
-  border: 1px solid #242320;
+  border: 1px solid rgb(var(--c-hairline));
 }
 .markdown img {
   max-width: 100%;

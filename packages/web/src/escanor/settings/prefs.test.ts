@@ -32,3 +32,10 @@ test('every text size has a scale, with the default at 100%', () => {
   assert.equal(TEXT_SIZE_PERCENT.default, 100);
   assert.ok(TEXT_SIZE_PERCENT.small < 100 && TEXT_SIZE_PERCENT.large > 100);
 });
+
+test('theme, accent, motion and start tab are validated field by field', () => {
+  const got = parsePrefs(JSON.stringify({ theme: 'light', accent: 'violet', reduceMotion: true, startTab: 'computers' }));
+  assert.deepEqual([got.theme, got.accent, got.reduceMotion, got.startTab], ['light', 'violet', true, 'computers']);
+  const bad = parsePrefs(JSON.stringify({ theme: 'neon', accent: 'plaid', reduceMotion: 'yes', startTab: 'settings' }));
+  assert.deepEqual([bad.theme, bad.accent, bad.reduceMotion, bad.startTab], [DEFAULT_PREFS.theme, DEFAULT_PREFS.accent, DEFAULT_PREFS.reduceMotion, DEFAULT_PREFS.startTab]);
+});

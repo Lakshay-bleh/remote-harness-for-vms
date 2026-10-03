@@ -7,6 +7,7 @@
  * relay (end-to-end encrypted, the cloud only passes sealed messages along).
  */
 import type { ClientMsg, PairingPayload, ServerMsg } from './protocol';
+import { isLocalAddress, phoneAskLan, type LanAskOptions } from './lan-pair';
 import { phoneRedeem } from './redeem';
 import { openRelayResponse, sealRelayRequest } from './relay-seal';
 import { b64u, clientProof, open, pairSelector, parseCode, randomBytes, seal, serverProof, sessionKey, timingSafeEqual } from './secure';
@@ -49,7 +50,7 @@ export async function pairWithPayload(payload: PairingPayload, deviceName: strin
   if (payload.v !== 1) throw new Error('This pairing code is from a newer version of Escanor. Update the app.');
   const secret = parseCode(payload.code);
   let lastError: unknown = new Error('This computer could not be reached on the local network.');
-  for (const addr of payload.lan) {
+  for (const addr of payload.lan.filter(isLocalAddress)) {
     try {
       const base = `http://${addr}`;
       const got = await phoneRedeem(secret, deviceName, async (body) => {
@@ -65,6 +66,35 @@ export async function pairWithPayload(payload: PairingPayload, deviceName: strin
     }
   }
   throw lastError;
+}
+
+/**
+ * Pair with a computer on the same network knowing only its address (`192.168.1.20` or `192.168.1.20:47625`). No code: the person
+ * approves on the computer. `onConfirm` receives the number to check against the one shown there.
+ */
+export async function pairByAddress(address: string, deviceName: string, o: LanAskOptions & { env?: ClientEnv } = {}): Promise<PairedComputer> {
+  const addr = normalizeLanAddress(address);
+  if (!addr) throw new Error('Enter the computer’s address, like 192.168.1.20 (shown on its Phone screen).');
+  const doFetch = o.fetch ?? o.env?.fetch ?? fetch;
+  let name = 'My computer';
+  try {
+    const info = await withTimeout(doFetch(`http://${addr}/info`), 4000, 'The computer');
+    const body = (await info.json()) as { app?: string; name?: string };
+    if (body.app !== 'escanor-desktop') throw new Error('not escanor');
+    if (body.name) name = String(body.name);
+  } catch {
+    throw new Error(`Nothing answered at ${addr}. Check the address, that your phone is on the same Wi-Fi, and that "On this network" is switched on in Escanor Desktop.`);
+  }
+  const got = await phoneAskLan(`http://${addr}`, deviceName, { ...o, fetch: doFetch });
+  return { id: got.deviceId, name: got.machine?.name ?? name, key: b64u.encode(got.key), lan: [addr], agentId: null, pairedAt: new Date().toISOString() };
+}
+
+/** `host` or `host:port` (a pasted `http://…/` is fine) as `host:port`, or null. The port defaults to the one the computer uses. */
+export function normalizeLanAddress(text: string): string | null {
+  const t = text.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  const m = /^([A-Za-z0-9.-]+)(?::(\d{2,5}))?$/.exec(t);
+  if (!m || Number(m[2] ?? 47625) > 65535 || !isLocalAddress(m[1])) return null;
+  return `${m[1]}:${m[2] ?? 47625}`;
 }
 
 /** What the phone needs from the Escanor backend to pair through the cloud. The app implements it with its signed-in API client. */
@@ -140,9 +170,24 @@ export class ComputerClient {
     }
   }
 
+  /** Which of this computer's addresses answer right now (as this computer), asked all at once: a dead one costs 1.5 s, not 3 s each in turn. */
+  private async liveAddresses(): Promise<string[]> {
+    const doFetch = this.env.fetch ?? fetch;
+    const probe = async (addr: string): Promise<string | null> => {
+      try {
+        const res = await withTimeout(doFetch(`http://${addr}/info`), 1500, 'probe');
+        const body = (await res.json()) as { app?: string };
+        return body.app === 'escanor-desktop' ? addr : null;
+      } catch {
+        return null;
+      }
+    };
+    return (await Promise.all(this.computer.lan.filter(isLocalAddress).map(probe))).filter((a): a is string => a !== null);
+  }
+
   /** Connect the best way available. Resolves with the route used; rejects if neither works. */
   async connect(): Promise<Route> {
-    for (const addr of this.computer.lan) {
+    for (const addr of await this.liveAddresses()) {
       try {
         await withTimeout(this.openLan(addr), this.env.lanTimeoutMs, 'The local connection');
         this.setRoute('lan');

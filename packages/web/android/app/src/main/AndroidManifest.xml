@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Plain http/ws is needed for ONE thing: talking to your own computer on your own Wi-Fi (the desktop app's local gateway, whose
+         messages are sealed with a key only the two of you hold). The app refuses to use it for anything else: the Escanor API and
+         hubs must be https, and local-network addresses are the only plain addresses it will open (see isLocalAddress). -->
     <application
         android:allowBackup="false"
-        android:usesCleartextTraffic="false"
+        android:usesCleartextTraffic="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"

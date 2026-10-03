@@ -9,13 +9,13 @@ import { useEscanorSession } from '../session';
 import { ScreenHeader } from '../ui';
 import { AccountPage, UsagePage } from './AccountPages';
 import DeveloperPage from './DeveloperPage';
-import { AboutPage, PrivacyPage } from './InfoPages';
+import { AboutPage, LegalDocPage, PrivacyPage } from './InfoPages';
 import NotificationsPage from './NotificationsPage';
 import { Avatar, ConfirmSheet, Group, Row } from './parts';
 import { AppearancePage, ChatDefaultsPage } from './PreferencePages';
 import { usePrefs } from './prefs';
 
-type Page = 'root' | 'account' | 'usage' | 'notifications' | 'appearance' | 'chats' | 'developer' | 'privacy' | 'about';
+type Page = 'root' | 'account' | 'usage' | 'notifications' | 'appearance' | 'chats' | 'developer' | 'privacy' | 'about' | `doc:${string}`;
 
 /**
  * Settings, laid out like a phone's own: who you are at the top, then groups that each open a page. It replaces the old Account
@@ -24,6 +24,7 @@ type Page = 'root' | 'account' | 'usage' | 'notifications' | 'appearance' | 'cha
 export default function SettingsView({ onGo }: { onGo: (to: 'computers' | 'machines' | 'connections') => void }) {
   const { user, signOut } = useEscanorSession();
   const [page, setPage] = useState<Page>('root');
+  const [from, setFrom] = useState<Page>('privacy');
   const [confirmOut, setConfirmOut] = useState(false);
   const prefs = usePrefs();
   const usage = useLoad(() => escanor.usage(), 120000);
@@ -37,9 +38,10 @@ export default function SettingsView({ onGo }: { onGo: (to: 'computers' | 'machi
     case 'appearance': return <AppearancePage onBack={back} />;
     case 'chats': return <ChatDefaultsPage onBack={back} />;
     case 'developer': return <DeveloperPage onBack={back} />;
-    case 'privacy': return <PrivacyPage onBack={back} />;
-    case 'about': return <AboutPage onBack={back} />;
+    case 'privacy': return <PrivacyPage onBack={back} onOpenDoc={(k) => { setFrom('privacy'); setPage(`doc:${k}`); }} />;
+    case 'about': return <AboutPage onBack={back} onOpenDoc={(k) => { setFrom('about'); setPage(`doc:${k}`); }} />;
   }
+  if (page.startsWith('doc:')) return <LegalDocPage docKey={page.slice(4)} onBack={() => setPage(from)} />;
 
   return (
     <div className="flex h-full min-h-0 flex-col">

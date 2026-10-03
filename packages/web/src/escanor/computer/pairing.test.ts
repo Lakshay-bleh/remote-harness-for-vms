@@ -41,10 +41,11 @@ describe('parseEntry', () => {
 });
 
 describe('normalizeAddress', () => {
-  it('accepts host:port and rejects anything that is not one', () => {
+  it('accepts an address on the local network, with or without a port, and rejects anything else', () => {
     assert.equal(normalizeAddress(' 192.168.1.20:47625 '), '192.168.1.20:47625');
     assert.equal(normalizeAddress('http://192.168.1.20:47625/'), '192.168.1.20:47625');
-    for (const bad of ['', '192.168.1.20', 'nonsense', '192.168.1.20:99999', 'a b:1']) assert.equal(normalizeAddress(bad), null, bad);
+    assert.equal(normalizeAddress('192.168.1.20'), '192.168.1.20:47625'); // the usual port is assumed
+    for (const bad of ['', 'nonsense', '192.168.1.20:99999', 'a b:1', '8.8.8.8', 'example.com:47625']) assert.equal(normalizeAddress(bad), null, bad);
   });
 });
 

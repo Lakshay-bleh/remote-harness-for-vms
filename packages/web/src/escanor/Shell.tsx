@@ -1,6 +1,8 @@
-import { ChatCircleText, Desktop, GearSix, Laptop, PencilSimpleLine, PlugsConnected, Trash, X, type Icon } from '@phosphor-icons/react';
+import { ChatCircleText, Desktop, GearSix, Laptop, PencilSimpleLine, PlugsConnected, X, type Icon } from '@phosphor-icons/react';
 import { useCallback, useEffect, useState } from 'react';
 import AssistantView from './AssistantView';
+import ChatList from './ChatList';
+import { useChatMeta } from './chatList';
 import { useHardwareBack } from './back';
 import ComputersView from './computer/ComputersView';
 import { escanor } from './client';
@@ -9,7 +11,7 @@ import IntegrationsView from './IntegrationsView';
 import { listenPush, resumePush, type PushDest } from './push';
 import { useEscanorSession } from './session';
 import SettingsView from './settings/SettingsView';
-import { haptic } from './settings/prefs';
+import { getPrefs, haptic } from './settings/prefs';
 import { Logo, NavContext, useKeyboardOpen } from './ui';
 
 export type Tab = 'assistant' | 'connections' | 'computers' | 'machines' | 'settings';
@@ -27,11 +29,11 @@ const PAGES = TABS.filter((t) => t.id !== 'assistant');
 interface NavProps {
   tab: Tab;
   conversationId: string | null;
-  conversations: Array<{ id: string; title: string }>;
+  conversations: Array<{ id: string; title: string; created_at?: string | null; updated_at?: string | null }>;
   onPick: (t: Tab) => void;
   onNewChat: () => void;
   onOpenChat: (id: string) => void;
-  onDeleteChat: (id: string) => void;
+  onDeleteChat: (id: string, name: string) => void;
   /** Icons only (tablets) or icons with names and the chat list (desktop). */
   expanded: boolean;
   /** The phone's chat drawer: just new chat and your recent chats. The places are on the tab bar. */
@@ -71,20 +73,8 @@ function Nav({ tab, conversationId, conversations, onPick, onNewChat, onOpenChat
         </nav>
       )}
 
-      <div className={`mt-4 min-h-0 flex-1 overflow-y-auto px-3 ${hide}`}>
-        {conversations.length > 0 && <h2 className="px-3.5 pb-1.5 text-[12px] font-medium text-muted">Recents</h2>}
-        {conversations.length === 0 && chatsOnly && <p className="px-3.5 py-2 text-sm text-muted">Your chats will show up here.</p>}
-        <ul className="space-y-0.5 pb-2">
-          {conversations.map((c) => {
-            const active = tab === 'assistant' && c.id === conversationId;
-            return (
-              <li key={c.id} className={`group relative rounded-pill transition ${active ? 'bg-surface-card' : 'hover:bg-surface-card/60'}`}>
-                <button onClick={() => onOpenChat(c.id)} className={`block w-full truncate rounded-pill py-2.5 pl-3.5 pr-10 text-left text-[14px] outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${active ? 'text-ink' : 'text-body group-hover:text-ink'}`}>{c.title}</button>
-                <button onClick={() => onDeleteChat(c.id)} aria-label={`Delete ${c.title}`} className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-muted opacity-100 transition hover:bg-surface-cream-strong hover:text-error focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"><Trash size={16} /></button>
-              </li>
-            );
-          })}
-        </ul>
+      <div className={`mt-4 flex min-h-0 flex-1 flex-col ${hide}`}>
+        <ChatList chats={conversations} activeId={tab === 'assistant' ? conversationId : null} onOpen={onOpenChat} onDelete={onDeleteChat} hint={chatsOnly} />
       </div>
 
       {!chatsOnly && (
@@ -132,21 +122,23 @@ function TabBar({ tab, onPick }: { tab: Tab; onPick: (t: Tab) => void }) {
  * screen; wider screens keep the sidebar. `machines` is the Remote Harness (hub) view.
  */
 export default function Shell({ machines }: { machines: React.ReactNode }) {
-  const [tab, setTab] = useState<Tab>('assistant');
+  const [start] = useState<Tab>(() => getPrefs().startTab);
+  const [tab, setTab] = useState<Tab>(start);
   // Screens stay mounted once opened, so going back to one is instant and keeps its place.
-  const [visited, setVisited] = useState<Set<Tab>>(() => new Set<Tab>(['assistant']));
+  const [visited, setVisited] = useState<Set<Tab>>(() => new Set<Tab>(['assistant', start]));
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [drawer, setDrawer] = useState(false);
   const chats = useLoad(() => escanor.conversations().catch(() => []), 30000);
   const list = chats.data ?? [];
+  const meta = useChatMeta();
+  const chatName = (id: string | null) => (id ? meta.titles[id] ?? list.find((c) => c.id === id)?.title : undefined);
 
   const show = useCallback((t: Tab) => { setTab(t); setVisited((v) => (v.has(t) ? v : new Set(v).add(t))); setDrawer(false); }, []);
   const openChat = useCallback((id: string | null) => { setConversationId(id); show('assistant'); }, [show]);
-  const removeChat = useCallback((id: string) => {
-    const title = list.find((c) => c.id === id)?.title ?? 'this chat';
-    if (!window.confirm(`Delete “${title}”?`)) return;
+  const removeChat = useCallback((id: string, name: string) => {
+    if (!window.confirm(`Delete “${name}”? This cannot be undone.`)) return;
     void escanor.remove(id).then(() => { if (id === conversationId) setConversationId(null); chats.reload(); });
-  }, [list, conversationId, chats]);
+  }, [conversationId, chats]);
 
   // Push: register this phone again if they already allowed it, take them where a tapped notification points, and show one that
   // arrives while the app is open as a banner (Android shows nothing itself in that case).
@@ -185,7 +177,7 @@ export default function Shell({ machines }: { machines: React.ReactNode }) {
 
         {/* One place keeps clear of the status bar. Screens drawn inside this one (the machines list and its chats) must not add it again. */}
         <main className="safe-top min-h-0 min-w-0 flex-1">
-          {screen('assistant', <AssistantView conversationId={conversationId} title={list.find((c) => c.id === conversationId)?.title} onConversation={setConversationId} onCreated={chats.reload} onOpenIntegrations={() => show('connections')} />)}
+          {screen('assistant', <AssistantView conversationId={conversationId} title={chatName(conversationId)} onConversation={setConversationId} onCreated={chats.reload} onOpenIntegrations={() => show('connections')} />)}
           {screen('connections', <IntegrationsView />)}
           {screen('computers', <ComputersView />)}
           {screen('machines', machines)}

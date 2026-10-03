@@ -19,6 +19,7 @@ function Meter({ value }: { value: number }) {
 
 export default function ComputerDetail({ computer, onBack, onRemove }: { computer: PairedComputer; onBack: () => void; onRemove: () => void }) {
   const link = useComputer(computer);
+  const { request } = link;
   useHardwareBack(true, onBack);
   const [tab, setTab] = useState<Tab>('chat');
   const [approvals, setApprovals] = useState<Approval[]>([]);
@@ -33,23 +34,29 @@ export default function ComputerDetail({ computer, onBack, onRemove }: { compute
     [link],
   );
   useEffect(() => {
-    if (link.state !== 'online') return;
+    // Keep asking while connecting or online. (Once it is offline the link retries by itself, so this stays quiet.)
+    if (link.state === 'offline') return;
     let stop = false;
+    let inFlight = false; // over the cloud one answer can take a few seconds: never queue another behind it
     const poll = async () => {
+      if (inFlight) return;
+      inFlight = true;
       try {
-        const r = (await link.request({ t: 'pending' })).find((m) => m.t === 'pending');
+        const r = (await request({ t: 'pending' })).find((m) => m.t === 'pending');
         if (!stop && r && r.t === 'pending') setApprovals(r.approvals.map((a) => ({ t: 'approval' as const, ...a })));
       } catch {
-        // offline: the banner says so
+        // the banner says so once it counts as offline
+      } finally {
+        inFlight = false;
       }
     };
-    void poll();
-    const t = setInterval(poll, link.route === 'lan' ? 15000 : 5000);
+    if (link.state === 'online') void poll();
+    const t = setInterval(poll, link.route === 'lan' ? 15000 : 8000);
     return () => {
       stop = true;
       clearInterval(t);
     };
-  }, [link.state, link.route, link]);
+  }, [link.state, link.route, request]);
 
   const answer = async (a: Approval, ok: boolean) => {
     setApprovals((x) => x.filter((y) => y.approvalId !== a.approvalId));
