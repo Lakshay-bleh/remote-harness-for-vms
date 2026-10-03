@@ -1,12 +1,23 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { ChatCircleText, ClockCounterClockwise, Gauge, LockKey, PencilSimple, ShieldCheck, Sliders, ArrowsClockwise, Trash } from '@phosphor-icons/react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useHardwareBack } from '../back';
+import { OverflowMenu } from '../Menu';
+import { ConfirmSheet } from '../settings/parts';
 import { Button, Notice, ScreenHeader, Spinner } from '../ui';
+import ActivityTab from './ActivityTab';
+import { applyRoute, displayName, forgetComputerPrefs, setComputerPrefs, useComputerPrefs } from './computerPrefs';
+import ComputerSettings from './ComputerSettings';
+import ErrorCard from './ErrorCard';
+import { explainFailure } from './errors';
 import type { PairedComputer } from './lib/client';
 import type { ServerMsg } from './lib/protocol';
+import PermissionsTab from './PermissionsTab';
+import { describeGroupRequest, findGroup } from './permissions';
+import RenameSheet from './RenameSheet';
 import { useComputer } from './useComputer';
 
-type Tab = 'chat' | 'resources' | 'approvals';
-interface Turn { who: 'you' | 'computer'; text: string }
+type Tab = 'chat' | 'resources' | 'approvals' | 'permissions' | 'activity';
+interface Turn { who: 'you' | 'computer'; text: string; /** The computer's reply was a refusal: shown as an explained error, not a bubble. */ problem?: boolean }
 type Approval = Extract<ServerMsg, { t: 'approval' }>;
 
 const gb = (n: number) => `${(n / 1024 ** 3).toFixed(1)} GB`;
@@ -17,12 +28,46 @@ function Meter({ value }: { value: number }) {
   return <div className="h-2 overflow-hidden rounded-full bg-surface-card"><div className={`h-full rounded-full ${v > 90 ? 'bg-error' : v > 75 ? 'bg-permission' : 'bg-primary'}`} style={{ width: `${v}%` }} /></div>;
 }
 
+const TABS: Array<{ id: Tab; label: string; Icon: typeof ChatCircleText }> = [
+  { id: 'chat', label: 'Chat', Icon: ChatCircleText },
+  { id: 'resources', label: 'Resources', Icon: Gauge },
+  { id: 'approvals', label: 'Approvals', Icon: ShieldCheck },
+  { id: 'permissions', label: 'Permissions', Icon: LockKey },
+  { id: 'activity', label: 'Activity', Icon: ClockCounterClockwise },
+];
+
+/** The strip of sections: icons with names, a badge where something waits, scrolls sideways if the phone is narrow. */
+function TabStrip({ tab, onPick, badges }: { tab: Tab; onPick: (t: Tab) => void; badges: Partial<Record<Tab, number>> }) {
+  return (
+    <div role="tablist" aria-label="Sections" className="flex shrink-0 gap-0.5 overflow-x-auto border-b border-hairline px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {TABS.map(({ id, label, Icon }) => {
+        const active = tab === id;
+        const n = badges[id];
+        return (
+          <button key={id} role="tab" aria-selected={active} onClick={() => onPick(id)} className={`relative flex shrink-0 items-center gap-1.5 px-3.5 py-3 text-[14px] outline-none transition active:scale-95 ${active ? 'font-medium text-ink' : 'text-muted hover:text-body'}`}>
+            <Icon size={18} weight={active ? 'fill' : 'regular'} aria-hidden className={active ? 'text-primary' : ''} />
+            {label}
+            {n ? <span className="rounded-pill bg-primary px-1.5 text-[11px] font-semibold leading-[18px] text-on-primary">{n}</span> : null}
+            {active && <span aria-hidden className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-primary" />}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function ComputerDetail({ computer, onBack, onRemove }: { computer: PairedComputer; onBack: () => void; onRemove: () => void }) {
-  const link = useComputer(computer);
+  const prefs = useComputerPrefs(computer.id);
+  // The person's "how to reach it" choice, applied to this connection only. Memoised: a new object every render would reconnect every render.
+  const routed = useMemo(() => applyRoute(computer, prefs.route), [computer, prefs.route]);
+  const link = useComputer(routed.computer, routed.cloud);
   const { request } = link;
-  useHardwareBack(true, onBack);
+  const name = displayName(computer, prefs);
+  const [view, setView] = useState<'main' | 'settings'>('main');
   const [tab, setTab] = useState<Tab>('chat');
   const [approvals, setApprovals] = useState<Approval[]>([]);
+  const [sheet, setSheet] = useState<'rename' | 'remove' | null>(null);
+  useHardwareBack(view === 'main', onBack);
 
   // Approvals arrive by push on the local network, and are fetched on a timer over the cloud.
   useEffect(
@@ -63,41 +108,70 @@ export default function ComputerDetail({ computer, onBack, onRemove }: { compute
     await link.request({ t: 'approve', approvalId: a.approvalId, ok }).catch(() => undefined);
   };
 
-  const badge = link.state === 'connecting' ? 'Connecting…' : link.state === 'offline' ? 'Offline' : link.route === 'lan' ? 'On your Wi-Fi' : 'Through the cloud';
+  /** Ask the computer to switch on a kind of action that was refused, from the error card. Resolves with what to tell the person. */
+  const askToAllow = useCallback(
+    async (groupLabel: string): Promise<string> => {
+      const list = (await request({ t: 'groups' })).find((m) => m.t === 'groups');
+      const g = list?.t === 'groups' ? findGroup(list.items, groupLabel) : undefined;
+      if (!g) return describeGroupRequest('unknown', groupLabel);
+      const r = (await request({ t: 'request_group', group: g.id })).find((m) => m.t === 'group_request');
+      return r?.t === 'group_request' ? describeGroupRequest(r.status, g.label) : describeGroupRequest('unknown', g.label);
+    },
+    [request],
+  );
+
+  const testConnection = useCallback(async () => {
+    const t = performance.now();
+    await request({ t: 'ping' });
+    return Math.round(performance.now() - t);
+  }, [request]);
+
+  const remove = () => (forgetComputerPrefs(computer.id), onRemove());
+
+  if (view === 'settings') {
+    return <ComputerSettings computer={computer} prefs={prefs} state={link.state} route={link.route} onBack={() => setView('main')} onReconnect={() => void link.reconnect()} onTest={testConnection} onRemove={remove} />;
+  }
+
+  const subtitle = link.state === 'connecting' ? 'Connecting…' : link.state === 'offline' ? 'Offline' : link.route === 'lan' ? 'Connected over Wi-Fi' : 'Connected through the cloud';
+  const online = link.state === 'online';
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <ScreenHeader title={computer.name} onBack={onBack} subtitle={badge}>
-        <span className={`h-2.5 w-2.5 rounded-full ${link.state === 'online' ? 'bg-success' : link.state === 'connecting' ? 'bg-warning' : 'bg-line-strong'}`} aria-hidden />
+      <ScreenHeader title={name} onBack={onBack} subtitle={subtitle}>
+        <span className={`h-2.5 w-2.5 rounded-full ${online ? 'bg-success' : link.state === 'connecting' ? 'bg-warning' : 'bg-line-strong'}`} aria-hidden />
+        <OverflowMenu
+          label={`Options for ${name}`}
+          items={[
+            { label: 'Rename', icon: <PencilSimple size={18} />, onClick: () => setSheet('rename') },
+            { label: 'Computer settings', icon: <Sliders size={18} />, onClick: () => setView('settings') },
+            { label: 'Reconnect', icon: <ArrowsClockwise size={18} />, onClick: () => void link.reconnect() },
+            { label: 'Forget this computer', icon: <Trash size={18} />, danger: true, divider: true, onClick: () => setSheet('remove') },
+          ]}
+        />
       </ScreenHeader>
 
-      <div className="flex gap-1 px-4 pb-2">
-        {(['chat', 'resources', 'approvals'] as Tab[]).map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={`rounded-pill px-3.5 py-1.5 text-sm capitalize transition ${tab === t ? 'bg-surface-card font-medium text-ink' : 'text-body hover:bg-surface-card/60'}`}>
-            {t}{t === 'approvals' && approvals.length > 0 ? ` (${approvals.length})` : ''}
-          </button>
-        ))}
-      </div>
+      <TabStrip tab={tab} onPick={setTab} badges={{ approvals: approvals.length }} />
 
-      {link.state === 'offline' && (
-        <div className="px-4 pb-2"><Notice tone="warn">{link.error ?? 'This computer is not reachable.'} <button onClick={() => void link.reconnect()} className="underline">Try again</button></Notice></div>
-      )}
+      {link.state === 'offline' && <div className="px-4 pt-3"><ErrorCard error={link.error ?? 'This computer is not reachable.'} onRetry={() => void link.reconnect()} /></div>}
       {approvals.length > 0 && tab !== 'approvals' && (
-        <div className="px-4 pb-2"><button onClick={() => setTab('approvals')} className="w-full text-left"><Notice tone="warn">{approvals[0].describe}: waiting for your OK.</Notice></button></div>
+        <div className="px-4 pt-3"><button onClick={() => setTab('approvals')} className="w-full text-left"><Notice tone="warn">{approvals[0].describe}: waiting for your OK.</Notice></button></div>
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {tab === 'chat' && <Chat request={link.request} online={link.state === 'online'} />}
-        {tab === 'resources' && <Resources request={link.request} online={link.state === 'online'} />}
+        {tab === 'chat' && <Chat request={link.request} online={online} onAsk={askToAllow} />}
+        {tab === 'resources' && <Resources request={link.request} online={online} />}
         {tab === 'approvals' && <Approvals items={approvals} onAnswer={answer} />}
+        {tab === 'permissions' && <PermissionsTab request={link.request} online={online} />}
+        {tab === 'activity' && <ActivityTab request={link.request} online={online} />}
       </div>
 
-      <div className="border-t border-hairline px-4 py-3"><button onClick={() => window.confirm(`Remove ${computer.name} from this phone?`) && onRemove()} className="text-sm text-muted underline underline-offset-2 hover:text-error">Remove this computer from this phone</button></div>
+      {sheet === 'rename' && <RenameSheet current={prefs.alias} original={computer.name} onSave={(alias) => setComputerPrefs(computer.id, { alias })} onClose={() => setSheet(null)} />}
+      {sheet === 'remove' && <ConfirmSheet title={`Forget ${name}?`} body="This phone will no longer control it. You can pair it again any time with a new code." action="Forget" onConfirm={remove} onClose={() => setSheet(null)} />}
     </div>
   );
 }
 
-function Chat({ request, online }: { request: ReturnType<typeof useComputer>['request']; online: boolean }) {
+function Chat({ request, online, onAsk }: { request: ReturnType<typeof useComputer>['request']; online: boolean; onAsk: (groupLabel: string) => Promise<string> }) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -118,9 +192,11 @@ function Chat({ request, online }: { request: ReturnType<typeof useComputer>['re
         const id = uid();
         const out = await request({ t: 'chat', id, text: line });
         const reply = out.find((m) => m.t === 'reply' || m.t === 'error');
-        setTurns((t) => [...t, { who: 'computer', text: reply ? (reply.t === 'reply' ? reply.reply : reply.message) : 'Done.' }]);
+        const said = reply ? (reply.t === 'reply' ? reply.reply : reply.message) : 'Done.';
+        // A reply that is really "that is switched off" (or any other error in words) is shown as an explained error with its fix.
+        setTurns((t) => [...t, { who: 'computer', text: said, problem: reply?.t === 'error' || explainFailure(said).ask !== undefined }]);
       } catch (e) {
-        setTurns((t) => [...t, { who: 'computer', text: e instanceof Error ? e.message : 'That did not work.' }]);
+        setTurns((t) => [...t, { who: 'computer', text: e instanceof Error ? e.message : 'That did not work.', problem: true }]);
       } finally {
         setBusy(false);
       }
@@ -138,7 +214,7 @@ function Chat({ request, online }: { request: ReturnType<typeof useComputer>['re
             <div className="flex flex-wrap justify-center gap-2">{suggestions.map((s) => <button key={s} onClick={() => void send(s)} disabled={!online} className="rounded-pill border border-hairline px-3.5 py-1.5 text-sm text-body transition hover:bg-surface-card disabled:opacity-50">{s}</button>)}</div>
           </div>
         )}
-        {turns.map((t, i) => <div key={i} className={`flex ${t.who === 'you' ? 'justify-end' : ''}`}><p className={`max-w-[88%] whitespace-pre-wrap rounded-lg px-4 py-2.5 text-[15px] leading-relaxed ${t.who === 'you' ? 'bg-primary text-on-primary' : 'border border-hairline bg-surface-card text-ink'}`}>{t.text}</p></div>)}
+        {turns.map((t, i) => t.problem ? <div key={i} className="max-w-[94%]"><ErrorCard error={t.text} onAsk={onAsk} /></div> : <div key={i} className={`flex ${t.who === 'you' ? 'justify-end' : ''}`}><p className={`max-w-[88%] whitespace-pre-wrap rounded-lg px-4 py-2.5 text-[15px] leading-relaxed ${t.who === 'you' ? 'bg-primary text-on-primary' : 'border border-hairline bg-surface-card text-ink'}`}>{t.text}</p></div>)}
         {busy && <div className="flex items-center gap-2 text-sm text-muted"><Spinner /> Working on your computer…</div>}
         <div ref={end} />
       </div>

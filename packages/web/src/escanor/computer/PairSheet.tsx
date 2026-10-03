@@ -51,7 +51,8 @@ export default function PairSheet({ onPaired, onClose }: { onPaired: (c: PairedC
   const scanned = useCallback(
     (text: string) => {
       const entry = parseEntry(text);
-      entry ? void pair(entry, 'cloud') : (setError('That is not an Escanor pairing code.'), setWay('code'));
+      setWay('code'); // out of the scan screen first: pairing then shows its own progress, and the scanner is not mounted to re-open
+      entry ? void pair(entry, 'cloud') : setError('That is not an Escanor pairing code.');
     },
     [pair],
   );
@@ -59,17 +60,21 @@ export default function PairSheet({ onPaired, onClose }: { onPaired: (c: PairedC
   // On the Android app the scan button opens Google's own scanner (native camera, real autofocus). The web camera below is the
   // fallback if that cannot run on this phone.
   const [nativeFailed, setNativeFailed] = useState(false);
+  const scannedRef = useRef(scanned);
+  scannedRef.current = scanned;
   useEffect(() => {
     if (way !== 'scan' || !isNative() || nativeFailed) return;
     let live = true;
     void scanWithNative().then(
-      (text) => live && (text ? scanned(text) : setWay('code')),
+      (text) => live && (text ? scannedRef.current(text) : setWay('code')),
       () => live && setNativeFailed(true),
     );
     return () => {
       live = false;
     };
-  }, [way, nativeFailed, scanned]);
+    // Only the way and the fallback flag: `scanned` changes whenever the parent re-renders (as it does right after a successful
+    // pairing), and depending on it re-opened the scanner on top of the finished pairing.
+  }, [way, nativeFailed]);
 
   const submit = () => {
     const entry = parseEntry(code);

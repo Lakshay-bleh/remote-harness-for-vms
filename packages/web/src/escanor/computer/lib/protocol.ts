@@ -22,6 +22,12 @@ export type ClientMsg =
   | { t: 'chat'; id: string; text: string }
   | { t: 'approve'; approvalId: string; ok: boolean }
   | { t: 'subscribe'; channels: Array<'events' | 'stats'> }
+  /** Which kinds of action are switched on for phones (Settings > Permissions on the computer). */
+  | { t: 'groups' }
+  /** Ask the computer's owner to switch one on. Only the owner, at the computer, can say yes: a phone can never grant itself this. */
+  | { t: 'request_group'; group: string }
+  /** What phones and the voice assistant have recently done on this computer. */
+  | { t: 'activity' }
   | { t: 'ping' };
 
 /** Messages to the phone. */
@@ -35,8 +41,35 @@ export type ServerMsg =
   | { t: 'approval_done'; approvalId: string }
   | { t: 'pending'; approvals: Array<{ approvalId: string; capabilityId: string; describe: string; risk: string; input: unknown }> }
   | { t: 'stats'; stats: unknown }
+  | { t: 'groups'; items: PermissionGroup[] }
+  | { t: 'group_request'; group: string; status: GroupRequestStatus }
+  | { t: 'activity'; items: ActivityItem[] }
   | { t: 'pong' }
   | { t: 'error'; id?: string; message: string };
+
+export interface PermissionGroup {
+  id: string;
+  label: string;
+  about: string;
+  /** Switched on for phones right now. */
+  enabled: boolean;
+}
+
+/**
+ * `asked`: the owner has been asked on the computer. `already_on`: nothing to do. `busy`: a question about it is already waiting.
+ * `unavailable`: no Escanor Desktop window is open to show the question in.
+ */
+export type GroupRequestStatus = 'asked' | 'already_on' | 'unknown' | 'busy' | 'unavailable';
+
+export interface ActivityItem {
+  at: string;
+  capabilityId: string;
+  caller: string;
+  risk: string;
+  outcome: string;
+  ms: number;
+  message?: string;
+}
 
 export interface MachineInfo {
   name: string;
@@ -79,6 +112,11 @@ export function isClientMsg(v: unknown): v is ClientMsg {
       return typeof m.id === 'string' && typeof m.capability === 'string' && m.capability.length < 100;
     case 'chat':
       return typeof m.id === 'string' && typeof m.text === 'string' && m.text.length > 0 && m.text.length <= 4000;
+    case 'groups':
+    case 'activity':
+      return true;
+    case 'request_group':
+      return typeof m.group === 'string' && /^[a-z0-9_]{1,40}$/.test(m.group);
     case 'approve':
       return typeof m.approvalId === 'string' && typeof m.ok === 'boolean';
     case 'subscribe':
