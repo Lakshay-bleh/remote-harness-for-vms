@@ -55,12 +55,12 @@ export function AppearancePage({ onBack }: { onBack: () => void }) {
 
       <section>
         <h2 className="mb-1.5 px-1 text-[12px] font-medium uppercase tracking-wide text-muted">Accent colour</h2>
-        <div role="radiogroup" aria-label="Accent colour" className="flex flex-wrap gap-3 rounded-xl border border-hairline bg-surface-card p-3.5">
+        <div role="radiogroup" aria-label="Accent colour" className="flex flex-wrap justify-between gap-y-3 rounded-xl border border-hairline bg-surface-card p-3.5">
           {ACCENT_NAMES.map((name) => {
             const [r, g, b] = ACCENTS[name].dark;
             const on = p.accent === name;
             return (
-              <button key={name} type="button" role="radio" aria-checked={on} aria-label={ACCENTS[name].label} onClick={() => setPrefs({ accent: name })} className={`flex h-11 w-11 items-center justify-center rounded-full transition active:scale-90 ${on ? 'ring-2 ring-ink ring-offset-2 ring-offset-surface-card' : ''}`} style={{ background: `rgb(${r} ${g} ${b})` }}>
+              <button key={name} type="button" role="radio" aria-checked={on} aria-label={ACCENTS[name].label} onClick={() => setPrefs({ accent: name })} className={`flex h-10 w-10 items-center justify-center rounded-full transition active:scale-90 ${on ? 'ring-2 ring-ink ring-offset-2 ring-offset-surface-card' : ''}`} style={{ background: `rgb(${r} ${g} ${b})` }}>
                 {on && <span className="h-2.5 w-2.5 rounded-full bg-white/90 shadow" />}
               </button>
             );
