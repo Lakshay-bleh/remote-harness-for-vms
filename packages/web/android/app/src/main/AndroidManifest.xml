@@ -39,7 +39,9 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
-            <!-- where Firebase puts notifications that arrive while the app is closed; the app creates this channel at start -->
+            <!-- the QR scanner (Google code scanner): lets Google Play fetch it when the app is installed, so the first scan is instant -->
+        <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="barcode_ui" />
+        <!-- where Firebase puts notifications that arrive while the app is closed; the app creates this channel at start -->
         <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="escanor_alerts" />
         <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/ic_stat_escanor" />
         <meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/notification_accent" />
