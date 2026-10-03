@@ -3,6 +3,7 @@ import { escanorApiBase } from './config';
 import type { BillingPlan, BillingSub } from './account/billing';
 import type { ConsentState } from './account/privacy';
 import type { ManagedHub } from './managed';
+import type { ServerPlan } from './voice/serverPlan';
 
 const ACCESS = 'escanor_access';
 const REFRESH = 'escanor_refresh';
@@ -368,6 +369,9 @@ export const escanor = {
   /** A new key in place of this one: the old stops working at once. */
   rotateMcp: (id: string) => request<McpInstall>(`/agent/mcp/connections/${enc(id)}/rotate`, { method: 'POST' }),
   revokeMcp: (id: string) => request<{ success: boolean }>(`/tokens/${enc(id)}`, { method: 'DELETE' }),
+
+  // -- voice: the server's brain for what the phone's own rules do not understand (semantic match, then the AI model)
+  voiceResolve: (body: { text: string; client: 'mobile'; device: { platform: string; apps: Array<{ id: string; label: string }> } }) => request<ServerPlan>('/ai/voice/resolve', { ...json(body), signal: AbortSignal.timeout(40_000) }),
 
   // -- the website, already signed in: a one-minute link, so billing and settings open without a second sign-in
   webHandoff: (next: string) => request<{ url: string; expires_in: number }>('/auth/handoff', json({ next })).then((r) => r.url),

@@ -4,6 +4,7 @@ import { handleUtterance, type Reply } from './assistant';
 import type { VoiceTab } from './commands';
 import { chatWithComputer } from './computerChat';
 import { deviceOrNull } from './device';
+import { resolveOnServer } from './resolve';
 import { ensureMic, listen, speak, stopSpeaking } from './speech';
 
 export type VoicePhase = 'idle' | 'listening' | 'thinking' | 'speaking';
@@ -68,12 +69,14 @@ export function useVoiceSession({ go, onAssistant }: { go: (tab: VoiceTab) => vo
       toComputer: (text) => chatWithComputer(computers[0], text),
       toAssistant: (text) => latest.current.onAssistant(text),
       go: (tab) => latest.current.go(tab),
+      resolve: (text) => resolveOnServer(text, deviceOrNull()),
     });
     if (!alive()) return;
     setReply(r);
     setPhase('speaking');
     await speak(r.say);
     if (alive()) setPhase('idle');
+    if (alive() && r.ask) void start(); // a question: listen for the answer
   }, [cancel]);
 
   useEffect(() => () => void stopSpeaking(), []);

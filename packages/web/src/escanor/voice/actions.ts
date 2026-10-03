@@ -86,6 +86,10 @@ export async function runPhoneAction(action: PhoneAction, dev: DevicePlugin | nu
         if (site) return outcome(await dev.openUrl({ url: site }), `Opening ${site.replace(/^https:\/\/(www\.)?/, '')}.`);
         return { ok: false, say: `I couldn’t find an app called ${action.name} on this phone.` };
       }
+      case 'open_package':
+        return outcome(await dev.launchPackage({ package: action.package }), `Opening ${action.label}.`);
+      case 'open_url':
+        return outcome(await dev.openUrl({ url: action.url }), `Opening ${action.url.replace(/^https:\/\/(www\.)?/, '').replace(/\/.*$/, '')}.`);
       case 'call': {
         if (/^\+?\d{3,}$/.test(action.who)) return outcome(await dev.dial({ number: action.who }), `Opening the dialer with ${action.who}. Press call to ring.`);
         const r = await dev.callContact({ name: action.who });
