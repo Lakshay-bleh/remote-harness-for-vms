@@ -3,6 +3,14 @@
     <!-- Plain http/ws is needed for ONE thing: talking to your own computer on your own Wi-Fi (the desktop app's local gateway, whose
          messages are sealed with a key only the two of you hold). The app refuses to use it for anything else: the Escanor API and
          hubs must be https, and local-network addresses are the only plain addresses it will open (see isLocalAddress). -->
+    <!-- The voice assistant opens apps by name, so it must be able to see which apps have a launcher icon (not the whole package list). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="false"
         android:usesCleartextTraffic="true"
@@ -54,6 +62,10 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <!-- push notifications (Android 13+ asks the person at runtime) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- voice: set alarms and timers; the microphone for speaking to Escanor; contacts are asked for only when you call someone by name -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
     <!-- haptic feedback (Settings > Appearance and feel) -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
