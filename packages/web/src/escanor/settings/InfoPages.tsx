@@ -3,12 +3,13 @@ import { useState } from 'react';
 import { isNative } from '../../api';
 import { APP_VERSION } from '../../appInfo';
 import { escanor } from '../client';
-import { LINKS, openExternal } from '../links';
+import { LEGAL_LIST, LegalBody } from '../../legal/LegalBody';
+import { openWeb } from '../links';
 import { Logo, Notice } from '../ui';
 import { Group, Page, Row } from './parts';
 
 /** Privacy, terms and your data. These used to sit in a footer on every screen; a phone app keeps them here, one tap from Settings. */
-export function PrivacyPage({ onBack }: { onBack: () => void }) {
+export function PrivacyPage({ onBack, onOpenDoc }: { onBack: () => void; onOpenDoc: (key: string) => void }) {
   const [state, setState] = useState<{ kind: 'idle' } | { kind: 'busy' } | { kind: 'copied' } | { kind: 'error'; message: string }>({ kind: 'idle' });
 
   // Android's web view cannot save a downloaded file, so the export goes to the clipboard as JSON.
@@ -24,15 +25,13 @@ export function PrivacyPage({ onBack }: { onBack: () => void }) {
 
   return (
     <Page title="Privacy and legal" onBack={onBack}>
-      <Group title="Escanor">
-        <Row icon={<ShieldCheck size={18} />} label="Privacy policy" onClick={() => openExternal(LINKS.privacy)} />
-        <Row icon={<FileText size={18} />} label="Terms of service" onClick={() => openExternal(LINKS.terms)} />
-        <Row icon={<Lifebuoy size={18} />} label="Support" onClick={() => openExternal(LINKS.support)} />
+      <Group title="Read in the app" footer="Every document is stored in the app, so it reads without a connection.">
+        {LEGAL_LIST.map((d) => <Row key={d.key} icon={d.key === 'terms' ? <FileText size={18} /> : d.key === 'support' ? <Lifebuoy size={18} /> : <ShieldCheck size={18} />} label={d.label} onClick={() => onOpenDoc(d.key)} />)}
       </Group>
 
       <Group title="Your data" footer="A copy of your account details, workspaces and consent history, as JSON on your clipboard. Deleting your account or data is a request you make on the website, so it can be checked and tracked.">
         <Row icon={<Download size={18} />} label="Copy my data" value={state.kind === 'busy' ? 'Working…' : state.kind === 'copied' ? 'Copied' : undefined} onClick={() => void copyData()} chevron={false} disabled={state.kind === 'busy'} />
-        <Row icon={<Trash size={18} />} label="Delete my account or data" onClick={() => openExternal(LINKS.accountSettings)} />
+        <Row icon={<Trash size={18} />} label="Delete my account or data" onClick={() => void openWeb('/dashboard/settings')} />
       </Group>
       {state.kind === 'error' && <Notice tone="error">{state.message}</Notice>}
 
@@ -41,7 +40,16 @@ export function PrivacyPage({ onBack }: { onBack: () => void }) {
   );
 }
 
-export function AboutPage({ onBack }: { onBack: () => void }) {
+/** One legal document, full screen, inside Settings. */
+export function LegalDocPage({ docKey, onBack }: { docKey: string; onBack: () => void }) {
+  return (
+    <Page title={LEGAL_LIST.find((d) => d.key === docKey)?.label ?? 'Legal'} onBack={onBack}>
+      <LegalBody docKey={docKey} />
+    </Page>
+  );
+}
+
+export function AboutPage({ onBack, onOpenDoc }: { onBack: () => void; onOpenDoc: (key: string) => void }) {
   return (
     <Page title="About" onBack={onBack}>
       <div className="flex flex-col items-center gap-2 py-4 text-center">
@@ -50,9 +58,10 @@ export function AboutPage({ onBack }: { onBack: () => void }) {
         <p className="text-sm text-muted">Version {APP_VERSION} · {isNative() ? 'Android' : 'Web'}</p>
       </div>
       <Group>
-        <Row icon={<Headset size={18} />} label="Get help" onClick={() => openExternal(LINKS.support)} />
-        <Row icon={<ShieldCheck size={18} />} label="Privacy policy" onClick={() => openExternal(LINKS.privacy)} />
-        <Row icon={<FileText size={18} />} label="Terms of service" onClick={() => openExternal(LINKS.terms)} />
+        <Row icon={<Headset size={18} />} label="Get help" onClick={() => onOpenDoc('support')} />
+        <Row icon={<ShieldCheck size={18} />} label="Privacy policy" onClick={() => onOpenDoc('privacy')} />
+        <Row icon={<FileText size={18} />} label="Terms of service" onClick={() => onOpenDoc('terms')} />
+        <Row icon={<FileText size={18} />} label="About Escanor" onClick={() => onOpenDoc('about')} />
       </Group>
     </Page>
   );

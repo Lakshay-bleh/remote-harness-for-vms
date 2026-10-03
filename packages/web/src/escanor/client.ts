@@ -69,6 +69,7 @@ export interface McpInstall {
   endpoint: string;
   token: string;
   cli_command: string;
+  token_id?: string;
 }
 
 const tokens = {
@@ -88,6 +89,13 @@ const tokens = {
   },
 };
 
+/** Online now, or heard from within `windowMs` (default ten minutes). */
+export function isRecentlySeen(status: string, lastHeartbeat?: string | null, now = Date.now(), windowMs = 600_000): boolean {
+  if (status === 'online') return true;
+  const t = lastHeartbeat ? Date.parse(lastHeartbeat) : NaN;
+  return Number.isFinite(t) && now - t >= 0 && now - t < windowMs;
+}
+
 export const hasStoredSession = (): boolean => Boolean(tokens.refresh || tokens.access);
 
 /** The backend's error text, whatever shape it came in. */
@@ -98,21 +106,29 @@ export function messageOf(body: unknown, fallback: string): string {
   return fallback;
 }
 
-let refreshing: Promise<boolean> | null = null;
+/** `ok`: new tokens saved. `rejected`: the server says this session is over. `unavailable`: could not tell (offline, a server error). */
+export type RefreshResult = 'ok' | 'rejected' | 'unavailable';
+
+/** Only a refusal of the refresh token itself ends a session; a busy or unreachable server must never sign anyone out. */
+export function refreshOutcome(status: number): RefreshResult {
+  return status === 400 || status === 401 || status === 403 ? 'rejected' : 'unavailable';
+}
+
+let refreshing: Promise<RefreshResult> | null = null;
 
 /** One refresh at a time, however many requests found the token expired together. */
-async function refreshTokens(): Promise<boolean> {
-  refreshing ??= (async () => {
+async function refreshTokens(): Promise<RefreshResult> {
+  refreshing ??= (async (): Promise<RefreshResult> => {
     const refresh = tokens.refresh;
-    if (!refresh) return false;
+    if (!refresh) return 'rejected';
     try {
       const res = await fetch(`${escanorApiBase()}/auth/refresh`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ refresh_token: refresh }) });
-      if (!res.ok) return false;
+      if (!res.ok) return refreshOutcome(res.status);
       const body = await res.json();
       tokens.set(body.access_token, body.refresh_token ?? refresh);
-      return true;
+      return 'ok';
     } catch {
-      return false; // offline is not "signed out": keep the tokens and let the caller see the network error
+      return 'unavailable'; // offline is not "signed out": keep the tokens and let the caller see the network error
     }
   })().finally(() => {
     refreshing = null;
@@ -134,8 +150,10 @@ async function request<T>(path: string, init: RequestInit = {}, opts: { auth?: b
     throw new ApiError('Could not reach Escanor. Check your connection.', 0);
   }
   if (res.status === 401 && auth) {
-    if (await refreshTokens()) res = await send();
-    if (res.status === 401) {
+    const refreshed = await refreshTokens();
+    if (refreshed === 'unavailable') throw new ApiError('Could not reach Escanor to keep you signed in. Try again in a moment.', 0);
+    if (refreshed === 'ok') res = await send();
+    if (refreshed === 'rejected' || res.status === 401) {
       tokens.clear();
       throw new SessionEnded();
     }
@@ -199,10 +217,10 @@ export const escanor = {
 
   // -- Escanor Desktop: end-to-end encrypted commands for one of the person's own computers, answered when it next polls.
   /** Queue a command for a computer through the backend and wait for it to finish. The backend only carries what the phone sealed. */
-  async runOnComputer(agentId: string, action: string, parameters: Record<string, unknown>): Promise<Record<string, any>> {
+  async runOnComputer(agentId: string, action: string, parameters: Record<string, unknown>, timeoutMs = 120_000): Promise<Record<string, any>> {
     type Cmd = { id: string; status: string; result?: Record<string, any>; error?: string | null };
     let cmd = await request<Cmd>('/agents/commands', json({ agent_id: agentId, plugin: 'desktop', action, parameters, approve_immediately: true, wait_for_result: true }));
-    const until = Date.now() + 120_000;
+    const until = Date.now() + timeoutMs;
     while (cmd.status !== 'succeeded' && cmd.status !== 'failed' && cmd.status !== 'cancelled' && Date.now() < until) {
       await new Promise((r) => setTimeout(r, 1200));
       cmd = await request<Cmd>(`/agents/commands/${enc(cmd.id)}`);
@@ -217,11 +235,13 @@ export const escanor = {
   },
   /** The computers of this account that run Escanor Desktop (a phone signed in to the same account can find them to pair). */
   async desktops(): Promise<Array<{ id: string; name: string; online: boolean }>> {
-    const r = await request<{ agents: Array<{ id: string; name: string; runtime_status: string; health?: { app?: string } }> }>('/agents');
-    return r.agents.filter((a) => a.health?.app === 'escanor-desktop').map((a) => ({ id: a.id, name: a.name, online: a.runtime_status === 'online' }));
+    const r = await request<{ agents: Array<{ id: string; name: string; runtime_status: string; last_heartbeat_at?: string | null; health?: { app?: string } }> }>('/agents');
+    // The server calls a computer online for 90 s after its last heartbeat, which is sent every 30 s: one late heartbeat (a busy or
+    // briefly sleeping laptop) made a running computer look off. A heartbeat in the last ten minutes is good enough to try it.
+    return r.agents.filter((a) => a.health?.app === 'escanor-desktop').map((a) => ({ id: a.id, name: a.name, online: isRecentlySeen(a.runtime_status, a.last_heartbeat_at) }));
   },
   async pairWithDesktop(agentId: string, body: { sel: string; nonce: string; proof: string; name: string }): Promise<{ deviceId: string; sealedKey: string }> {
-    const r = await escanor.runOnComputer(agentId, 'pair', body);
+    const r = await escanor.runOnComputer(agentId, 'pair', body, 45_000); // a computer that is really there answers within seconds
     if (typeof r.deviceId !== 'string' || typeof r.sealedKey !== 'string') throw new Error('The computer did not complete the pairing.');
     return { deviceId: r.deviceId, sealedKey: r.sealedKey };
   },
@@ -253,4 +273,11 @@ export const escanor = {
   // -- other AI apps
   mcpConnections: () => request<McpConnection[]>('/agent/mcp/connections'),
   createMcpInstall: (name: string) => request<McpInstall>('/agent/mcp/install', json({ name })),
+  renameMcp: (id: string, name: string) => request<{ id: string; name: string }>(`/agent/mcp/connections/${enc(id)}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+  /** A new key in place of this one: the old stops working at once. */
+  rotateMcp: (id: string) => request<McpInstall>(`/agent/mcp/connections/${enc(id)}/rotate`, { method: 'POST' }),
+  revokeMcp: (id: string) => request<{ success: boolean }>(`/tokens/${enc(id)}`, { method: 'DELETE' }),
+
+  // -- the website, already signed in: a one-minute link, so billing and settings open without a second sign-in
+  webHandoff: (next: string) => request<{ url: string; expires_in: number }>('/auth/handoff', json({ next })).then((r) => r.url),
 };

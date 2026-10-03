@@ -13,7 +13,7 @@ Written for the people who run a hub or a VM agent. It records behaviour that **
 | Only a signed-in browser session can create API tokens; API tokens expire (default 1 year) and can be `scope: "mcp"`. | Scripts that minted tokens with a token | Mint from the app, or via the admin API for tenants. |
 | MCP server names may not contain `__` or end in `_`. | Existing servers with such names | Rename them; they are skipped, not applied. |
 | MCP URLs on loopback / private networks are refused; cloud-metadata addresses always. | Hubs that run next to their MCP server | Set `HUB_MCP_ALLOW_PRIVATE=1` (dev only). |
-| Android app: no cleartext, no backup. | Self-hosters with an `http://` hub | Put the hub behind TLS. |
+| Android app: no backup. Plain `http`/`ws` is allowed for exactly one thing: your own computer on your own network (private, link-local, tailnet or `.local` addresses; every message there is sealed with the device key). Hubs and the Escanor API must be `https`; the app refuses anything else. | Self-hosters with an `http://` hub | Put the hub behind TLS. |
 | Agent installer defaults the workspace to `$HOME/projects` (was `$HOME`) and the agent warns if the workspace is `/` or `$HOME`. | New installs | Pick a projects directory. |
 | An agent that connects with the name of a VM that is currently connected is refused (it used to kick the first one off, in a loop, for cloned VMs). After an unclean crash the reconnect is accepted once the heartbeat drops the dead socket (about a minute). | Cloned VMs | Give each VM a unique `VM_NAME`. |
 

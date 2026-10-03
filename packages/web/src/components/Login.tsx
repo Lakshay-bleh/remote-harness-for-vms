@@ -23,7 +23,7 @@ export default function Login() {
     try {
       if (native) {
         const url = hubUrl.trim();
-        if (!/^https?:\/\//.test(url)) throw new Error('Hub URL must start with http:// or https://');
+        if (!/^https?:\/\//.test(url)) throw new Error('Hub URL must start with https://');
         setHubUrl(url);
       }
       await actions.login(password);

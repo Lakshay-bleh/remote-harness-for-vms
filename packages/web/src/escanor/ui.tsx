@@ -27,7 +27,7 @@ export function Md({ text }: { text: string }) {
 }
 
 export function Button({ children, onClick, kind = 'primary', disabled, type = 'button', className = '' }: { children: ReactNode; onClick?: () => void; kind?: 'primary' | 'quiet' | 'danger'; disabled?: boolean; type?: 'button' | 'submit'; className?: string }) {
-  const look = kind === 'primary' ? 'btn-sheen bg-primary text-on-primary hover:-translate-y-px hover:shadow-[0_12px_28px_-12px_rgb(242_167_59/0.65)]' : kind === 'danger' ? 'border border-error/40 text-error hover:bg-error/10' : 'border border-line-strong text-ink hover:bg-surface-card';
+  const look = kind === 'primary' ? 'btn-sheen bg-primary text-on-primary hover:-translate-y-px hover:shadow-[0_12px_28px_-12px_rgb(var(--c-primary)/0.65)]' : kind === 'danger' ? 'border border-error/40 text-error hover:bg-error/10' : 'border border-line-strong text-ink hover:bg-surface-card';
   return (
     <button type={type} onClick={onClick} disabled={disabled} className={`rounded-pill px-5 py-2.5 text-sm font-medium transition duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/25 disabled:opacity-40 disabled:active:scale-100 ${look} ${className}`}>
       {children}

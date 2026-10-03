@@ -140,3 +140,42 @@ export const relayKey = (deviceKey: Uint8Array) => hkdf(deviceKey, 'escanor-rela
 export const serverProof = (k: Uint8Array, nonceC: string, nonceS: string) => hmac(k, 'srv', nonceC, nonceS);
 export const clientProof = (k: Uint8Array, nonceC: string, nonceS: string) => hmac(k, 'cli', nonceS, nonceC);
 export const sessionKey = (k: Uint8Array, nonceC: string, nonceS: string) => hkdf(k, enc.encode(`${nonceC}.${nonceS}`), 'session key');
+
+// ---- Pairing by approval (same network, no code) ---------------------------------------------------------------------
+//
+// The phone and the computer each make a throwaway P-256 key and swap the public halves. Both derive the same secret from them:
+// from it, a key that seals the new device key for the phone, and a six-digit confirmation number that is shown on BOTH screens.
+// Someone sitting between them would end up with a different secret with each side, so the two numbers would not match, and the
+// person, who is asked to approve on the computer, can see that. Nothing here is a password the person has to type.
+
+export interface EcdhKeys {
+  priv: CryptoKey;
+  /** 65 bytes, uncompressed point. */
+  pub: Uint8Array;
+}
+
+export async function ecdhGenerate(): Promise<EcdhKeys> {
+  const pair = (await subtle().generateKey({ name: 'ECDH', namedCurve: 'P-256' }, false, ['deriveBits'])) as CryptoKeyPair;
+  return { priv: pair.privateKey, pub: new Uint8Array(await subtle().exportKey('raw', pair.publicKey)) };
+}
+
+/** True for what a P-256 public key looks like on the wire. (WebCrypto also checks the point is on the curve.) */
+export const isEcdhPublicKey = (b: Uint8Array) => b.length === 65 && b[0] === 4;
+
+export async function ecdhShared(priv: CryptoKey, peerPub: Uint8Array): Promise<Uint8Array> {
+  if (!isEcdhPublicKey(peerPub)) throw new Error('That is not a valid public key.');
+  const peer = await subtle().importKey('raw', peerPub as BufferSource, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+  return new Uint8Array(await subtle().deriveBits({ name: 'ECDH', public: peer }, priv, 256));
+}
+
+/** The sealing key and the confirmation number ("482 913") for one approval. Both sides get the same pair, or something different. */
+export async function approvalSecrets(shared: Uint8Array, phonePub: Uint8Array, machinePub: Uint8Array): Promise<{ key: Uint8Array; confirm: string }> {
+  const salt = new Uint8Array(phonePub.length + machinePub.length);
+  salt.set(phonePub, 0);
+  salt.set(machinePub, phonePub.length);
+  const key = await hkdf(shared, salt, 'escanor-approve-v1 key');
+  const bits = await hkdf(shared, salt, 'escanor-approve-v1 confirm');
+  const n = ((bits[0] << 24) | (bits[1] << 16) | (bits[2] << 8) | bits[3]) >>> 0;
+  const digits = String(n % 1_000_000).padStart(6, '0');
+  return { key, confirm: `${digits.slice(0, 3)} ${digits.slice(3)}` };
+}

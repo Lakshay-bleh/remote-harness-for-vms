@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { ACCENT_NAMES, applyTheme, type AccentName, type ThemeChoice } from './theme';
 
 /** The things a person can set on this phone only. (Notification choices live on their account, so the website shares them.) */
 export interface Prefs {
@@ -6,13 +7,28 @@ export interface Prefs {
   textSize: 'small' | 'default' | 'large';
   /** A short tap of the vibration motor on tab changes and approvals. */
   haptics: boolean;
+  /** Which colours: follow the phone, or always dark, light or pure black. */
+  theme: ThemeChoice;
+  /** The colour of buttons, links and highlights. */
+  accent: AccentName;
+  /** No sliding or fading, for people who find motion tiring (or to save a little battery). */
+  reduceMotion: boolean;
+  /** Which tab the app opens on. */
+  startTab: 'assistant' | 'computers' | 'connections' | 'machines';
   /** What a new chat on a machine starts with. Empty = the machine's own default. */
   defaultMode: string;
   defaultModel: string;
   defaultEffort: string;
 }
 
-export const DEFAULT_PREFS: Prefs = { textSize: 'default', haptics: true, defaultMode: 'default', defaultModel: '', defaultEffort: '' };
+export const DEFAULT_PREFS: Prefs = { textSize: 'default', haptics: true, theme: 'dark', accent: 'gold', reduceMotion: false, startTab: 'assistant', defaultMode: 'default', defaultModel: '', defaultEffort: '' };
+
+export const START_TABS = [
+  { value: 'assistant', label: 'Chat' },
+  { value: 'computers', label: 'Computers' },
+  { value: 'connections', label: 'Connections' },
+  { value: 'machines', label: 'Machines' },
+] as const;
 
 export const TEXT_SIZE_PERCENT: Record<Prefs['textSize'], number> = { small: 93.75, default: 100, large: 112.5 };
 
@@ -57,6 +73,10 @@ export function parsePrefs(raw: string | null): Prefs {
   return {
     textSize: oneOf(o.textSize, ['small', 'default', 'large'] as const, DEFAULT_PREFS.textSize),
     haptics: typeof o.haptics === 'boolean' ? o.haptics : DEFAULT_PREFS.haptics,
+    theme: oneOf(o.theme, ['system', 'dark', 'light', 'black'] as const, DEFAULT_PREFS.theme),
+    accent: oneOf(o.accent, ACCENT_NAMES, DEFAULT_PREFS.accent),
+    reduceMotion: typeof o.reduceMotion === 'boolean' ? o.reduceMotion : DEFAULT_PREFS.reduceMotion,
+    startTab: oneOf(o.startTab, START_TABS.map((s) => s.value), DEFAULT_PREFS.startTab),
     defaultMode: oneOf(o.defaultMode, PERMISSION_MODES.map((m) => m.value), DEFAULT_PREFS.defaultMode as (typeof PERMISSION_MODES)[number]['value']),
     defaultModel: oneOf(o.defaultModel, MODELS.map((m) => m.value), DEFAULT_PREFS.defaultModel as (typeof MODELS)[number]['value']),
     defaultEffort: oneOf(o.defaultEffort, EFFORTS.map((m) => m.value), DEFAULT_PREFS.defaultEffort as (typeof EFFORTS)[number]['value']),
@@ -78,10 +98,12 @@ export const getPrefs = (): Prefs => current;
 
 export function applyPrefs(p: Prefs = current): void {
   if (typeof document !== 'undefined') document.documentElement.style.fontSize = `${TEXT_SIZE_PERCENT[p.textSize]}%`;
+  applyTheme(p.theme, p.accent, { reduceMotion: p.reduceMotion });
 }
 
 // Apply what was saved as the app starts, not only when it is changed: otherwise a chosen text size is lost on every restart.
 applyPrefs(current);
+if (typeof matchMedia === 'function') matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => current.theme === 'system' && applyPrefs());
 
 export function setPrefs(patch: Partial<Prefs>): void {
   current = parsePrefs(JSON.stringify({ ...current, ...patch }));
