@@ -23,6 +23,25 @@ export function routeFor(data: unknown): PushDest {
   return typeof kind === 'string' && Object.hasOwn(ROUTES, kind) ? ROUTES[kind] : 'assistant';
 }
 
+export type ChannelState = 'ok' | 'quiet' | 'blocked' | 'missing';
+
+/** Can the Alerts channel actually show a notification? (Android: 0 = switched off, 1-2 = silent only, 3+ = normal.) */
+export function channelState(channels: Array<{ id: string; importance?: number }> | undefined): ChannelState {
+  const c = channels?.find((x) => x.id === CHANNEL_ID);
+  const importance = c?.importance ?? 3; // not reported: assume normal
+  return !c ? 'missing' : importance <= 0 ? 'blocked' : importance < 3 ? 'quiet' : 'ok';
+}
+
+/** Ask Android how the Alerts channel is set right now (the person can change it in the phone's settings at any time). */
+export async function alertChannelState(): Promise<ChannelState | null> {
+  if (!isNative()) return null;
+  try {
+    return channelState((await PushNotifications.listChannels()).channels);
+  } catch {
+    return null;
+  }
+}
+
 export function stateFromPermission(p: string): 'off' | 'on' | 'denied' {
   return p === 'granted' ? 'on' : p === 'denied' ? 'denied' : 'off';
 }

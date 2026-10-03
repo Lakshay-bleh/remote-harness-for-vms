@@ -1,8 +1,10 @@
 import { Camera, WifiHigh } from '@phosphor-icons/react';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { isNative } from '../../api';
 import { escanor } from '../client';
 import { haptic } from '../settings/prefs';
 import { Button, Notice, Sheet, Spinner } from '../ui';
+import { scanWithNative } from './nativeScan';
 import QrScan from './QrScan';
 import type { CloudDirectory, PairedComputer } from './lib/client';
 import { pairComputer, pairOnWifi, parseEntry, type PairEntry } from './pairing';
@@ -54,6 +56,21 @@ export default function PairSheet({ onPaired, onClose }: { onPaired: (c: PairedC
     [pair],
   );
 
+  // On the Android app the scan button opens Google's own scanner (native camera, real autofocus). The web camera below is the
+  // fallback if that cannot run on this phone.
+  const [nativeFailed, setNativeFailed] = useState(false);
+  useEffect(() => {
+    if (way !== 'scan' || !isNative() || nativeFailed) return;
+    let live = true;
+    void scanWithNative().then(
+      (text) => live && (text ? scanned(text) : setWay('code')),
+      () => live && setNativeFailed(true),
+    );
+    return () => {
+      live = false;
+    };
+  }, [way, nativeFailed, scanned]);
+
   const submit = () => {
     const entry = parseEntry(code);
     if (!entry) return setError('That is not a valid pairing code. It looks like ABCD-EFGH-IJKL-… (letters and the digits 2 to 7).');
@@ -102,10 +119,18 @@ export default function PairSheet({ onPaired, onClose }: { onPaired: (c: PairedC
             <div className="flex items-center gap-3 py-8 text-sm text-muted"><Spinner /> Finding your computer and pairing…</div>
           )
         ) : way === 'scan' ? (
-          <>
-            <QrScan onCode={scanned} />
-            <Button kind="quiet" className="w-full" onClick={() => setWay('code')}>Type the code instead</Button>
-          </>
+          isNative() && !nativeFailed ? (
+            <div className="space-y-3 py-6 text-center">
+              <p className="flex items-center justify-center gap-3 text-sm text-muted"><Spinner /> Opening the scanner…</p>
+              <Button kind="quiet" className="w-full" onClick={() => setWay('code')}>Type the code instead</Button>
+            </div>
+          ) : (
+            <>
+              {nativeFailed && <Notice tone="warn">The phone’s scanner could not open, so this uses the camera inside the app.</Notice>}
+              <QrScan onCode={scanned} />
+              <Button kind="quiet" className="w-full" onClick={() => setWay('code')}>Type the code instead</Button>
+            </>
+          )
         ) : (
           <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); way === 'wifi' ? void pairWifi() : submit(); }}>
             {way === 'wifi' ? (
