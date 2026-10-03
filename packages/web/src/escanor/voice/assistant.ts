@@ -8,8 +8,8 @@ export interface AssistantDeps {
   hasComputer: boolean;
   /** Run a sentence on the paired computer; resolves with what it said back. */
   toComputer(text: string): Promise<string>;
-  /** Hand a sentence to the Escanor assistant (opens it in the app). */
-  toAssistant(text: string): Promise<void>;
+  /** Hand a sentence to the Escanor assistant; resolves with its answer when it has one (empty when it only started working). */
+  toAssistant(text: string): Promise<string | void>;
   go(tab: VoiceTab): void;
 }
 
@@ -59,9 +59,10 @@ export async function handleUtterance(text: string, d: AssistantDeps): Promise<R
         if (explainFailure(said).ask) return { ok: false, say: spokenProblem(said), kind: 'computer' };
         return { ok: true, say: said || 'Done.', kind: 'computer' };
       }
-      case 'assistant':
-        await d.toAssistant(cmd.text);
-        return { ok: true, say: 'Asking your Escanor assistant.', kind: 'assistant' };
+      case 'assistant': {
+        const answer = await d.toAssistant(cmd.text);
+        return { ok: true, say: (typeof answer === 'string' && answer.trim()) || 'Asking your Escanor assistant.', kind: 'assistant' };
+      }
     }
   } catch (e) {
     return { ok: false, say: spokenProblem(e) };

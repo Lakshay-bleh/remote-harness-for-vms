@@ -1,18 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { isNative } from '../../api';
 import { loadComputers } from '../computer/storage';
 import { handleUtterance, type Reply } from './assistant';
 import type { VoiceTab } from './commands';
+import { forSpeech } from './assistantAnswer';
 import { chatWithComputer } from './computerChat';
 import { deviceOrNull } from './device';
 import { ensureMic, listen, speak, stopSpeaking } from './speech';
 
 export type VoicePhase = 'idle' | 'listening' | 'thinking' | 'speaking';
 
+/** How one turn ended, so a conversation can decide whether to listen again. */
+export type TurnOutcome = 'spoke' | 'silent' | 'stop' | 'cancelled' | 'error';
+
 /**
  * One conversation turn with Escanor: listen, understand, do it, say what happened. `start` runs a whole turn; `cancel` stops
  * listening or talking at once.
  */
-export function useVoiceSession({ go, onAssistant }: { go: (tab: VoiceTab) => void; onAssistant: (text: string) => Promise<void> }) {
+export function useVoiceSession({ go, onAssistant }: { go: (tab: VoiceTab) => void; onAssistant: (text: string, signal: AbortSignal) => Promise<string | void> }) {
   const [phase, setPhase] = useState<VoicePhase>('idle');
   const [heard, setHeard] = useState('');
   const [reply, setReply] = useState<Reply | null>(null);
@@ -28,7 +33,7 @@ export function useVoiceSession({ go, onAssistant }: { go: (tab: VoiceTab) => vo
     setPhase('idle');
   }, []);
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (): Promise<TurnOutcome> => {
     cancel();
     const mine = turn.current;
     const alive = () => turn.current === mine;
@@ -36,13 +41,13 @@ export function useVoiceSession({ go, onAssistant }: { go: (tab: VoiceTab) => vo
     setReply(null);
 
     const mic = await ensureMic();
-    if (!alive()) return;
+    if (!alive()) return 'cancelled';
     if (mic !== 'granted') {
       setReply({
         ok: false,
-        say: mic === 'denied' ? 'I need the microphone. In Android Settings, open Apps, then Escanor, then Permissions, and allow the microphone.' : 'Voice needs the Escanor Android app with speech recognition on this phone.',
+        say: mic === 'denied' ? 'I need the microphone. In Android Settings, open Apps, then Escanor, then Permissions, and allow the microphone.' : 'Voice needs the Escanor Android app, or a browser that can listen (Chrome or Safari).',
       });
-      return;
+      return 'error';
     }
 
     setPhase('listening');
@@ -52,12 +57,16 @@ export function useVoiceSession({ go, onAssistant }: { go: (tab: VoiceTab) => vo
       said = await listen({ onPartial: (t) => alive() && setHeard(t), signal: abort.current.signal });
     } catch (e) {
       if (alive()) {
-        setReply({ ok: false, say: `I couldn’t hear you. ${e instanceof Error ? e.message : ''} Check the microphone permission in Android Settings, under Apps, Escanor.`.trim() });
+        setReply({ ok: false, say: `I couldn’t hear you. ${e instanceof Error ? e.message : ''} ${isNative() ? 'Check the microphone permission in Android Settings, under Apps, Escanor.' : 'Allow the microphone for this page in your browser.'}`.replace(/\s+/g, ' ').trim() });
         setPhase('idle');
       }
-      return;
+      return alive() ? 'error' : 'cancelled';
     }
-    if (!alive()) return;
+    if (!alive()) return 'cancelled';
+    if (!said.trim()) {
+      setPhase('idle');
+      return 'silent';
+    }
     setHeard(said);
     setPhase('thinking');
 
@@ -66,14 +75,16 @@ export function useVoiceSession({ go, onAssistant }: { go: (tab: VoiceTab) => vo
       device: deviceOrNull(),
       hasComputer: computers.length > 0,
       toComputer: (text) => chatWithComputer(computers[0], text),
-      toAssistant: (text) => latest.current.onAssistant(text),
+      toAssistant: (text) => latest.current.onAssistant(text, abort.current?.signal ?? new AbortController().signal),
       go: (tab) => latest.current.go(tab),
     });
-    if (!alive()) return;
+    if (!alive()) return 'cancelled';
     setReply(r);
     setPhase('speaking');
-    await speak(r.say);
-    if (alive()) setPhase('idle');
+    await speak(forSpeech(r.say));
+    if (!alive()) return 'cancelled';
+    setPhase('idle');
+    return r.kind === 'stop' ? 'stop' : 'spoke';
   }, [cancel]);
 
   useEffect(() => () => void stopSpeaking(), []);

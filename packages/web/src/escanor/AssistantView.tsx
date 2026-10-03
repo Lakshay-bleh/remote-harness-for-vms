@@ -1,8 +1,9 @@
-import { ArrowUp, PencilSimpleLine, Stop } from '@phosphor-icons/react';
+import { PencilSimpleLine } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isThinking, toDisplay } from '@remote-harness/shared/escanor';
 import ApprovalCard from './ApprovalCard';
 import { escanor } from './client';
+import ChatComposer from './composer/ChatComposer';
 import { useConversation, useLoad } from './hooks';
 import MachineSheet, { machineLabel, machineTone } from './MachineSheet';
 import { MenuButton, Md, Notice, Spinner } from './ui';
@@ -76,36 +77,11 @@ export default function AssistantView({ conversationId, title, onConversation, o
         ) : (
           caps.data && <button onClick={onOpenIntegrations} className="mb-2 text-left text-[12px] text-primary underline underline-offset-2">Connect a service so I can work on it</button>
         )}
-        <Composer running={chat.state.running} onSend={(t) => void chat.send(t)} onStop={() => void chat.stop()} />
+        <ChatComposer placeholder="Message your assistant" running={chat.state.running} onSend={(t, files) => void chat.send(t, files)} onStop={() => void chat.stop()} />
       </div></div>
 
       {machineOpen && <MachineSheet onClose={() => setMachineOpen(false)} />}
     </div>
-  );
-}
-
-function Composer({ running, onSend, onStop }: { running: boolean; onSend: (t: string) => void; onStop: () => void }) {
-  const [text, setText] = useState('');
-  const box = useRef<HTMLTextAreaElement>(null);
-  const submit = () => { if (text.trim()) { onSend(text); setText(''); if (box.current) box.current.style.height = 'auto'; } };
-  return (
-    <form className="mx-auto flex w-full max-w-3xl items-end gap-2 rounded-3xl border border-line-strong bg-surface-dark-soft py-1.5 pl-4 pr-1.5 transition focus-within:border-primary/60 focus-within:ring-4 focus-within:ring-primary/10" onSubmit={(e) => { e.preventDefault(); submit(); }}>
-      <textarea
-        ref={box}
-        value={text}
-        onChange={(e) => { setText(e.target.value); e.target.style.height = 'auto'; e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`; }}
-        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !('ontouchstart' in window)) { e.preventDefault(); submit(); } }}
-        rows={1}
-        placeholder="Message your assistant"
-        aria-label="Message"
-        className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent py-2 text-base text-ink outline-none placeholder:text-muted-soft"
-      />
-      {running ? (
-        <button type="button" onClick={onStop} aria-label="Stop" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-card text-ink transition hover:bg-surface-cream-strong active:scale-90"><Stop size={18} weight="fill" /></button>
-      ) : (
-        <button type="submit" disabled={!text.trim()} aria-label="Send" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary transition hover:bg-primary-active active:scale-90 disabled:bg-surface-card disabled:text-muted-soft"><ArrowUp size={20} weight="bold" /></button>
-      )}
-    </form>
   );
 }
 

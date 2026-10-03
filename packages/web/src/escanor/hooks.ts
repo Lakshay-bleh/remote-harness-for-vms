@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { addOptimisticMessage, applyMessages, dropOptimisticMessages, emptyChat, markAnswered, pollDelayMs, type ChatState } from '@remote-harness/shared/escanor';
 import { readCache, writeCache, type CachePolicy } from './cache';
+import { toApi, withAttachmentNote, type Attachment } from './composer/attachments';
 import { escanor, SessionEnded } from './client';
 import { useEscanorSession } from './session';
 
@@ -153,14 +154,14 @@ export function useConversation(initialId: string | null, onCreated: (id: string
   }, [id, sessionEnded]);
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, attachments: Attachment[] = []) => {
       const clean = text.trim();
-      if (!clean) return;
+      if (!clean && attachments.length === 0) return;
       setError(null);
-      stateRef.current = addOptimisticMessage(stateRef.current, clean);
+      stateRef.current = addOptimisticMessage(stateRef.current, withAttachmentNote(clean, attachments));
       setState(stateRef.current);
       try {
-        const { conversation_id } = await escanor.send(clean, id ?? undefined);
+        const { conversation_id } = await escanor.send(clean, id ?? undefined, toApi(attachments));
         if (!id) {
           setId(conversation_id);
           onCreated(conversation_id);

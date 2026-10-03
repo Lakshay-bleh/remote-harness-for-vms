@@ -1,6 +1,8 @@
 import { CheckCircle, LockSimple } from '@phosphor-icons/react';
 import { useCallback, useEffect, useState } from 'react';
-import { Notice, Spinner } from '../ui';
+import { DogState } from '../dog/DogState';
+import { Notice } from '../ui';
+import { useRemote } from './useRemote';
 import ErrorCard from './ErrorCard';
 import type { PermissionGroup } from './lib/protocol';
 import type { ServerMsg, ClientMsg } from './lib/protocol';
@@ -13,31 +15,30 @@ type Request = (msg: ClientMsg) => Promise<ServerMsg[]>;
  * What this phone may do on the computer. Switched-off kinds can be requested from here, but only the person at the computer can
  * allow them: the computer shows a question, and the phone has no way to answer it.
  */
-export default function PermissionsTab({ request, online }: { request: Request; online: boolean }) {
-  const [groups, setGroups] = useState<PermissionGroup[] | null>(null);
-  const [error, setError] = useState<unknown>(null);
+export default function PermissionsTab({ computerId, request, online }: { computerId: string; request: Request; online: boolean }) {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [watching, setWatching] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      const m = (await request({ t: 'groups' })).find((x) => x.t === 'groups' || x.t === 'error');
-      if (m?.t === 'groups') (setGroups(m.items), setError(null));
-      else if (m?.t === 'error') setError(m.message);
-    } catch (e) {
-      setError(e);
-    }
+  const fetchGroups = useCallback(async (): Promise<PermissionGroup[]> => {
+    const m = (await request({ t: 'groups' })).find((x) => x.t === 'groups' || x.t === 'error');
+    if (m?.t === 'groups') return m.items;
+    throw new Error(m?.t === 'error' ? m.message : 'The computer did not answer.');
   }, [request]);
+  // What was shown last time appears at once; the list is checked again in the background (it rarely changes).
+  const list = useRemote<PermissionGroup[]>({ computerId, what: 'groups', online, run: fetchGroups, ttlMs: 60_000 });
+  const groups = list.data;
+  const error = groups ? null : list.error;
+  const load = list.reload;
 
-  useEffect(() => { if (online) void load(); }, [online, load]);
   // After asking, look again every few seconds: the list changes the moment the person says yes on the computer.
   useEffect(() => {
     if (!watching || !online) return;
-    const t = setInterval(() => void load(), 4000);
+    const t = setInterval(() => list.reload(), 4000);
     const stop = setTimeout(() => setWatching(false), 120_000);
     return () => (clearInterval(t), clearTimeout(stop));
-  }, [watching, online, load]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watching, online]);
 
   const ask = async (g: PermissionGroup) => {
     setBusy(g.id);
@@ -52,8 +53,11 @@ export default function PermissionsTab({ request, online }: { request: Request; 
     }
   };
 
-  if (error) return <div className="px-4 py-4"><ErrorCard error={error} onRetry={() => void load()} /></div>;
-  if (!groups) return <div className="flex items-center gap-2 px-4 py-8 text-sm text-muted">{online ? <><Spinner /> Asking your computer…</> : 'Computer offline'}</div>;
+  if (!groups) {
+    if (error && !list.refreshing) return <div className="px-4 py-4"><ErrorCard error={error} onRetry={() => void load()} /></div>;
+    if (!online) return <DogState scene="sleep" title="Your computer is offline" text="Its permissions will show here when it is back." />;
+    return <DogState scene="sniff" live title="Sniffing out the permissions…" text="Asking your computer what this phone may do." />;
+  }
 
   const off = groups.filter((g) => !g.enabled).length;
   return (

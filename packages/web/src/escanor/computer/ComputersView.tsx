@@ -1,7 +1,10 @@
 import { Laptop, PencilSimple, Plus, Trash } from '@phosphor-icons/react';
 import { useState } from 'react';
+import { DogState } from '../dog/DogState';
 import { OverflowMenu } from '../Menu';
+import { dropCache } from '../cache';
 import { ConfirmSheet } from '../settings/parts';
+import { forgetChats } from './chatStore';
 import { Button, ScreenHeader } from '../ui';
 import { displayName, forgetComputerPrefs, setComputerPrefs, useComputerPrefs } from './computerPrefs';
 import RenameSheet from './RenameSheet';
@@ -23,7 +26,7 @@ function Card({ c, onOpen, onRemove }: { c: PairedComputer; onOpen: () => void; 
       </button>
       <OverflowMenu label={`Options for ${name}`} items={[{ label: 'Open', onClick: onOpen }, { label: 'Rename', icon: <PencilSimple size={18} />, onClick: () => setSheet('rename') }, { label: 'Forget this computer', icon: <Trash size={18} />, danger: true, divider: true, onClick: () => setSheet('remove') }]} />
       {sheet === 'rename' && <RenameSheet current={prefs.alias} original={c.name} onSave={(alias) => setComputerPrefs(c.id, { alias })} onClose={() => setSheet(null)} />}
-      {sheet === 'remove' && <ConfirmSheet title={`Forget ${name}?`} body="This phone will no longer control it. You can pair it again any time with a new code." action="Forget" onConfirm={() => (forgetComputerPrefs(c.id), onRemove())} onClose={() => setSheet(null)} />}
+      {sheet === 'remove' && <ConfirmSheet title={`Forget ${name}?`} body="This phone will no longer control it. You can pair it again any time with a new code." action="Forget" onConfirm={() => (forgetComputerPrefs(c.id), forgetChats(c.id), dropCache(`computer:${c.id}:`), onRemove())} onClose={() => setSheet(null)} />}
     </li>
   );
 }
@@ -42,12 +45,12 @@ export default function ComputersView() {
       <ScreenHeader title="Computers"><Button onClick={() => setPairing(true)} className="inline-flex items-center gap-1.5 whitespace-nowrap !px-4"><Plus size={16} weight="bold" /> Add</Button></ScreenHeader>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
         {computers.length === 0 ? (
-          <div className="mx-auto max-w-sm py-14 text-center">
-            <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-hairline bg-surface-card text-muted"><Laptop size={26} /></span>
-            <h2 className="mt-5 text-lg font-semibold text-ink">Your computer, from your phone</h2>
-            <p className="mt-2 text-sm text-body">Install Escanor Desktop on your computer and pair it here. Everything runs on that computer’s own hardware, so there is nothing extra to pay for. You just see the results and approve what matters.</p>
-            <div className="mt-6"><Button onClick={() => setPairing(true)}>Add your computer</Button></div>
-          </div>
+          <DogState
+            scene="sleep"
+            title="Waiting for your computer"
+            text="Install Escanor Desktop on your computer and pair it here. Everything runs on that computer’s own hardware, so there is nothing extra to pay for. You just see the results and approve what matters."
+            action={<Button onClick={() => setPairing(true)}>Add your computer</Button>}
+          />
         ) : (
           <ul className="space-y-2 pt-2">
             {computers.map((c) => <Card key={c.id} c={c} onOpen={() => setOpenId(c.id)} onRemove={() => setComputers(removeComputer(c.id))} />)}

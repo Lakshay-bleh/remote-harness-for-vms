@@ -73,6 +73,12 @@ describe('handleUtterance', () => {
     assert.deepEqual(log, []);
   });
 
+  it('speaks the assistant\u2019s answer when it comes back with one', async () => {
+    const { d } = deps({ toAssistant: async () => 'Checkout is slow because the database is overloaded.' });
+    const r = await handleUtterance('why is checkout slow', d);
+    assert.deepEqual(r, { ok: true, say: 'Checkout is slow because the database is overloaded.', kind: 'assistant' });
+  });
+
   it('never throws, even if the assistant call blows up', async () => {
     const { d } = deps({ toAssistant: async () => { throw new Error('offline'); } });
     const r = await handleUtterance('why is it slow', d);

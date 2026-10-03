@@ -1,6 +1,8 @@
 import type { AssistantCapabilities, AssistantConversation, AssistantMessages, AssistantStatus, AssistantUsage, MachineView } from '@remote-harness/shared/escanor';
+import { isNative } from '../api';
 import { escanorApiBase } from './config';
 import type { BillingPlan, BillingSub } from './account/billing';
+import type { ApiAttachment } from './composer/attachments';
 import type { ConsentState } from './account/privacy';
 import type { ManagedHub } from './managed';
 
@@ -275,7 +277,7 @@ export const escanor = {
     return r.authorization_url;
   },
   async exchangeCode(code: string, codeVerifier?: string): Promise<void> {
-    const t = await request<{ access_token: string; refresh_token: string; expires_in?: number }>('/auth/oauth/exchange', json({ code, provider: 'google', ...(codeVerifier ? { code_verifier: codeVerifier } : {}) }), { auth: false });
+    const t = await request<{ access_token: string; refresh_token: string; expires_in?: number }>('/auth/oauth/exchange', json({ code, provider: 'google', client: isNative() ? 'mobile' : 'web', ...(codeVerifier ? { code_verifier: codeVerifier } : {}) }), { auth: false });
     tokens.set(t.access_token, t.refresh_token, t.expires_in);
   },
   /** For development only: the backend refuses this unless ENABLE_DEV_AUTH is set. */
@@ -302,7 +304,7 @@ export const escanor = {
   capabilities: (live = false) => request<AssistantCapabilities>(`/ai/capabilities${live ? '?live=true' : ''}`),
   machine: (logs = false) => request<MachineView>(`/ai/machine?logs=${logs}&tail=120`),
   conversations: () => request<{ conversations: AssistantConversation[] }>('/ai/conversations').then((r) => r.conversations),
-  send: (text: string, conversationId?: string) => request<{ conversation_id: string }>('/ai/chat', json({ text, conversation_id: conversationId ?? null })),
+  send: (text: string, conversationId?: string, attachments: ApiAttachment[] = []) => request<{ conversation_id: string }>('/ai/chat', json({ text, conversation_id: conversationId ?? null, ...(attachments.length ? { attachments } : {}) })),
   messages: (id: string, after: number) => request<AssistantMessages>(`/ai/conversations/${enc(id)}/messages?after=${after}`),
   answer: (id: string, requestId: string, allow: boolean) => request<{ status: string }>(`/ai/conversations/${enc(id)}/permissions/${enc(requestId)}`, json({ allow })),
   stop: (id: string) => request<{ ok: boolean }>(`/ai/conversations/${enc(id)}/stop`, { method: 'POST' }),
@@ -320,8 +322,9 @@ export const escanor = {
     type Cmd = { id: string; status: string; result?: Record<string, any>; error?: string | null };
     let cmd = await request<Cmd>('/agents/commands', json({ agent_id: agentId, plugin: 'desktop', action, parameters, approve_immediately: true, wait_for_result: true }));
     const until = Date.now() + timeoutMs;
-    while (cmd.status !== 'succeeded' && cmd.status !== 'failed' && cmd.status !== 'cancelled' && Date.now() < until) {
-      await new Promise((r) => setTimeout(r, 1200));
+    // Quick at first (the computer answers within a second or two when it is awake), then easier on the server.
+    for (let n = 0; cmd.status !== 'succeeded' && cmd.status !== 'failed' && cmd.status !== 'cancelled' && Date.now() < until; n++) {
+      await new Promise((r) => setTimeout(r, Math.min(1000, 350 + n * 150)));
       cmd = await request<Cmd>(`/agents/commands/${enc(cmd.id)}`);
     }
     if (cmd.status !== 'succeeded') throw new Error(cmd.status === 'failed' ? (cmd.error ?? 'The computer refused that.') : 'The computer did not answer. Is it on and online?');
