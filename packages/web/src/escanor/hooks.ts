@@ -1,36 +1,79 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { addOptimisticMessage, applyMessages, dropOptimisticMessages, emptyChat, markAnswered, pollDelayMs, type ChatState } from '@remote-harness/shared/escanor';
+import { readCache, writeCache, type CachePolicy } from './cache';
 import { escanor, SessionEnded } from './client';
 import { useEscanorSession } from './session';
 
 export interface Loaded<T> {
   data: T | null;
   error: string | null;
+  /** True only while there is nothing to show yet. */
   loading: boolean;
+  /** True while a fresh answer is on its way, even when an earlier one is already showing. */
+  refreshing: boolean;
+  /** The data on screen is the phone's remembered copy, not yet confirmed. */
+  stale: boolean;
   reload(): void;
 }
 
 /**
- * Load something now, again every `everyMs` (0 = never), and again whenever the app comes back to the
- * foreground. A dead session sends the person to sign-in instead of showing an error.
+ * Load something now, again every `everyMs` (0 = never), and again whenever the app comes back to the foreground. A dead session
+ * sends the person to sign-in instead of showing an error.
+ *
+ * With a `cache`, what was loaded last time is shown at once and only asked for again when it is older than its time to live;
+ * `reload()` always asks. Without one it behaves as before.
  */
-export function useLoad<T>(load: () => Promise<T>, everyMs = 0, deps: unknown[] = []): Loaded<T> {
+export function useLoad<T>(load: () => Promise<T>, everyMs = 0, deps: unknown[] = [], cache?: CachePolicy): Loaded<T> {
   const { sessionEnded } = useEscanorSession();
-  const [data, setData] = useState<T | null>(null);
+  const remembered = cache ? readCache<T>(cache) : null;
+  const [data, setData] = useState<T | null>(remembered?.value ?? null);
+  const [stale, setStale] = useState(Boolean(remembered && !remembered.fresh));
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!remembered);
+  const [refreshing, setRefreshing] = useState(false);
   const [tick, setTick] = useState(0);
   const loader = useRef(load);
   loader.current = load;
+  const policy = useRef(cache);
+  policy.current = cache;
+  const forced = useRef(false);
+  const key = cache?.key;
+
+  // A different thing to show (another computer, another page): start from what is remembered for it, or from nothing.
+  const firstKey = useRef(key);
+  useEffect(() => {
+    if (firstKey.current === key) return;
+    firstKey.current = key;
+    const hit = policy.current ? readCache<T>(policy.current) : null;
+    setData(hit?.value ?? null);
+    setStale(Boolean(hit && !hit.fresh));
+    setLoading(!hit);
+    setError(null);
+  }, [key]);
 
   useEffect(() => {
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const run = async () => {
+      const force = forced.current;
+      forced.current = false;
+      const hit = policy.current ? readCache<T>(policy.current) : null;
+      // Remembered and still fresh: nothing to ask. (A timed refresh, or reload(), asks anyway.)
+      if (hit?.fresh && !force && everyMs === 0) {
+        if (live) {
+          setData(hit.value);
+          setStale(false);
+          setLoading(false);
+        }
+        return;
+      }
+      if (live) setRefreshing(true);
       try {
         const next = await loader.current();
+        if (policy.current) writeCache(policy.current.key, next);
         if (live) {
           setData(next);
+          setStale(false);
           setError(null);
         }
       } catch (e) {
@@ -39,6 +82,7 @@ export function useLoad<T>(load: () => Promise<T>, everyMs = 0, deps: unknown[] 
       } finally {
         if (live) {
           setLoading(false);
+          setRefreshing(false);
           if (everyMs > 0) timer = setTimeout(run, everyMs);
         }
       }
@@ -52,9 +96,19 @@ export function useLoad<T>(load: () => Promise<T>, everyMs = 0, deps: unknown[] 
       document.removeEventListener('visibilitychange', onVisible);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [everyMs, tick, sessionEnded, ...deps]);
+  }, [everyMs, tick, sessionEnded, key, ...deps]);
 
-  return { data, error, loading, reload: useCallback(() => setTick((t) => t + 1), []) };
+  return {
+    data,
+    error,
+    loading,
+    refreshing,
+    stale,
+    reload: useCallback(() => {
+      forced.current = true;
+      setTick((t) => t + 1);
+    }, []),
+  };
 }
 
 /** One conversation: what has been said, whether the assistant is working, and how to talk to it. */

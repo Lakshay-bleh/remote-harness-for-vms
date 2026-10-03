@@ -3,7 +3,8 @@ import { Browser } from '@capacitor/browser';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { isNative } from '../api';
 import { APP_SCHEME, loginRedirect } from './config';
-import { ApiError, escanor, hasStoredSession, SessionEnded, type EscanorUser } from './client';
+import { escanor, hasStoredSession, SessionEnded, type EscanorUser } from './client';
+import { clearCache, readCache, writeCache, HOUR } from './cache';
 import { clearComputers } from './computer/storage';
 import { forgetPush } from './push';
 import { createPkcePair } from './pkce';
@@ -34,6 +35,9 @@ interface Ctx {
   canSignInHere: boolean;
 }
 
+/** The person's own details, remembered so the app opens signed in even when Escanor cannot be reached for a moment. */
+const USER_CACHE = { key: 'user', ttlMs: 0, maxAgeMs: 90 * 24 * HOUR } as const;
+
 const SessionContext = createContext<Ctx | null>(null);
 
 /** `escanor://auth/login?code=...` -> the code (the site's /auth/mobile/login page builds this link). */
@@ -57,13 +61,19 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const load = useCallback(async () => {
     try {
-      setUser(await escanor.me());
+      const me = await escanor.me();
+      writeCache(USER_CACHE.key, me);
+      setUser(me);
       setStatus('signed_in');
       setError(null);
     } catch (e) {
-      if (e instanceof SessionEnded) setStatus('signed_out');
-      else if (e instanceof ApiError && e.status === 0 && hasStoredSession()) setStatus('signed_in'); // offline: keep them in
-      else {
+      if (e instanceof SessionEnded) return void (clearCache(), setStatus('signed_out'));
+      // Anything else is the server or the network having a moment, not the sign-in ending: stay in with the remembered details.
+      const remembered = hasStoredSession() ? readCache<EscanorUser>(USER_CACHE) : null;
+      if (remembered) {
+        setUser(remembered.value);
+        setStatus('signed_in');
+      } else {
         setStatus('signed_out');
         setError(e instanceof Error ? e.message : 'Could not sign in.');
       }
@@ -76,6 +86,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       handled.current.add(code);
       setBusy(true);
       try {
+        clearCache(); // whatever was remembered belonged to whoever was signed in before
         await escanor.exchangeCode(code, takeVerifier());
         await load();
       } catch (e) {
@@ -146,16 +157,20 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         takeVerifier();
         await forgetPush(); // before the sign-in goes: the server needs it to forget this phone
         clearComputers(); // the device keys of this person's computers go with them; the next person on this phone starts clean
+        clearCache();
         await escanor.signOut();
         setUser(null);
         setStatus('signed_out');
       },
       sessionEnded() {
+        clearCache();
         setUser(null);
         setStatus('signed_out');
       },
       async refreshUser() {
-        setUser(await escanor.me());
+        const me = await escanor.me();
+        writeCache(USER_CACHE.key, me);
+        setUser(me);
       },
     }),
     [status, user, error, busy, redirect.uri, redirect.supported],
