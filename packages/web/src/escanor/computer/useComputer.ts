@@ -11,7 +11,7 @@ export type LinkState = 'connecting' | 'online' | 'offline';
  * by itself when it does not. A single failed request is not "offline" (it takes two in a row), and an offline computer is retried
  * with a growing pause, when the phone's network comes back, and when the app returns to the foreground.
  */
-export function useComputer(computer: PairedComputer) {
+export function useComputer(computer: PairedComputer, allowCloud = true) {
   const clientRef = useRef<ComputerClient | null>(null);
   const [state, setState] = useState<LinkState>('connecting');
   const [route, setRoute] = useState<Route | null>(null);
@@ -43,7 +43,8 @@ export function useComputer(computer: PairedComputer) {
   }, []);
 
   useEffect(() => {
-    const client = new ComputerClient(computer, { relay: ({ agentId, deviceId, sealed }) => escanor.sendToComputer(agentId, deviceId, sealed) });
+    // `allowCloud` false is the person's "Wi-Fi only" choice for this computer: no relay is given, so only the local route exists.
+    const client = new ComputerClient(computer, { relay: allowCloud ? ({ agentId, deviceId, sealed }) => escanor.sendToComputer(agentId, deviceId, sealed) : null });
     clientRef.current = client;
     failures.current = 0;
     setAttempt(0);
@@ -56,7 +57,7 @@ export function useComputer(computer: PairedComputer) {
       client.close();
       clientRef.current = null;
     };
-  }, [computer, connect]);
+  }, [computer, allowCloud, connect]);
 
   // Offline: try again after a pause that grows, and straight away when the network returns or the app is brought back.
   useEffect(() => {
