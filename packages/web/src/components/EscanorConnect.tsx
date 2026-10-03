@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react';
 import type { ApiTokenCreatedDto, ApiTokenDto, McpOverviewDto } from '@remote-harness/shared';
 import { api, getHubUrl } from '../api';
 
-// Where the Escanor web app lives; the "Claude cloud sessions" card is on its Integrations page.
-const ESCANOR_INTEGRATIONS_URL = 'https://www.escanor.in/dashboard/integrations';
 const SERVER_NAME = 'escanor';
 
 // The address people use for this hub. In a browser the hub serves this app, so it is the page's
@@ -290,14 +288,13 @@ export default function EscanorConnect() {
               solely to install and update the MCP. Revoke it here any time; signing out of this browser does not affect it.
             </p>
 
-            <a
-              href={ESCANOR_INTEGRATIONS_URL}
-              target="_blank"
-              rel="noreferrer"
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent('escanor-go', { detail: 'connections' }))}
               className="mt-4 block w-full rounded-md bg-primary px-4 py-2.5 text-center text-sm font-medium text-on-primary transition hover:bg-primary-active"
             >
-              Open Escanor
-            </a>
+              Open Connections
+            </button>
           </div>
         </div>
       )}

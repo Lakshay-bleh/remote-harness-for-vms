@@ -1,5 +1,7 @@
 import type { AssistantCapabilities, AssistantConversation, AssistantMessages, AssistantStatus, AssistantUsage, MachineView } from '@remote-harness/shared/escanor';
 import { escanorApiBase } from './config';
+import type { BillingPlan, BillingSub } from './account/billing';
+import type { ConsentState } from './account/privacy';
 import type { ManagedHub } from './managed';
 
 const ACCESS = 'escanor_access';
@@ -70,6 +72,64 @@ export interface McpInstall {
   token: string;
   cli_command: string;
   token_id?: string;
+}
+
+export interface WorkspaceSettings {
+  organization_name: string;
+  workspace_name: string;
+  default_region: string;
+  environment: string;
+  session_timeout: string;
+  two_factor_enabled: boolean;
+  connected_devices: number;
+}
+
+export interface OrgMember {
+  user_id: string;
+  email: string;
+  name: string;
+  role: string;
+  joined_at: string | null;
+}
+
+export interface AuditLine {
+  id?: string;
+  created_at: string;
+  actor_email: string | null;
+  action: string;
+  target: string;
+  status: string;
+  detail: string;
+}
+
+export interface PrivacyRequest {
+  id: string;
+  reference: string;
+  request_type: string;
+  status: string;
+  subject: string;
+  received_at: string;
+  acknowledge_by: string;
+  resolve_by: string;
+  acknowledged_at: string | null;
+  resolved_at: string | null;
+  resolution_note: string | null;
+  events?: Array<{ from_status: string | null; to_status: string; note: string | null; created_at: string }>;
+}
+
+export interface TwoFactorStatus {
+  enabled: boolean;
+  enrolled_at: string | null;
+  backup_codes_left: number;
+}
+
+export interface DeletionStatus {
+  scheduled: boolean;
+  requested_at: string | null;
+  scheduled_for: string | null;
+  grace_days: number;
+  two_factor_enabled: boolean;
+  reference?: string;
 }
 
 const tokens = {
@@ -258,7 +318,38 @@ export const escanor = {
   unregisterPushToken: (token: string) => request<{ removed: number }>('/users/me/push-token', { method: 'DELETE', body: JSON.stringify({ token }) }),
   pushStatus: () => request<{ configured: boolean; devices: number }>('/users/me/push-status'),
   sendTestPush: () => request<{ delivered: number }>('/users/me/push-test', { method: 'POST' }),
-  exportMyData: () => request<unknown>('/me/export'),
+  exportMyData: () => request<{ scope?: string; [k: string]: unknown }>('/compliance/me/export'),
+
+  // -- plan and billing
+  billingPlans: () => request<{ plans: BillingPlan[] }>('/billing/plans', {}, { auth: false }).then((r) => r.plans),
+  billingSubscription: () => request<BillingSub>('/billing/subscription'),
+  billingCheckout: (planId: string) => request<{ status?: string; message?: string | null; razorpay_key_id?: string; razorpay_subscription_id?: string; plan_id?: string }>('/billing/checkout', json({ plan_id: planId })),
+  billingVerify: (body: { razorpay_payment_id: string; razorpay_subscription_id: string; razorpay_signature: string }) => request<{ status: string; plan_id: string; plan_name: string }>('/billing/verify', json(body)),
+  billingCancel: () => request<{ status: string; cancel_at_period_end: boolean }>('/billing/cancel', { method: 'POST' }),
+
+  // -- privacy: what you agreed to, your requests, and a copy of your data
+  consents: () => request<ConsentState[]>('/compliance/consents'),
+  recordConsent: (purpose: string, grant: boolean, noticeVersion: string) => request<ConsentState>('/compliance/consents', json({ purpose, action: grant ? 'grant' : 'withdraw', notice_version: noticeVersion })),
+  privacyRequests: () => request<PrivacyRequest[]>('/compliance/requests'),
+  privacyRequest: (id: string) => request<PrivacyRequest>(`/compliance/requests/${enc(id)}`),
+  openPrivacyRequest: (body: { request_type: string; subject: string; details: string }) => request<PrivacyRequest>('/compliance/requests', json(body)),
+
+  // -- workspace and team
+  workspaceSettings: () => request<WorkspaceSettings>('/workspace/settings'),
+  updateWorkspaceSettings: (patch: { workspace_name?: string; default_region?: string; environment?: string }) => request<WorkspaceSettings>('/workspace/settings', { method: 'PATCH', body: JSON.stringify(patch) }),
+  organization: () => request<{ your_role: string; members: OrgMember[]; available_roles: string[]; member_count: number }>('/admin/organization'),
+  setMemberRole: (userId: string, role: string) => request<{ role: string }>(`/admin/organization/members/${enc(userId)}`, { method: 'PATCH', body: JSON.stringify({ role }) }),
+  auditLogs: (limit = 100) => request<{ logs: AuditLine[] }>(`/audit-logs?limit=${limit}`).then((r) => r.logs),
+
+  // -- two-step verification and deleting the account
+  twoFactor: () => request<TwoFactorStatus>('/security/2fa'),
+  twoFactorSetup: () => request<{ secret: string; otpauth_uri: string; issuer: string; account: string | null }>('/security/2fa/setup', { method: 'POST' }),
+  twoFactorEnable: (code: string) => request<{ enabled: boolean; backup_codes: string[] }>('/security/2fa/enable', json({ code })),
+  twoFactorDisable: (code: string) => request<{ enabled: boolean }>('/security/2fa/disable', json({ code })),
+  twoFactorBackupCodes: (code: string) => request<{ backup_codes: string[] }>('/security/2fa/backup-codes', json({ code })),
+  deletionStatus: () => request<DeletionStatus>('/account/deletion'),
+  requestDeletion: (code: string, confirmEmail: string) => request<DeletionStatus>('/account/deletion', json({ code, confirm_email: confirmEmail })),
+  cancelDeletion: () => request<DeletionStatus>('/account/deletion/cancel', { method: 'POST' }),
   /** How long the backend takes to answer, in ms: the Developer screen's "is it me or the server" check. Needs no sign-in. */
   async ping(): Promise<{ ms: number; ok: boolean; status: number }> {
     const t = performance.now();

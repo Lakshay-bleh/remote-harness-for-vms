@@ -1,39 +1,21 @@
-import { Download, FileText, Headset, Lifebuoy, ShieldCheck, Trash } from '@phosphor-icons/react';
-import { useState } from 'react';
+import { FileText, Headset, Lifebuoy, ShieldCheck } from '@phosphor-icons/react';
 import { isNative } from '../../api';
 import { APP_VERSION } from '../../appInfo';
-import { escanor } from '../client';
 import { LEGAL_LIST, LegalBody } from '../../legal/LegalBody';
-import { openWeb } from '../links';
-import { Logo, Notice } from '../ui';
+import { Logo } from '../ui';
 import { Group, Page, Row } from './parts';
 
-/** Privacy, terms and your data. These used to sit in a footer on every screen; a phone app keeps them here, one tap from Settings. */
-export function PrivacyPage({ onBack, onOpenDoc }: { onBack: () => void; onOpenDoc: (key: string) => void }) {
-  const [state, setState] = useState<{ kind: 'idle' } | { kind: 'busy' } | { kind: 'copied' } | { kind: 'error'; message: string }>({ kind: 'idle' });
-
-  // Android's web view cannot save a downloaded file, so the export goes to the clipboard as JSON.
-  const copyData = async () => {
-    setState({ kind: 'busy' });
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(await escanor.exportMyData(), null, 2));
-      setState({ kind: 'copied' });
-    } catch (e) {
-      setState({ kind: 'error', message: e instanceof Error ? e.message : 'Could not export your data.' });
-    }
-  };
-
+/** Privacy and legal: every document reads inside the app, and your data and requests have their own page. */
+export function PrivacyPage({ onBack, onOpenDoc, onOpenData }: { onBack: () => void; onOpenDoc: (key: string) => void; onOpenData: () => void }) {
   return (
     <Page title="Privacy and legal" onBack={onBack}>
+      <Group title="Your data" footer="Your choices, a copy of your data, and requests to correct or delete it.">
+        <Row icon={<ShieldCheck size={18} />} label="Privacy and your data" onClick={onOpenData} />
+      </Group>
+
       <Group title="Read in the app" footer="Every document is stored in the app, so it reads without a connection.">
         {LEGAL_LIST.map((d) => <Row key={d.key} icon={d.key === 'terms' ? <FileText size={18} /> : d.key === 'support' ? <Lifebuoy size={18} /> : <ShieldCheck size={18} />} label={d.label} onClick={() => onOpenDoc(d.key)} />)}
       </Group>
-
-      <Group title="Your data" footer="A copy of your account details, workspaces and consent history, as JSON on your clipboard. Deleting your account or data is a request you make on the website, so it can be checked and tracked.">
-        <Row icon={<Download size={18} />} label="Copy my data" value={state.kind === 'busy' ? 'Working…' : state.kind === 'copied' ? 'Copied' : undefined} onClick={() => void copyData()} chevron={false} disabled={state.kind === 'busy'} />
-        <Row icon={<Trash size={18} />} label="Delete my account or data" onClick={() => void openWeb('/dashboard/settings')} />
-      </Group>
-      {state.kind === 'error' && <Notice tone="error">{state.message}</Notice>}
 
       <p className="px-1 text-[12px] leading-relaxed text-muted">If you use a hub that someone else runs, ask its operator about access, storage and deletion of your session data. Their notices are theirs, not Escanor’s.</p>
     </Page>

@@ -6,7 +6,6 @@ import { escanor, type McpConnection, type McpInstall } from '../client';
 import { clearComputers, loadComputers } from '../computer/storage';
 import { escanorApiBase } from '../config';
 import { useLoad } from '../hooks';
-import { LINKS, openExternal } from '../links';
 import { useEscanorSession } from '../session';
 import { ago, Button, Notice, Sheet, Spinner } from '../ui';
 import { ConfirmSheet, Group, Page, Row } from './parts';
@@ -18,7 +17,7 @@ const host = (url: string) => { try { return new URL(url).host; } catch { return
 type Check = { state: 'idle' } | { state: 'running' } | { state: 'done'; ok: boolean; ms: number; status: number };
 
 /** For people who build on Escanor: where the app connects, whether it can reach it, keys for other AI apps, and what to send when asking for help. */
-export default function DeveloperPage({ onBack }: { onBack: () => void }) {
+export default function DeveloperPage({ onBack, onHelp }: { onBack: () => void; onHelp: () => void }) {
   const { user } = useEscanorSession();
   const mcp = useLoad(() => escanor.mcpConnections(), 0);
   const apps = (mcp.data ?? []).filter((c) => !c.revoked_at && !c.managed_by);
@@ -102,7 +101,7 @@ export default function DeveloperPage({ onBack }: { onBack: () => void }) {
 
       <Group title="Help and diagnostics" footer="The debug details contain no passwords or tokens.">
         <Row icon={<Copy size={18} />} label="Copy debug info" value={copied === 'debug' ? 'Copied' : undefined} onClick={() => void copy('debug', debugInfo())} chevron={false} />
-        <Row icon={<Bug size={18} />} label="Report a problem" onClick={() => openExternal(LINKS.support)} />
+        <Row icon={<Bug size={18} />} label="Report a problem" onClick={onHelp} />
         <Row icon={<ArrowsClockwise size={18} />} label="Reload the app" onClick={() => window.location.reload()} chevron={false} />
       </Group>
 

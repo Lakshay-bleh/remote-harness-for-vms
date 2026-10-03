@@ -6,7 +6,10 @@ import { useEscanorSession } from './session';
 export default function Welcome({ onAdvanced }: { onAdvanced: () => void }) {
   const { signInWithGoogle, busy, error, canSignInHere } = useEscanorSession();
   const [devEmail, setDevEmail] = useState('');
-  const dev = window.location.hostname === 'localhost';
+  // The email-only sign-in exists for developing against a local backend. A release build never shows it (the Android app's address is
+  // also "localhost", and the production backend refuses it, as it must: it signs in as any address without a password).
+  const dev = import.meta.env.DEV && window.location.hostname === 'localhost';
+  const [devError, setDevError] = useState<string | null>(null);
 
   return (
     <AuthShell
@@ -25,13 +28,15 @@ export default function Welcome({ onAdvanced }: { onAdvanced: () => void }) {
           className="flex gap-2 pt-1"
           onSubmit={(e) => {
             e.preventDefault();
-            void escanor.devLogin(devEmail).then(() => window.location.reload()).catch(() => undefined);
+            setDevError(null);
+            void escanor.devLogin(devEmail).then(() => window.location.reload()).catch((err) => setDevError(err instanceof Error ? err.message : 'Dev sign-in failed.'));
           }}
         >
           <input value={devEmail} onChange={(e) => setDevEmail(e.target.value)} placeholder="dev email" aria-label="Dev email" className="min-w-0 flex-1 rounded-pill border border-hairline bg-canvas px-4 py-2 text-sm outline-none focus:border-primary" />
           <Button type="submit">Dev</Button>
         </form>
       )}
+      {dev && devError && <Notice tone="error">{devError}</Notice>}
     </AuthShell>
   );
 }

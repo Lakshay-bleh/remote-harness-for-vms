@@ -1,5 +1,6 @@
 import { ChatCircleText, Desktop, GearSix, Laptop, PencilSimpleLine, PlugsConnected, X, type Icon } from '@phosphor-icons/react';
 import { useCallback, useEffect, useState } from 'react';
+import { DeletionNotice } from './account/DeleteAccountPage';
 import AssistantView from './AssistantView';
 import ChatList from './ChatList';
 import { useChatMeta } from './chatList';
@@ -130,6 +131,8 @@ export default function Shell({ machines }: { machines: React.ReactNode }) {
   const [drawer, setDrawer] = useState(false);
   const chats = useLoad(() => escanor.conversations().catch(() => []), 30000);
   const list = chats.data ?? [];
+  // An account waiting to be deleted is shown over everything, with the way to keep it.
+  const deletion = useLoad(() => escanor.deletionStatus().catch(() => null), 0);
   const meta = useChatMeta();
   const chatName = (id: string | null) => (id ? meta.titles[id] ?? list.find((c) => c.id === id)?.title : undefined);
 
@@ -139,6 +142,13 @@ export default function Shell({ machines }: { machines: React.ReactNode }) {
     if (!window.confirm(`Delete “${name}”? This cannot be undone.`)) return;
     void escanor.remove(id).then(() => { if (id === conversationId) setConversationId(null); chats.reload(); });
   }, [conversationId, chats]);
+
+  // A screen deep inside (the hub page) can ask to be taken to a tab without knowing about this component.
+  useEffect(() => {
+    const go = (e: Event) => { const to = (e as CustomEvent<Tab>).detail; if (['assistant', 'connections', 'computers', 'machines', 'settings'].includes(to)) show(to); };
+    window.addEventListener('escanor-go', go);
+    return () => window.removeEventListener('escanor-go', go);
+  }, [show]);
 
   // Push: register this phone again if they already allowed it, take them where a tapped notification points, and show one that
   // arrives while the app is open as a banner (Android shows nothing itself in that case).
@@ -185,6 +195,8 @@ export default function Shell({ machines }: { machines: React.ReactNode }) {
         </main>
 
         <TabBar tab={tab} onPick={show} />
+
+        {deletion.data?.scheduled && <DeletionNotice status={deletion.data} onCancelled={deletion.reload} />}
 
         {banner && (
           <button type="button" role="status" onClick={() => { show(banner.dest); setBanner(null); }} className="fixed inset-x-3 top-[calc(env(safe-area-inset-top)+8px)] z-[60] rounded-xl border border-line-strong bg-surface-card p-3.5 text-left shadow-elevated md:left-auto md:max-w-sm">
