@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { checkoutOutcome, formatPrice, meters, planAction, renewalText, statusText, type BillingPlan } from './billing';
+import { bypassText, changeOutcomeText, checkoutOutcome, formatMoney, formatPrice, invoiceLine, meters, planAction, planPrice, renewalText, statusText, yearlySaving, type BillingPlan } from './billing';
 
 const plan = (id: string, name = id): BillingPlan => ({ id, name, price_monthly_inr: null, price_monthly_usd: null, description: '', features: [], limits: {} });
 
@@ -42,14 +42,24 @@ describe('planAction', () => {
     assert.deepEqual(planAction(plan('pro'), pro), { kind: 'current', label: 'Your plan' });
     assert.match((planAction(plan('pro'), { ...pro, cancel_at_period_end: true }) as { label: string }).label, /ends soon/);
   });
-  it('never starts a second paid subscription on top of the first (the person would pay for both)', () => {
-    const a = planAction(plan('team', 'Team'), pro);
-    assert.equal(a.kind, 'locked');
-    assert.match((a as { why: string }).why, /Cancel your current plan first/);
+  it('moves between paid plans through the one subscription: up now, down at the period end', () => {
+    const up = planAction(plan('team', 'Team'), pro);
+    assert.equal(up.kind, 'switch');
+    assert.equal((up as { effect: string }).effect, 'now');
+    const down = planAction(plan('pro', 'Pro'), { plan_id: 'team', cancel_at_period_end: false });
+    assert.equal((down as { effect: string }).effect, 'period_end');
+    assert.match((down as { note: string }).note, /until the period you paid for ends/);
   });
-  it('offers nothing for a plan below the current one, or for Free (that is cancelling)', () => {
+  it('starts a fresh subscription, not a change, when the old one is already ending', () => {
+    assert.deepEqual(planAction(plan('team', 'Team'), { ...pro, cancel_at_period_end: true }), { kind: 'upgrade', label: 'Subscribe to Team' });
+  });
+  it('shows a scheduled switch, and offers to keep the current plan instead', () => {
+    const scheduled = { plan_id: 'team', cancel_at_period_end: false, scheduled_plan_id: 'pro' };
+    assert.equal(planAction(plan('pro', 'Pro'), scheduled).kind, 'scheduled');
+    assert.deepEqual(planAction(plan('team', 'Team'), scheduled), { kind: 'current', label: 'Keep this plan', undo: true });
+  });
+  it('offers nothing for Free on a paid plan (that is cancelling)', () => {
     assert.equal(planAction(plan('free'), pro).kind, 'none');
-    assert.equal(planAction(plan('pro'), { plan_id: 'team', cancel_at_period_end: false }).kind, 'none');
   });
 });
 
@@ -80,5 +90,39 @@ describe('checkoutOutcome', () => {
   });
   it('treats an already-active plan as done', () => {
     assert.deepEqual(checkoutOutcome({ status: 'active', message: 'You are on the Free plan.' }), { kind: 'done', message: 'You are on the Free plan.' });
+  });
+});
+
+describe('yearly billing', () => {
+  const pro: BillingPlan = { ...plan('pro', 'Pro'), price_monthly_inr: 249900, price_yearly_inr: 2499000 };
+  it('prices a year as the server does, ten months', () => {
+    assert.equal(planPrice(pro, 'yearly'), 2499000);
+    assert.equal(planPrice({ ...pro, price_yearly_inr: undefined }, 'yearly'), 2499000);
+    assert.equal(planPrice(plan('enterprise'), 'yearly'), null);
+    assert.equal(formatPrice(2499000, 'yearly'), '₹24,990 a year');
+  });
+  it('says how much a year saves from the prices themselves', () => {
+    assert.equal(yearlySaving(pro), 'Save ₹4,998 a year');
+    assert.equal(yearlySaving(plan('free')), null);
+  });
+  it('formats money for invoices', () => {
+    assert.equal(formatMoney(249900), '₹2,499');
+    assert.equal(formatMoney(1050, 'USD'), '$10.5');
+  });
+});
+
+describe('plan changes and invoices in words', () => {
+  const names = { pro: 'Pro', team: 'Team' };
+  it('tells apart a change now from one at the period end', () => {
+    assert.match(changeOutcomeText({ status: 'changed', plan_id: 'team' }, names), /Team plan now/);
+    assert.match(changeOutcomeText({ status: 'scheduled', plan_id: 'team', scheduled_plan_id: 'pro' }, names), /move to Pro when the period/);
+  });
+  it('words an invoice line, a failed charge included', () => {
+    assert.equal(invoiceLine({ status: 'paid', description: 'Pro plan' }), 'Pro plan · Paid');
+    assert.equal(invoiceLine({ status: 'failed', description: null }), 'Failed');
+  });
+  it('explains full access instead of leaving the page looking broken', () => {
+    assert.match(bypassText({ billing_bypass: true, plan_id: 'free' })!, /full access/);
+    assert.equal(bypassText({ billing_bypass: false, plan_id: 'free' }), null);
   });
 });
