@@ -18,6 +18,15 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // The accessibility service (phone control) is a separate build: Play Protect blocks sideloaded apps that declare one.
+    //   ./gradlew assembleDebug                       the normal build
+    //   ./gradlew assembleDebug -PphoneControl=true   the build that can control the phone
+    if (project.findProperty('phoneControl') == 'true') {
+        sourceSets.debug.manifest.srcFile 'src/phonecontrol/AndroidManifest.xml'
+        sourceSets.release.manifest.srcFile 'src/phonecontrol/AndroidManifest.xml'
+        sourceSets.debug.res.srcDir 'src/phonecontrol/res'
+        sourceSets.release.res.srcDir 'src/phonecontrol/res'
+    }
     buildTypes {
         release {
             minifyEnabled false

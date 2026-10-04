@@ -4,5 +4,4 @@
     <string name="title_activity_main">Escanor</string>
     <string name="package_name">io.visey.remoteharness</string>
     <string name="custom_url_scheme">io.visey.remoteharness</string>
-    <string name="accessibility_description">Lets Escanor use your phone when you ask it to by voice or in the app: go home or back, open notifications, scroll, tap what is on screen and type. It does nothing on its own and reads the screen only when you ask what is on it.</string>
 </resources>

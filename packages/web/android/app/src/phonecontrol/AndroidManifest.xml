@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Only in the "with phone control" build (gradlew -PphoneControl=true).
+     Android's Play Protect blocks an app downloaded outside the Play Store if it declares an accessibility service, so the normal
+     download leaves this out and says so in Settings > Voice and phone control. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Controlling the phone by voice ("go home", "scroll down", "tap Send"): only if the person switches it on in Accessibility settings -->
+        <service
+            android:name=".EscanorControlService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/escanor_accessibility" />
+        </service>
+    </application>
+</manifest>

@@ -7,7 +7,7 @@ export interface PluginResult {
   /** The call was placed (not just the dialer opened). */
   direct?: boolean;
   /** What the person has to turn on for this to work. */
-  needs?: 'accessibility';
+  needs?: 'accessibility' | 'controlBuild';
 }
 
 /** What the person has chosen about how the phone behaves for them. */
@@ -26,7 +26,7 @@ export interface DevicePlugin {
   callContact(o: { name: string; direct?: boolean }): Promise<PluginResult>;
   callStatus(): Promise<{ granted: boolean }>;
   requestCallPermission(): Promise<PluginResult>;
-  controlStatus(): Promise<{ enabled: boolean }>;
+  controlStatus(): Promise<{ enabled: boolean; /** Phone control is part of this download. */ available?: boolean }>;
   openControlSettings(): Promise<PluginResult>;
   control(o: { action: 'global'; name: string } | { action: 'click'; text: string } | { action: 'scroll'; direction: 'up' | 'down' } | { action: 'type'; text: string } | { action: 'read' }): Promise<PluginResult>;
   setAlarm(o: { hour: number; minute: number }): Promise<PluginResult>;
@@ -41,7 +41,7 @@ export interface ActionOutcome {
   /** What to say (and show) to the person. */
   say: string;
   /** What to turn on to make this work: the screen offers a button for it. */
-  needs?: 'accessibility';
+  needs?: 'accessibility' | 'controlBuild';
 }
 
 /** Sites that have no app on the phone but are worth opening when asked by name. */
