@@ -7,11 +7,11 @@
  * (waiting for something to start), `lick` (licking the glass of the screen: "say something").
  */
 
-import { GROUND_Y, H, Pix, W, type Brush, type Frame, type Skin, type View } from './pix';
-import { ANIMALS, DEFAULT_ANIMAL, PALETTE_OVERRIDES, type Animal } from './animals';
-import { catSkin, elephantSkin, unicornSkin } from './skins';
-import { hamsterScene } from './hamster';
-import { pigeonScene } from './pigeon';
+import { GROUND_Y, H, Pix, W, type Brush, type Frame, type Skin, type View } from './pix.ts';
+import { ANIMALS, DEFAULT_ANIMAL, PALETTE_OVERRIDES, type Animal } from './animals.ts';
+import { catSkin, elephantSkin, unicornSkin } from './skins.ts';
+import { hamsterScene } from './hamster.ts';
+import { pigeonScene } from './pigeon.ts';
 
 export { ANIMALS, H, W };
 export type { Frame };

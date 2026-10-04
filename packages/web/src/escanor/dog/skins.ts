@@ -2,7 +2,7 @@
  * The four-legged companions that share the dog's skeleton: what differs is the ears, tail, snout and a few extras, drawn through the
  * hooks in `Skin`. (The hamster and the pigeon are built differently and have their own files.)
  */
-import type { Brush, Skin, View } from './pix';
+import type { Brush, Skin, View } from './pix.ts';
 
 type Cell = [number, number, string];
 

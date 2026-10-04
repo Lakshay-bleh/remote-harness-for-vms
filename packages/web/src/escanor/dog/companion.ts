@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { DEFAULT_ANIMAL, isAnimal, type Animal } from './animals';
+import { DEFAULT_ANIMAL, isAnimal, type Animal } from './animals.ts';
 
 /**
  * Which animal this device shows. Kept on the device (a companion is a taste, not an account setting) and shared by every screen

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import PixelDog from './PixelDog';
-import type { Scene } from './sprites';
+import type { Scene } from './sprites.ts';
 
 /** A screen with nothing to show yet, or still loading: the dog doing its own thing, a line saying what is going on, and what to do next. */
 export function DogState({ scene, title, text, action, scale = 5, live = false }: { scene: Scene; title: string; text?: ReactNode; action?: ReactNode; scale?: number; /** Announce changes (a loading state); an empty state is read once. */ live?: boolean }) {

@@ -2,7 +2,7 @@
  * Bubbly the hamster: round, with cheeks full of seeds. Drawn from ovals rather than the dog's skeleton, but with the same six scenes:
  * `run` on a wheel, `sniff` after a seed, `dig` a burrow, `sit` nibbling a seed, `sleep` in a ball, `lick` the glass.
  */
-import { GROUND_Y, H, Pix, W, type Frame } from './pix';
+import { GROUND_Y, H, Pix, W, type Frame } from './pix.ts';
 
 type Scene = 'run' | 'sniff' | 'dig' | 'sit' | 'sleep' | 'lick';
 

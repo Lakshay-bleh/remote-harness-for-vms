@@ -3,7 +3,7 @@
  * six scenes: `run` (a bobbing walk after a crumb), `sniff` (pecking at the ground), `dig` (scratching up a crumb), `sit` (perched,
  * cooing), `sleep` (puffed up, head tucked in) and `lick` (pecking at the glass).
  */
-import { GROUND_Y, Pix, W, type Frame } from './pix';
+import { GROUND_Y, Pix, W, type Frame } from './pix.ts';
 
 type Scene = 'run' | 'sniff' | 'dig' | 'sit' | 'sleep' | 'lick';
 

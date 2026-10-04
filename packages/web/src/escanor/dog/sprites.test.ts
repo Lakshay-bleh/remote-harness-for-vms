@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { ANIMALS, DEFAULT_ANIMAL, isAnimal } from './animals';
-import { COMPANION_KEY, parseCompanion } from './companion';
-import { H, paletteFor, SCENES, sceneFrames, W } from './sprites';
+import { ANIMALS, DEFAULT_ANIMAL, isAnimal } from './animals.ts';
+import { COMPANION_KEY, parseCompanion } from './companion.ts';
+import { H, paletteFor, SCENES, sceneFrames, W } from './sprites.ts';
 
 for (const animal of ANIMALS.map((a) => a.id)) describe(`the ${animal}`, () => {
   const PALETTE = paletteFor(animal);

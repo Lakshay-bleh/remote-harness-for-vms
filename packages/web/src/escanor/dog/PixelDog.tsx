@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
-import type { Animal } from './animals';
-import { useCompanion } from './companion';
-import { H, paletteFor, sceneFrames, W, type Frame, type Scene } from './sprites';
+import type { Animal } from './animals.ts';
+import { useCompanion } from './companion.ts';
+import { H, paletteFor, sceneFrames, W, type Frame, type Scene } from './sprites.ts';
 
 /** Paint one frame of pixels, `scale` screen pixels per dog pixel, nothing smoothed. */
 export function paint(ctx: CanvasRenderingContext2D, frame: Frame, scale: number, palette: Record<string, string>): void {
