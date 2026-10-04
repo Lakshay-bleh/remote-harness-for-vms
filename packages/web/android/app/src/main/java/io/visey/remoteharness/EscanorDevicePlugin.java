@@ -340,11 +340,22 @@ public class EscanorDevicePlugin extends Plugin {
 
     private static final String NEEDS_CONTROL = "Controlling your phone needs Escanor turned on in Accessibility settings.";
 
+    /** Is phone control part of this download? (The normal build leaves it out: Android's Play Protect blocks sideloaded apps that declare it.) */
+    private boolean controlIncluded() {
+        try {
+            getContext().getPackageManager().getServiceInfo(new android.content.ComponentName(getContext(), EscanorControlService.class), 0);
+            return true;
+        } catch (PackageManager.NameNotFoundException e) {
+            return false;
+        }
+    }
+
     /** Has the person turned on Escanor in Accessibility settings? */
     @PluginMethod
     public void controlStatus(PluginCall call) {
         JSObject out = new JSObject();
         out.put("enabled", EscanorControlService.isRunning());
+        out.put("available", controlIncluded());
         call.resolve(out);
     }
 
@@ -361,6 +372,12 @@ public class EscanorDevicePlugin extends Plugin {
     @PluginMethod
     public void control(PluginCall call) {
         EscanorControlService svc = EscanorControlService.get();
+        if (svc == null && !controlIncluded()) {
+            JSObject out = result(false, "This download of Escanor does not include phone control. Get the “with phone control” APK from the release page.");
+            out.put("needs", "controlBuild");
+            call.resolve(out);
+            return;
+        }
         if (svc == null) {
             JSObject out = result(false, NEEDS_CONTROL);
             out.put("needs", "accessibility");

@@ -27,7 +27,7 @@ export interface Reply {
   say: string;
   kind?: 'phone' | 'computer' | 'assistant' | 'go' | 'stop';
   /** What the person has to turn on to make this work; voice mode shows a button for it. */
-  needs?: 'accessibility';
+  needs?: 'accessibility' | 'controlBuild';
   /** The reply is a question: speak it, then listen for the answer. */
   ask?: boolean;
 }

@@ -15,6 +15,7 @@ export default function VoicePage({ onBack }: { onBack: () => void }) {
   const dev = deviceOrNull();
   const prefs = useVoicePrefs();
   const [control, setControl] = useState<boolean | null>(null);
+  const [controlBuilt, setControlBuilt] = useState(true);
   const [call, setCall] = useState<boolean | null>(null);
   const [status, setStatus] = useState<WakeStatus | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
@@ -23,7 +24,9 @@ export default function VoicePage({ onBack }: { onBack: () => void }) {
 
   const refresh = useCallback(async () => {
     if (!dev) return;
-    setControl((await dev.controlStatus().catch(() => ({ enabled: false }))).enabled);
+    const c = await dev.controlStatus().catch(() => ({ enabled: false, available: true }));
+    setControl(c.enabled);
+    setControlBuilt(c.available !== false);
     setCall((await dev.callStatus().catch(() => ({ granted: false }))).granted);
     setStatus(await wake.status());
   }, [dev]);
@@ -96,11 +99,16 @@ export default function VoicePage({ onBack }: { onBack: () => void }) {
         <Row
           icon={<HandPointing size={18} />}
           label="Phone control"
-          sub={control ? 'On. Try: “go home”, “scroll down”, “tap Send”.' : 'Off. Turn it on in Android’s Accessibility settings.'}
+          sub={!controlBuilt ? 'Not in this download. See below.' : control ? 'On. Try: “go home”, “scroll down”, “tap Send”.' : 'Off. Turn it on in Android’s Accessibility settings.'}
           value={control === null ? <Spinner /> : control ? 'On' : 'Off'}
           chevron={false}
         />
-        {!control && dev && (
+        {!controlBuilt && dev && (
+          <div className="px-3.5 py-3 text-[13px] leading-relaxed text-body">
+            Android’s Play Protect blocks apps installed from outside the Play Store when they ask to control the phone, so the normal Escanor download leaves this out. If you want it, install the <b className="text-ink">“with phone control”</b> APK from the Escanor release page (Play Protect may warn: choose “Install anyway”).
+          </div>
+        )}
+        {controlBuilt && !control && dev && (
           <div className="px-3.5 py-3">
             <p className="mb-2 text-[13px] leading-relaxed text-body">In the next screen, find <b className="text-ink">Escanor</b>, tap it and switch it on. Android shows a warning that is normal for any app that can press buttons for you.</p>
             <Button onClick={() => void dev.openControlSettings()} className="w-full">Open Accessibility settings</Button>
