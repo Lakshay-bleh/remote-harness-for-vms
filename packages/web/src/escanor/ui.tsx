@@ -1,4 +1,5 @@
 import ReactMarkdown from 'react-markdown';
+import { DogSpinner } from './dog/DogState';
 import remarkGfm from 'remark-gfm';
 import { CaretLeft, List } from '@phosphor-icons/react';
 import { useHardwareBack } from './back';
@@ -40,7 +41,8 @@ export function Notice({ tone = 'info', children }: { tone?: 'info' | 'error' | 
   return <div role={tone === 'error' ? 'alert' : undefined} className={`rounded-md border px-3 py-2 text-[13px] ${look}`}>{children}</div>;
 }
 
-export const Spinner = () => <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-hairline border-t-primary" role="status" aria-label="Loading" />;
+/** Loading, wherever a spinner would go: the companion running on the spot. */
+export const Spinner = () => <DogSpinner />;
 
 export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   useHardwareBack(true, onClose);

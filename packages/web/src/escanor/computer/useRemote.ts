@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { trackBusy } from '../dog/busy.ts';
 import { readCache, writeCache } from '../cache';
 
 /** How long to wait before trying again after a failure (ms), or null when it is time to stop and say so. */
@@ -90,7 +91,7 @@ export function useRemote<T>(o: RemoteOptions<T>): Remote<T> {
       busy.current = true;
       setRefreshing(true);
       try {
-        const next = await withDeadline(latest.current.run(), latest.current.deadlineMs ?? 30_000);
+        const next = await trackBusy(withDeadline(latest.current.run(), latest.current.deadlineMs ?? 30_000));
         writeCache(key, next);
         if (!live) return;
         setData(next);

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { trackBusy } from './dog/busy.ts';
 import { addOptimisticMessage, applyMessages, dropOptimisticMessages, emptyChat, markAnswered, pollDelayMs, type ChatState } from '@remote-harness/shared/escanor';
 import { readCache, writeCache, type CachePolicy } from './cache';
 import { toApi, withAttachmentNote, type Attachment } from './composer/attachments';
@@ -70,7 +71,7 @@ export function useLoad<T>(load: () => Promise<T>, everyMs = 0, deps: unknown[] 
       }
       if (live) setRefreshing(true);
       try {
-        const next = await loader.current();
+        const next = await trackBusy(loader.current());
         if (policy.current) writeCache(policy.current.key, next);
         if (live) {
           setData(next);

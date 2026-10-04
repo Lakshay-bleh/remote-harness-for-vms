@@ -15,6 +15,7 @@ import SettingsView from './settings/SettingsView';
 import { waitForAnswer } from './voice/assistantAnswer';
 import VoiceHost from './voice/VoiceOrb';
 import { getPrefs, haptic } from './settings/prefs';
+import Buddy from './dog/Buddy';
 import { Logo, NavContext, useKeyboardOpen } from './ui';
 
 export type Tab = 'assistant' | 'connections' | 'computers' | 'machines' | 'settings';
@@ -217,6 +218,9 @@ export default function Shell({ machines }: { machines: React.ReactNode }) {
         </main>
 
         <TabBar tab={tab} onPick={show} />
+
+        {/* the companion: small, in the corner of every screen, running whenever something loads */}
+        <Buddy className="fixed bottom-[calc(env(safe-area-inset-bottom)+72px)] left-1 z-30 md:bottom-3 md:left-auto md:right-3" />
 
         {deletion.data?.scheduled && <DeletionNotice status={deletion.data} onCancelled={deletion.reload} />}
 

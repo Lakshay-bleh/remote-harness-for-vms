@@ -1,4 +1,5 @@
 import { PencilSimpleLine } from '@phosphor-icons/react';
+import { DogSpinner } from './dog/DogState';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isThinking, toDisplay } from '@remote-harness/shared/escanor';
 import ApprovalCard from './ApprovalCard';
@@ -62,7 +63,7 @@ export default function AssistantView({ conversationId, title, onConversation, o
           if (b.type === 'activity') return <p key={b.key} className={`flex items-center gap-2 text-[13px] text-muted ${b.live ? 'animate-pulse' : ''}`}>{b.live ? <Spinner /> : <span className="text-muted-soft">•</span>}{b.text}</p>;
           return null;
         })}
-        {isThinking(chat.state) && <p className="animate-pulse text-[13px] text-muted">Thinking…</p>}
+        {isThinking(chat.state) && <p className="flex items-center gap-2 text-[13px] text-muted"><DogSpinner />Thinking…</p>}
       </div></div>
 
       {chat.error && <div className="px-4 pb-2"><Notice tone="error">{chat.error}</Notice></div>}
