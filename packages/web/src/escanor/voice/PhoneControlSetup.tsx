@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
+import LegalSheet from '../../legal/LegalSheet';
 import { Button, Spinner } from '../ui';
 import type { ControlStatus, DevicePlugin } from './actions';
+import { flushControlConsent, setControlConsent } from './controlConsent';
 import { controlStep } from './phoneControl';
-import { setVoicePrefs, useVoicePrefs } from './voicePrefs';
+import { useVoicePrefs } from './voicePrefs';
 
 /** What phone control can see and do, said in the app before Android is ever opened. Google Play calls this the prominent disclosure. */
 const CAN_DO = [
@@ -21,6 +23,10 @@ export default function PhoneControlSetup({ dev, onStatus, onDismiss }: { dev: D
   const [status, setStatus] = useState<ControlStatus | null>(null);
   // Which of the restricted-setting steps the person has done (Android does not say when it has been allowed).
   const [done, setDone] = useState(0);
+  const [policy, setPolicy] = useState(false);
+
+  // A choice made while offline or signed out reaches the consent ledger the next time this opens.
+  useEffect(() => void flushControlConsent(), []);
 
   const refresh = useCallback(async () => {
     const s = await dev.controlStatus().catch((): ControlStatus => ({ enabled: false, available: true, restricted: null }));
@@ -66,16 +72,20 @@ export default function PhoneControlSetup({ dev, onStatus, onDismiss }: { dev: D
         <p className={text}>
           It acts only when you ask, by voice or in the app, and never on its own. To find a button or read the screen, it looks at the words on the screen at that moment. That text stays on this phone: it is shown and read aloud to you, and not stored or sent to Escanor’s servers. Escanor does not use it for ads or anything else.
         </p>
-        <p className={text}>You can switch it off any time in Android’s Accessibility settings.</p>
+        <p className={text}>
+          You can switch it off any time in Android’s Accessibility settings. Your choice is recorded in your account. More in the{' '}
+          <button type="button" onClick={() => setPolicy(true)} className="text-ink underline">privacy policy</button>.
+        </p>
+        {policy && <LegalSheet start="privacy" onClose={() => setPolicy(false)} />}
         <div className="flex gap-2 pt-1">
-          <Button onClick={() => setVoicePrefs({ controlConsent: true })} className="flex-1">I agree</Button>
+          <Button onClick={() => void setControlConsent(true)} className="flex-1">I agree</Button>
           {onDismiss && <Button kind="quiet" onClick={onDismiss} className="flex-1">Not now</Button>}
         </div>
       </div>
     );
   }
 
-  const withdraw = <button type="button" onClick={() => setVoicePrefs({ controlConsent: false })} className="w-full pt-1 text-center text-[12px] text-muted underline">I changed my mind</button>;
+  const withdraw = <button type="button" onClick={() => void setControlConsent(false)} className="w-full pt-1 text-center text-[12px] text-muted underline">I changed my mind</button>;
 
   if (step === 'restricted') {
     return (

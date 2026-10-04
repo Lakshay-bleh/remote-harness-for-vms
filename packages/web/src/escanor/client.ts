@@ -372,7 +372,7 @@ export const escanor = {
 
   // -- privacy: what you agreed to, your requests, and a copy of your data
   consents: () => request<ConsentState[]>('/compliance/consents'),
-  recordConsent: (purpose: string, grant: boolean, noticeVersion: string) => request<ConsentState>('/compliance/consents', json({ purpose, action: grant ? 'grant' : 'withdraw', notice_version: noticeVersion })),
+  recordConsent: (purpose: string, grant: boolean, noticeVersion: string, source: 'web' | 'android' = isNative() ? 'android' : 'web') => request<ConsentState>('/compliance/consents', json({ purpose, action: grant ? 'grant' : 'withdraw', notice_version: noticeVersion, source })),
   privacyRequests: () => request<PrivacyRequest[]>('/compliance/requests'),
   privacyRequest: (id: string) => request<PrivacyRequest>(`/compliance/requests/${enc(id)}`),
   openPrivacyRequest: (body: { request_type: string; subject: string; details: string }) => request<PrivacyRequest>('/compliance/requests', json(body)),
