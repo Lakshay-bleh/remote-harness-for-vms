@@ -1,6 +1,7 @@
 import { Desktop, DeviceMobile, ArrowsLeftRight } from '@phosphor-icons/react';
 import { useState } from 'react';
-import { Button, Spinner } from '../ui';
+import { Button } from '../ui';
+import { DogSpinner } from '../dog/DogState';
 import { explainFailure, type FixWhere } from './errors';
 
 const WHERE: Record<FixWhere, { label: string; Icon: typeof Desktop }> = {
@@ -45,7 +46,7 @@ export default function ErrorCard({ error, onRetry, onAsk }: { error: unknown; o
           {onRetry && <Button kind="quiet" onClick={onRetry}>Try again</Button>}
         </div>
       ) : null}
-      {asking && <p className="mt-2 flex items-center gap-2 text-[13px] text-muted"><Spinner /> Sending the request…</p>}
+      {asking && <p className="mt-2 flex items-center gap-2 text-[13px] text-muted"><DogSpinner /> Sending the request…</p>}
       {answer && <p className="mt-2 text-[13px] leading-snug text-body">{answer}</p>}
     </div>
   );

@@ -10,6 +10,12 @@ export interface ServerPlan {
   needs: 'clarify' | null;
   /** Not something to do on the device: the app's own assistant should have it. */
   not_device?: boolean;
+  /** `say` is the answer to small talk or a general question: just speak it. */
+  chat?: boolean;
+  /** `say` is a short acknowledgement ("Checking your services."): speak it now and hand the sentence to the full assistant. */
+  delegate?: boolean;
+  /** No AI model answered in time; `say` is a stand-in so the person is never left with an error for a simple question. */
+  degraded?: string;
   model?: string;
 }
 

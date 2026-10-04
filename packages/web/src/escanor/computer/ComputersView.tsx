@@ -52,9 +52,13 @@ export default function ComputersView() {
             action={<Button onClick={() => setPairing(true)}>Add your computer</Button>}
           />
         ) : (
-          <ul className="space-y-2 pt-2">
-            {computers.map((c) => <Card key={c.id} c={c} onOpen={() => setOpenId(c.id)} onRemove={() => setComputers(removeComputer(c.id))} />)}
-          </ul>
+          <>
+            <ul className="space-y-2 pt-2">
+              {computers.map((c) => <Card key={c.id} c={c} onOpen={() => setOpenId(c.id)} onRemove={() => setComputers(removeComputer(c.id))} />)}
+            </ul>
+            {/* The space under the list is not left empty: the dog keeps watch over your computers. */}
+            <DogState scene="sit" title={computers.length === 1 ? 'Your computer is all set' : 'Your computers are all set'} text="Tap one to chat with it, check on it and see what it has been doing. Add another with Add." />
+          </>
         )}
       </div>
       {pairing && <PairSheet onClose={() => setPairing(false)} onPaired={(c) => (setComputers(saveComputer(c)), setPairing(false), setOpenId(c.id))} />}

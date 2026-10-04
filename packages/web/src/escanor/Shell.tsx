@@ -127,6 +127,10 @@ function TabBar({ tab, onPick }: { tab: Tab; onPick: (t: Tab) => void }) {
 export default function Shell({ machines }: { machines: React.ReactNode }) {
   const [start] = useState<Tab>(() => getPrefs().startTab);
   const [tab, setTab] = useState<Tab>(start);
+  const tabRef = useRef<Tab>(start);
+  tabRef.current = tab;
+  // Pressing the tab you are already on takes you back to its first screen (Settings > Billing > Settings tab = Settings, not Billing).
+  const [resets, setResets] = useState<Partial<Record<Tab, number>>>({});
   // Screens stay mounted once opened, so going back to one is instant and keeps its place.
   const [visited, setVisited] = useState<Set<Tab>>(() => new Set<Tab>(['assistant', start]));
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -138,8 +142,8 @@ export default function Shell({ machines }: { machines: React.ReactNode }) {
   const meta = useChatMeta();
   const chatName = (id: string | null) => (id ? meta.titles[id] ?? list.find((c) => c.id === id)?.title : undefined);
 
-  const show = useCallback((t: Tab) => { setTab(t); setVisited((v) => (v.has(t) ? v : new Set(v).add(t))); setDrawer(false); }, []);
-  const openChat = useCallback((id: string | null) => { setConversationId(id); show('assistant'); }, [show]);
+  const show = useCallback((t: Tab) => { if (tabRef.current === t) setResets((r) => ({ ...r, [t]: (r[t] ?? 0) + 1 })); setTab(t); setVisited((v) => (v.has(t) ? v : new Set(v).add(t))); setDrawer(false); }, []);
+  const openChat = useCallback((id: string | null) => { setConversationId(id); if (tabRef.current === 'assistant') setDrawer(false); else show('assistant'); }, [show]);
   /**
    * A voice request for the Escanor assistant: send it into the open conversation (or a new one), wait for the answer, and hand it
    * back to be read out. The chat itself is updated behind voice mode, so closing it lands on the whole conversation.
@@ -192,7 +196,7 @@ export default function Shell({ machines }: { machines: React.ReactNode }) {
   }, [drawer]);
 
   const navProps = { tab, conversationId, conversations: list, onPick: show, onNewChat: () => openChat(null), onOpenChat: openChat, onDeleteChat: removeChat };
-  const screen = (id: Tab, node: React.ReactNode) => visited.has(id) && <div className={tab === id ? 'h-full' : 'hidden'}>{node}</div>;
+  const screen = (id: Tab, node: React.ReactNode) => visited.has(id) && <div key={resets[id] ?? 0} className={tab === id ? 'h-full' : 'hidden'}>{node}</div>;
 
   return (
     <NavContext.Provider value={{ open: () => setDrawer(true) }}>

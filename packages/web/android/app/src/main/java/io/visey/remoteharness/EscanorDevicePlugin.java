@@ -215,6 +215,61 @@ public class EscanorDevicePlugin extends Plugin {
         else call.resolve(result(false, "Allow Escanor to read your contacts, or say the number."));
     }
 
+    /** Every contact with a phone number: name and numbers (mobile first). The matching of a spoken name to one is done in the web layer, on this phone. */
+    @PluginMethod
+    public void listContacts(PluginCall call) {
+        if (getPermissionState("contacts") != PermissionState.GRANTED) {
+            requestPermissionForAlias("contacts", call, "listContactsPermission");
+            return;
+        }
+        readContacts(call);
+    }
+
+    @PermissionCallback
+    private void listContactsPermission(PluginCall call) {
+        if (getPermissionState("contacts") == PermissionState.GRANTED) readContacts(call);
+        else call.resolve(result(false, "Allow Escanor to read your contacts so it can find who to call."));
+    }
+
+    private void readContacts(PluginCall call) {
+        java.util.LinkedHashMap<String, List<String>> byName = new java.util.LinkedHashMap<>();
+        try (Cursor c = getContext().getContentResolver().query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            new String[] { ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER, ContactsContract.CommonDataKinds.Phone.TYPE },
+            null, null, ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC"
+        )) {
+            while (c != null && c.moveToNext() && byName.size() < 5000) {
+                String name = c.getString(0);
+                String number = c.getString(1);
+                if (name == null || number == null) continue;
+                List<String> numbers = byName.get(name);
+                if (numbers == null) {
+                    numbers = new ArrayList<>();
+                    byName.put(name, numbers);
+                }
+                String digits = number.replaceAll("[^0-9+]", "");
+                if (digits.length() >= 3 && !numbers.contains(digits)) {
+                    if (c.getInt(2) == ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE) numbers.add(0, digits);
+                    else numbers.add(digits);
+                }
+            }
+        } catch (SecurityException e) {
+            call.resolve(result(false, "Escanor is not allowed to read your contacts."));
+            return;
+        }
+        List<JSObject> list = new ArrayList<>();
+        for (java.util.Map.Entry<String, List<String>> e : byName.entrySet()) {
+            if (e.getValue().isEmpty()) continue;
+            JSObject o = new JSObject();
+            o.put("name", e.getKey());
+            o.put("numbers", new JSArray(e.getValue()));
+            list.add(o);
+        }
+        JSObject out = result(true, null);
+        out.put("contacts", new JSArray(list));
+        call.resolve(out);
+    }
+
     private void findAndDial(PluginCall call) {
         String name = call.getString("name", "");
         if (name == null || name.trim().isEmpty()) {

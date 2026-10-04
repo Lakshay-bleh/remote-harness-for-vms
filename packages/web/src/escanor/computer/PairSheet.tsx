@@ -3,7 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { isNative } from '../../api';
 import { escanor } from '../client';
 import { haptic } from '../settings/prefs';
-import { Button, Notice, Sheet, Spinner } from '../ui';
+import { Button, Notice, Sheet } from '../ui';
+import { DogSpinner } from '../dog/DogState';
 import { scanWithNative } from './nativeScan';
 import QrScan from './QrScan';
 import type { CloudDirectory, PairedComputer } from './lib/client';
@@ -115,18 +116,18 @@ export default function PairSheet({ onPaired, onClose }: { onPaired: (c: PairedC
                   <p className="font-mono text-4xl font-semibold tracking-widest text-ink" aria-live="polite">{confirm}</p>
                 </>
               ) : (
-                <p className="flex items-center justify-center gap-3 text-sm text-muted"><Spinner /> Reaching your computer…</p>
+                <p className="flex items-center justify-center gap-3 text-sm text-muted"><DogSpinner /> Reaching your computer…</p>
               )}
               <p className="text-[12px] text-muted">Waiting for you to approve it on the computer…</p>
               <Button kind="quiet" className="w-full" onClick={cancelWifi}>Cancel</Button>
             </div>
           ) : (
-            <div className="flex items-center gap-3 py-8 text-sm text-muted"><Spinner /> Finding your computer and pairing…</div>
+            <div className="flex items-center gap-3 py-8 text-sm text-muted"><DogSpinner /> Finding your computer and pairing…</div>
           )
         ) : way === 'scan' ? (
           isNative() && !nativeFailed ? (
             <div className="space-y-3 py-6 text-center">
-              <p className="flex items-center justify-center gap-3 text-sm text-muted"><Spinner /> Opening the scanner…</p>
+              <p className="flex items-center justify-center gap-3 text-sm text-muted"><DogSpinner /> Opening the scanner…</p>
               <Button kind="quiet" className="w-full" onClick={() => setWay('code')}>Type the code instead</Button>
             </div>
           ) : (

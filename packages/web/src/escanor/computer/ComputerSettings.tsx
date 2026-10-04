@@ -1,7 +1,7 @@
 import { ArrowsClockwise, Cloud, IdentificationCard, PencilSimple, Pulse, Trash, WifiHigh } from '@phosphor-icons/react';
 import { useState } from 'react';
 import { ChoiceSheet, ConfirmSheet, Group, Page, Row } from '../settings/parts';
-import { Spinner } from '../ui';
+import { DogSpinner } from '../dog/DogState';
 import { displayName, setComputerPrefs, type ComputerPrefs, type RoutePref } from './computerPrefs';
 import RenameSheet from './RenameSheet';
 import type { PairedComputer } from './lib/client';
@@ -36,7 +36,7 @@ export default function ComputerSettings({ computer, prefs, state, route, onBack
       <Group title="Connection" footer="Wi-Fi only never uses the cloud, so it will not work when you are away from home.">
         <Row icon={prefs.route === 'lan' ? <WifiHigh size={18} /> : <Cloud size={18} />} label="How to reach it" value={ROUTES.find((r) => r.value === prefs.route)?.label} onClick={() => setSheet('route')} />
         <Row icon={<Pulse size={18} />} label="Status" value={state === 'online' ? `Connected · ${route === 'lan' ? 'Wi-Fi' : 'cloud'}` : state === 'connecting' ? 'Connecting…' : 'Offline'} />
-        <Row icon={<ArrowsClockwise size={18} />} label="Test the connection" value={test.busy ? <Spinner /> : test.text} onClick={() => void runTest()} chevron={false} disabled={test.busy} />
+        <Row icon={<ArrowsClockwise size={18} />} label="Test the connection" value={test.busy ? <DogSpinner /> : test.text} onClick={() => void runTest()} chevron={false} disabled={test.busy} />
         <Row icon={<ArrowsClockwise size={18} />} label="Reconnect now" onClick={onReconnect} chevron={false} />
       </Group>
 

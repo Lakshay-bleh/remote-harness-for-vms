@@ -86,3 +86,41 @@ describe('handleUtterance', () => {
     assert.ok(r.say.length > 0);
   });
 });
+
+
+describe('the server\u2019s fast replies', () => {
+  it('speaks a chat answer straight away, without waking the full assistant', async () => {
+    const { d, log } = deps({ resolve: async () => ({ source: 'rules', say: "I'm doing great, thanks for asking.", actions: [], needs: null, chat: true }) });
+    const r = await handleUtterance('how are you', d);
+    assert.deepEqual(r, { ok: true, say: "I'm doing great, thanks for asking.", kind: 'chat' });
+    assert.ok(!log.some((l) => l.startsWith('assistant:')));
+  });
+
+  it('acknowledges a job at once and speaks the assistant\u2019s answer when it arrives', async () => {
+    const said: string[] = [];
+    const { d } = deps({
+      resolve: async () => ({ source: 'llm', say: 'Checking your services.', actions: [], needs: null, delegate: true }),
+      toAssistant: async () => 'Three of your five services are active.',
+      ack: async (t) => void said.push(t),
+    });
+    const r = await handleUtterance('can you check how many services are active', d);
+    assert.deepEqual(said, ['Checking your services.']);
+    assert.deepEqual(r, { ok: true, say: 'Three of your five services are active.', kind: 'assistant' });
+  });
+
+  it('starts the job while the acknowledgement is still being spoken', async () => {
+    const order: string[] = [];
+    const { d } = deps({
+      resolve: async () => ({ source: 'llm', say: 'On it.', actions: [], needs: null, delegate: true }),
+      toAssistant: async () => (order.push('job started'), 'done'),
+      ack: async () => (order.push('ack began'), new Promise<void>((r) => setTimeout(r, 20))),
+    });
+    await handleUtterance('check my deployments', d);
+    assert.deepEqual(order.slice(0, 2), ['job started', 'ack began']);
+  });
+
+  it('still answers with the assistant\u2019s own words if the acknowledgement could not be spoken', async () => {
+    const { d } = deps({ resolve: async () => ({ source: 'llm', say: 'On it.', actions: [], needs: null, delegate: true }), toAssistant: async () => 'All good.', ack: async () => { throw new Error('no voice'); } });
+    assert.equal((await handleUtterance('check my deployments', d)).say, 'All good.');
+  });
+});

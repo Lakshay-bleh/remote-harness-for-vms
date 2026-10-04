@@ -1,4 +1,4 @@
-import { ClockCounterClockwise, PencilSimpleLine, Trash } from '@phosphor-icons/react';
+import { PencilSimpleLine, Trash } from '@phosphor-icons/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { inlineText, type Attachment } from '../composer/attachments';
 import ChatComposer from '../composer/ChatComposer';
@@ -22,14 +22,26 @@ const served = new Map<string, string>();
  * Talking to the assistant on one computer. Every chat is kept on the phone, so closing the app or leaving the tab never loses one,
  * and earlier chats are a tap away in the history list.
  */
-export default function ComputerChat({ computerId, request, online, onAsk }: { computerId: string; request: Request; online: boolean; onAsk: (groupLabel: string) => Promise<string> }) {
+export interface ChatActions {
+  history(): void;
+  newChat(): void;
+  /** There is something to start over from (the open chat has messages). */
+  canNew: boolean;
+}
+
+export default function ComputerChat({ computerId, request, online, onAsk, onActions }: { computerId: string; request: Request; online: boolean; onAsk: (groupLabel: string) => Promise<string>; onActions?: (a: ChatActions | null) => void }) {
   const [chats, setChats] = useState<Chat[]>(() => loadChats(computerId));
-  const [chat, setChat] = useState<Chat>(() => loadChats(computerId)[0] ?? newChat());
-  const [busy, setBusy] = useState(false);
+  // The chat on screen is chosen by id. A chat with no messages yet is a draft: it exists only here, not in the saved list.
+  const [activeId, setActiveId] = useState<string>(() => loadChats(computerId)[0]?.id ?? newChat().id);
+  const [draft, setDraft] = useState<Chat | null>(() => (loadChats(computerId).length ? null : newChat()));
+  // Which chats the computer is still working on: a reply belongs to the chat it was asked in, wherever the person has gone since.
+  const [working, setWorking] = useState<Record<string, number>>({});
   const [waited, setWaited] = useState(0);
   const [history, setHistory] = useState(false);
   const end = useRef<HTMLDivElement>(null);
   const live = useRef(true);
+  const chatsRef = useRef(chats);
+  chatsRef.current = chats;
   // `live`: this screen is still showing, so a reply that arrives late does not touch a screen that has gone. Set here, not only cleared,
   // because a development double-mount runs the cleanup once before the screen is really gone.
   useEffect(() => {
@@ -37,68 +49,91 @@ export default function ComputerChat({ computerId, request, online, onAsk }: { c
     return () => void (live.current = false);
   }, []);
 
+  const chat: Chat = chats.find((c) => c.id === activeId) ?? (draft && draft.id === activeId ? draft : draft ?? newChat());
+  const busy = working[chat.id] !== undefined;
+
   useEffect(() => {
     end.current?.scrollIntoView({ block: 'end' });
-  }, [chat.turns.length, busy]);
+  }, [chat.turns.length, busy, activeId]);
 
-  // How long the computer has been working on this one, so a slow answer never looks like a frozen app.
+  // How long the computer has been working on the open chat, so a slow answer never looks like a frozen app.
   useEffect(() => {
     if (!busy) return setWaited(0);
-    const t = setInterval(() => setWaited((s) => s + 1), 1000);
+    const started = working[chat.id] ?? Date.now();
+    const tick = () => setWaited(Math.floor((Date.now() - started) / 1000));
+    tick();
+    const t = setInterval(tick, 1000);
     return () => clearInterval(t);
-  }, [busy]);
+  }, [busy, chat.id, working]);
 
-  const commit = useCallback((next: Chat) => {
-    setChat(next);
-    setChats((cur) => {
-      const list = upsert(cur, next);
-      saveChats(computerId, list);
-      return list;
-    });
+  /** Change one chat by id, wherever it is (the list, or the draft that has not been saved yet), and save the list. */
+  const change = useCallback((id: string, edit: (c: Chat) => Chat) => {
+    const listed = chatsRef.current.find((c) => c.id === id);
+    if (listed) {
+      const next = upsert(chatsRef.current, edit(listed));
+      chatsRef.current = next;
+      setChats(next);
+      saveChats(computerId, next);
+    } else {
+      setDraft((d) => {
+        const base = d && d.id === id ? d : { ...newChat(), id };
+        const edited = edit(base);
+        const next = upsert(chatsRef.current, edited);
+        chatsRef.current = next;
+        setChats(next);
+        saveChats(computerId, next);
+        return null;
+      });
+    }
   }, [computerId]);
 
   const send = useCallback(
     async (message: string, files: Attachment[]) => {
-      if (busy || !online) return;
+      const id = chat.id;
+      if (working[id] !== undefined || !online) return;
       const names = files.map((f) => f.name);
       const body = inlineText(message, files, MAX_CHARS);
-      let cur = addTurn(chat, { who: 'you', text: message || `(${names.join(', ')})`, ...(names.length ? { files: names } : {}), at: Date.now() });
-      commit(cur);
+      change(id, (c) => addTurn(c, { who: 'you', text: message || `(${names.join(', ')})`, ...(names.length ? { files: names } : {}), at: Date.now() }));
       if (body === null) {
-        cur = addTurn(cur, { who: 'computer', text: `That is too long for this computer to take in one message (the limit is ${MAX_CHARS.toLocaleString()} characters). Attach a smaller file, or part of it.`, problem: true, at: Date.now() });
-        return commit(cur);
+        change(id, (c) => addTurn(c, { who: 'computer', text: `That is too long for this computer to take in one message (the limit is ${MAX_CHARS.toLocaleString()} characters). Attach a smaller file, or part of it.`, problem: true, at: Date.now() }));
+        return;
       }
-      setBusy(true);
-      const fresh = served.get(computerId) !== chat.id; // the assistant on the computer is holding a different conversation in mind
+      setWorking((w) => ({ ...w, [id]: Date.now() }));
+      const fresh = served.get(computerId) !== id; // the assistant on the computer is holding a different conversation in mind
+      let turn: Turn;
       try {
         const out = await request({ t: 'chat', id: uid(), text: body, ...(fresh ? { fresh: true } : {}) });
-        served.set(computerId, chat.id);
+        served.set(computerId, id);
         const reply = out.find((m) => m.t === 'reply' || m.t === 'error');
         const said = reply ? (reply.t === 'reply' ? reply.reply : reply.message) : 'Done.';
         // A reply that is really "that is switched off" (or any other error in words) is shown as an explained error with its fix.
-        const turn: Turn = { who: 'computer', text: said, problem: reply?.t === 'error' || explainFailure(said).ask !== undefined, at: Date.now() };
-        cur = addTurn(cur, turn);
+        turn = { who: 'computer', text: said, problem: reply?.t === 'error' || explainFailure(said).ask !== undefined, at: Date.now() };
       } catch (e) {
-        cur = addTurn(cur, { who: 'computer', text: e instanceof Error ? e.message : 'That did not work.', problem: true, at: Date.now() });
-      } finally {
-        if (live.current) setBusy(false);
+        turn = { who: 'computer', text: e instanceof Error ? e.message : 'That did not work.', problem: true, at: Date.now() };
       }
-      commit(cur);
+      change(id, (c) => addTurn(c, turn)); // into the chat it was asked in, even if another is open now
+      if (live.current) setWorking((w) => { const { [id]: _done, ...rest } = w; return rest; });
     },
-    [busy, online, chat, commit, computerId, request],
+    [chat.id, working, online, change, computerId, request],
   );
 
-  const open = (c: Chat) => { setChat(c); setHistory(false); };
-  const startNew = () => { if (chat.turns.length) setChat(newChat()); setHistory(false); };
+  const open = useCallback((c: Chat) => { setActiveId(c.id); setHistory(false); }, []);
+  const startNew = useCallback(() => {
+    const fresh = newChat();
+    setDraft(fresh);
+    setActiveId(fresh.id);
+    setHistory(false);
+  }, []);
+
+  // New chat and history live in the section bar above (beside Permissions and Activity), not in a row of their own.
+  const canNew = chat.turns.length > 0;
+  useEffect(() => {
+    onActions?.({ history: () => setHistory(true), newChat: startNew, canNew });
+    return () => onActions?.(null);
+  }, [onActions, startNew, canNew]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-1 border-b border-hairline px-4 py-1.5">
-        <p className="min-w-0 flex-1 truncate text-[13px] text-muted">{chat.turns.length ? chat.title : 'New chat'}</p>
-        <button type="button" onClick={() => setHistory(true)} aria-label="Chat history" className="flex h-9 w-9 items-center justify-center rounded-full text-body transition hover:bg-surface-card active:scale-90"><ClockCounterClockwise size={20} /></button>
-        <button type="button" onClick={startNew} aria-label="New chat" disabled={chat.turns.length === 0} className="flex h-9 w-9 items-center justify-center rounded-full text-body transition hover:bg-surface-card active:scale-90 disabled:opacity-40"><PencilSimpleLine size={20} /></button>
-      </div>
-
       <div className="min-h-0 flex-1 overflow-y-auto px-4">
         <div className="space-y-3 py-3">
           {chat.turns.length === 0 && (
@@ -130,7 +165,7 @@ export default function ComputerChat({ computerId, request, online, onAsk }: { c
       </div>
 
       <div className="px-4 pb-3 pt-2">
-        <ChatComposer placeholder={online ? 'Message your computer' : 'Computer offline'} disabled={!online} running={false} attach="text" onSend={(t, f) => void send(t, f)} />
+        <ChatComposer key={chat.id} placeholder={online ? 'Message your computer' : 'Computer offline'} disabled={!online || busy} running={false} attach="text" onSend={(t, f) => void send(t, f)} />
       </div>
 
       {history && (
@@ -149,7 +184,7 @@ export default function ComputerChat({ computerId, request, online, onAsk }: { c
                         <span className="block truncate text-[15px] text-ink">{c.title}</span>
                         <span className="block truncate text-[12px] text-muted">{c.turns.length} message{c.turns.length === 1 ? '' : 's'} · {c.turns.at(-1)?.text.slice(0, 40)}</span>
                       </button>
-                      <button type="button" aria-label={`Delete ${c.title}`} onClick={() => { const next = remove(chats, c.id); setChats(next); saveChats(computerId, next); if (c.id === chat.id) setChat(newChat()); }} className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition hover:bg-surface-strong hover:text-error"><Trash size={18} /></button>
+                      <button type="button" aria-label={`Delete ${c.title}`} onClick={() => { const next = remove(chats, c.id); chatsRef.current = next; setChats(next); saveChats(computerId, next); if (c.id === chat.id) startNew(); }} className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition hover:bg-surface-strong hover:text-error"><Trash size={18} /></button>
                     </div>
                   </li>
                 ))}

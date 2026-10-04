@@ -80,6 +80,8 @@ export function useVoiceSession({ go, onAssistant }: { go: (tab: VoiceTab) => vo
       toAssistant: (text) => latest.current.onAssistant(text, abort.current?.signal ?? new AbortController().signal),
       go: (tab) => latest.current.go(tab),
       phone: { directCalls: getVoicePrefs().directCalls },
+      ack: (t) => speak(forSpeech(t)),
+      interim: (t) => alive() && setReply({ ok: true, say: t }),
       resolve: (text) => resolveOnServer(text, deviceOrNull()),
     });
     if (!alive()) return 'cancelled';

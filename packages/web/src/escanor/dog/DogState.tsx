@@ -23,3 +23,9 @@ export function DogRunner({ label = 'Loading more…' }: { label?: string }) {
     </div>
   );
 }
+
+
+/** A tiny dog running on the spot, for the places a spinner would go (beside a line of text). */
+export function DogSpinner({ className = '' }: { className?: string }) {
+  return <span role="status" aria-label="Loading" className={`inline-flex shrink-0 align-middle ${className}`}><PixelDog scene="run" scale={1} /></span>;
+}
