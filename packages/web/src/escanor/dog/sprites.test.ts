@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { H, PALETTE, SCENES, sceneFrames, W } from './sprites';
+import { ANIMALS, DEFAULT_ANIMAL, isAnimal } from './animals';
+import { COMPANION_KEY, parseCompanion } from './companion';
+import { H, paletteFor, SCENES, sceneFrames, W } from './sprites';
 
-describe('the dog', () => {
+for (const animal of ANIMALS.map((a) => a.id)) describe(`the ${animal}`, () => {
+  const PALETTE = paletteFor(animal);
   for (const scene of SCENES) {
     describe(scene, () => {
-      const { frames, frameMs } = sceneFrames(scene);
+      const { frames, frameMs } = sceneFrames(scene, animal);
 
       it('has every frame the same size, W by H', () => {
         for (const f of frames) {
@@ -39,4 +42,25 @@ describe('the dog', () => {
       });
     });
   }
+});
+
+describe('the companions', () => {
+  it('are the six that were promised, each with a name', () => {
+    assert.deepEqual(ANIMALS.map((a) => [a.id, a.name]), [['dog', 'Shiro'], ['unicorn', 'Stacy'], ['pigeon', 'Riti'], ['hamster', 'Bubbly'], ['cat', 'Tom'], ['elephant', 'Jumbo']]);
+  });
+  it('are each drawn differently from the others', () => {
+    for (const scene of SCENES) {
+      const pictures = ANIMALS.map((a) => sceneFrames(scene, a.id).frames[0].join(''));
+      assert.equal(new Set(pictures).size, ANIMALS.length, `two animals look the same in ${scene}`);
+    }
+  });
+  it('keep the dog as the default, and ignore a choice that is not an animal', () => {
+    assert.equal(DEFAULT_ANIMAL, 'dog');
+    assert.equal(parseCompanion('unicorn'), 'unicorn');
+    assert.equal(parseCompanion('dragon'), 'dog');
+    assert.equal(parseCompanion(null), 'dog');
+    assert.equal(isAnimal('cat'), true);
+    assert.equal(isAnimal('Cat'), false);
+    assert.match(COMPANION_KEY, /companion/);
+  });
 });
