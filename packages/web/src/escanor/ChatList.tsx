@@ -1,6 +1,6 @@
 import { Archive, Tray, DotsThree, MagnifyingGlass, PencilSimple, PushPin, PushPinSlash, Trash, X } from '@phosphor-icons/react';
 import { useEffect, useMemo, useState } from 'react';
-import { organise, prune, rename, toggleArchived, togglePinned, updateMeta, useChatMeta, type ChatItem, type ChatRow } from './chatList';
+import { organise, prune, rename, toggleArchived, togglePinned, updateMeta, useChatMeta, type ChatItem, type ChatRow } from './chatMeta';
 import { haptic } from './settings/prefs';
 import { Button, Sheet } from './ui';
 
