@@ -5,7 +5,7 @@
  */
 import { GROUND_Y, Pix, W, type Frame } from './pix.ts';
 
-type Scene = 'run' | 'sniff' | 'dig' | 'sit' | 'sleep' | 'lick';
+type Scene = 'run' | 'sniff' | 'dig' | 'sit' | 'sleep' | 'lick' | 'home' | 'react';
 
 const HEART = ['.h.h.', 'hhhhh', '.hhh.', '..h..'];
 const Z = ['zzz', '..z', '.z.', 'z..', 'zzz'];
@@ -269,6 +269,71 @@ function lick(): Frame[] {
   return frames;
 }
 
+// ------------------------------------------------------------------------------------------------------------------- react
+
+/** Tapped: it puffs up and flaps, hops, and coos, with feathers coming loose. */
+function react(): Frame[] {
+  const beats: Array<{ wing: number; lift: number; hy: number }> = [
+    { wing: 0, lift: 0, hy: 0 }, { wing: 1, lift: 1, hy: 0 }, { wing: 2, lift: 1, hy: 0 }, { wing: 1, lift: 1, hy: 2 },
+    { wing: 0, lift: 0, hy: 3 }, { wing: 1, lift: 1, hy: 0 }, { wing: 2, lift: 1, hy: 0 }, { wing: 0, lift: 0, hy: 0 },
+  ];
+  return beats.map((b, i) => {
+    const p = new Pix();
+    sidePigeon(p, { hx: 1, hy: b.hy, lift: b.lift, legs: 0, beak: i % 2 ? 'open' : 'closed', tail: 2 });
+    // the wing: raised and spread over the back, then down
+    if (b.wing > 0) {
+      p.oval(12, 9 - b.lift - b.wing, 7, 1.8 + b.wing * 0.4, 'd');
+      p.oval(11, 9 - b.lift - b.wing * 1.2, 5, 1.2 + b.wing * 0.4, 'f');
+    }
+    p.outline();
+    ground(p, i);
+    // loose feathers and the "coo" notes
+    for (let k = 0; k < 3; k++) p.px(6 + k * 4 + (i % 2), 4 + ((i + k * 2) % 6), 'g');
+    if (i % 2) p.stamp(29, 2, ['.hh', '.h.', 'hh.']);
+    return p.frame();
+  });
+}
+
+// ---------------------------------------------------------------------------------------------------------------------- home
+
+/** At home: a window ledge, a brick wall behind, a pot with a plant, and crumbs to peck at. */
+function home(): Frame[] {
+  return Array.from({ length: 8 }, (_, i) => {
+    const p = new Pix();
+    // the wall: bricks in rows
+    for (let y = 2; y < 19; y++) for (let x = 0; x < W; x++) {
+      const row = Math.floor(y / 3);
+      const off = row % 2 ? 4 : 0;
+      p.px(x, y, y % 3 === 0 || (x + off) % 8 === 0 ? 'O' : 'P');
+    }
+    // the window on the right, with a cross frame and a bit of sky
+    p.rect(23, 3, 10, 13, 'm');
+    p.rect(24, 4, 8, 11, 'a');
+    p.rect(27, 4, 2, 11, 'm');
+    p.rect(24, 9, 8, 1, 'm');
+    p.px(25, 5, 'w');
+    p.px(26, 6, 'w');
+    // the ledge: a thick stone slab along the bottom
+    p.rect(0, 19, W, 3, 'i');
+    p.rect(0, 21, W, 1, 'I');
+    // a flower pot in the corner
+    p.rect(2, 13, 5, 1, 'R');
+    p.rect(3, 14, 3, 5, 'r');
+    for (const [x, y] of [[4, 8], [3, 9], [5, 9], [4, 10], [2, 10], [6, 10], [4, 11], [4, 12]] as const) p.px(x, y, (x + y) % 2 ? 'G' : 'Y');
+    p.px(4, 7, i % 2 ? 'h' : 'S');
+    // the pigeon, pecking at the crumbs on the ledge
+    const hy = [0, 2, 8, 8, 2, 0, 0, 0][i];
+    const bird = new Pix();
+    sidePigeon(bird, { hx: hy > 4 ? 2 : 0, hy, legs: i % 3 === 1 ? 1 : 0, beak: hy > 6 ? 'open' : 'closed', tail: 0, dx: 1 });
+    bird.outline();
+    p.stamp(0, 0, bird.frame());
+    // crumbs, and one that has just been taken
+    for (const x of [27, 21, 19]) p.px(x, 18, 'Q');
+    if (i < 3) crumb(p, 24, 17);
+    return p.frame();
+  });
+}
+
 export function pigeonScene(scene: Scene): Frame[] {
-  return { run, sniff, dig, sit, sleep, lick }[scene]();
+  return { run, sniff, dig, sit, sleep, lick, home, react }[scene]();
 }

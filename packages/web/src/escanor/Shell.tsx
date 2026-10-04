@@ -220,7 +220,7 @@ export default function Shell({ machines }: { machines: React.ReactNode }) {
         <TabBar tab={tab} onPick={show} />
 
         {/* the companion: small, in the corner of every screen, running whenever something loads */}
-        <Buddy className="fixed bottom-[calc(env(safe-area-inset-bottom)+72px)] left-1 z-30 md:bottom-3 md:left-auto md:right-3" />
+        <Buddy top={48} className="fixed bottom-[calc(env(safe-area-inset-bottom)+72px)] left-1 z-30 md:bottom-3 md:left-auto md:right-3" />
 
         {deletion.data?.scheduled && <DeletionNotice status={deletion.data} onCancelled={deletion.reload} />}
 

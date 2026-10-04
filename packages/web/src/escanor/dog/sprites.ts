@@ -12,11 +12,12 @@ import { ANIMALS, DEFAULT_ANIMAL, PALETTE_OVERRIDES, type Animal } from './anima
 import { catSkin, elephantSkin, unicornSkin } from './skins.ts';
 import { hamsterScene } from './hamster.ts';
 import { pigeonScene } from './pigeon.ts';
+import { quadHome, quadReact } from './extras.ts';
 
 export { ANIMALS, H, W };
 export type { Frame };
 
-export type Scene = 'run' | 'sniff' | 'dig' | 'sit' | 'sleep' | 'lick';
+export type Scene = 'run' | 'sniff' | 'dig' | 'sit' | 'sleep' | 'lick' | 'home' | 'react';
 
 /** One character per colour. `.` is clear. */
 export const PALETTE: Record<string, string> = {
@@ -49,6 +50,20 @@ export const PALETTE: Record<string, string> = {
   j: '#2b2f3a', // wheel and perch
   x: '#ffe58a', // seed
   X: '#c9a24a', // seed shade
+  r: '#d9534f', // roof, a toy
+  R: '#9c3a37', // roof shade
+  a: '#8fd3ff', // water, glass
+  A: '#4d9fe0', // deep water
+  W: '#d9bd8a', // wood, cardboard
+  m: '#8a6a3c', // wood shade
+  G: '#6fc27a', // leaf, grass
+  Y: '#3b8f4f', // leaf shade
+  i: '#c4ccda', // metal bars
+  I: '#8892a6', // metal shade
+  S: '#ef6f8f', // yarn
+  Q: '#f7e9b5', // crumb, peanut
+  P: '#b97a4a', // brick
+  O: '#8f5a35', // brick shade
 };
 
 const OX = 2;
@@ -57,7 +72,7 @@ const OY = 2;
 type Legs = 'stand' | 'runA' | 'runB' | 'walkA' | 'walkB';
 type Tail = 'up' | 'mid' | 'low';
 
-interface Side {
+export interface Side {
   legs: Legs;
   tail?: Tail;
   /** Head height: 0 up, 4 level, 8 down (sniffing). */
@@ -85,7 +100,7 @@ const LEGS: Record<Legs, Array<Array<[number, number]>>> = {
 };
 
 /** A standing, walking or running dog facing right, drawn into `p` at the standard place. */
-function sideDog(p: Pix, o: Side, sk: Skin, dx = 0, dy = 0): void {
+export function sideDog(p: Pix, o: Side, sk: Skin, dx = 0, dy = 0): void {
   const x0 = OX + dx;
   const y0 = OY + dy - (o.lift ?? 0);
   const R = (x: number, y: number, w: number, h: number, c: string, round = false) => p.rect(x0 + x, y0 + y, w, h, c, round);
@@ -127,7 +142,7 @@ function sideDog(p: Pix, o: Side, sk: Skin, dx = 0, dy = 0): void {
   if (o.legs === 'stand' || o.legs === 'walkA' || o.legs === 'walkB') for (const i of [0, 1, 2, 3]) LEGS[o.legs][i].forEach(([x, y]) => R(x, y + 1, 2, 1, i % 2 ? 'd' : 'f'));
 }
 
-function ground(p: Pix, scroll = 0, dust = false): void {
+export function ground(p: Pix, scroll = 0, dust = false): void {
   for (let x = 0; x < W; x++) p.px(x, GROUND_Y, 'l');
   for (let x = 0; x < W; x++) if ((x + scroll) % 7 === 0) p.px(x, GROUND_Y + 1, 'l');
   if (dust) {
@@ -179,11 +194,28 @@ function sniff(sk: Skin): Frame[] {
 
 const HEART = ['.h.h.', 'hhhhh', '.hhh.', '..h..'];
 
-function sit(sk: Skin): Frame[] {
+export interface Deco {
+  /** Whole animal moves this many pixels sideways (to leave room for the scenery). */
+  dx?: number;
+  /** Drawn before the animal, so it stands in front of this. `i` is the frame number. */
+  back?(p: Pix, i: number): void;
+  /** Drawn after the animal and its outline. */
+  front?(p: Pix, i: number): void;
+  /** Draw the ground line (default true). */
+  ground?: boolean;
+  /** Hearts above the head (default true). */
+  hearts?: boolean;
+}
+
+export function sit(sk: Skin, deco: Deco = {}): Frame[] {
+  let frameNo = 0;
   const make = (tail: number, heart: number, blink: boolean): Frame => {
+    const i = frameNo++;
     const p = new Pix(W, H);
-    const R = (x: number, y: number, w: number, h: number, c: string, round = false) => p.rect(x + 3, y + 3, w, h, c, round);
-    const P = (x: number, y: number, c: string) => p.px(x + 3, y + 3, c);
+    deco.back?.(p, i);
+    const ox = 3 + (deco.dx ?? 0);
+    const R = (x: number, y: number, w: number, h: number, c: string, round = false) => p.rect(x + ox, y + 3, w, h, c, round);
+    const P = (x: number, y: number, c: string) => p.px(x + ox, y + 3, c);
     const b: Brush = { R, P };
     // tail sweeping along the ground behind
     const path = ([[[4, 15], [3, 15], [2, 14], [1, 14]], [[4, 15], [3, 14], [2, 13], [1, 13]], [[4, 15], [3, 15], [2, 15], [1, 14]], [[4, 15], [3, 14], [2, 13], [2, 12]]] as Array<Array<[number, number]>>)[tail];
@@ -210,8 +242,9 @@ function sit(sk: Skin): Frame[] {
     if (sk.ear) sk.ear(b, 'sit', 13, 1, {});
     else R(13, 1, 3, 6, 'd', true);
     p.outline();
-    ground(p);
-    if (heart > 0) {
+    if (deco.ground !== false) ground(p);
+    deco.front?.(p, i);
+    if (heart > 0 && deco.hearts !== false) {
       const y = 4 - Math.min(heart - 1, 3);
       p.stamp(28, y, HEART);
     }
@@ -404,7 +437,7 @@ export interface SceneDef {
 const SKINS: Partial<Record<Animal, Skin>> = { dog: {}, cat: catSkin, unicorn: unicornSkin, elephant: elephantSkin };
 
 /** How long each frame stays up, per scene (the same for every animal). */
-const FRAME_MS: Record<Scene, number> = { run: 110, sniff: 260, dig: 170, sit: 280, sleep: 420, lick: 200 };
+const FRAME_MS: Record<Scene, number> = { run: 110, sniff: 260, dig: 170, sit: 280, sleep: 420, lick: 200, home: 260, react: 120 };
 
 const CACHE = new Map<string, SceneDef>();
 
@@ -417,7 +450,9 @@ function build(scene: Scene, animal: Animal): Frame[] {
   if (animal === 'hamster') return hamsterScene(scene);
   if (animal === 'pigeon') return pigeonScene(scene);
   const sk = SKINS[animal] ?? {};
-  return { run, sniff, dig, sit, sleep, lick }[scene](sk);
+  if (scene === 'home') return quadHome(animal, sk);
+  if (scene === 'react') return quadReact(animal, sk);
+  return { run, sniff, dig, sit: (k: Skin) => sit(k), sleep, lick }[scene](sk);
 }
 
 export function sceneFrames(scene: Scene, animal: Animal = DEFAULT_ANIMAL): SceneDef {
@@ -430,4 +465,4 @@ export function sceneFrames(scene: Scene, animal: Animal = DEFAULT_ANIMAL): Scen
   return s;
 }
 
-export const SCENES: Scene[] = ['run', 'sniff', 'dig', 'sit', 'sleep', 'lick'];
+export const SCENES: Scene[] = ['run', 'sniff', 'dig', 'sit', 'sleep', 'lick', 'home', 'react'];

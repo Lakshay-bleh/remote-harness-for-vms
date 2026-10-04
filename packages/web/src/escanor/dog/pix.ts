@@ -73,6 +73,11 @@ export class Pix {
     rows.forEach((row, j) => [...row].forEach((c, i) => c !== '.' && c !== ' ' && this.px(x + i, y + j, c)));
     return this;
   }
+  /** Flip the whole picture left to right (the animal turns round). */
+  mirror(): this {
+    for (const row of this.cells) row.reverse();
+    return this;
+  }
   frame(): Frame {
     return this.cells.map((r) => r.join(''));
   }
