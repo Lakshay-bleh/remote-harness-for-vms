@@ -43,7 +43,7 @@ export default function AssistantView({ conversationId, title, onConversation, o
         <button onClick={() => onConversation(null)} aria-label="New chat" title="New chat" className="flex h-9 w-9 items-center justify-center rounded-pill text-body transition hover:bg-surface-card hover:text-ink active:scale-90"><PencilSimpleLine size={20} /></button>
       </header>
 
-      <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-4 py-5"><div className="mx-auto w-full max-w-3xl space-y-4">
+      <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-4 py-5"><div className="w-full space-y-4">
         {blocks.length === 0 && (
           <div className="mx-auto max-w-md space-y-3 pt-6 text-center">
             <h2 className="font-display text-2xl text-ink">What should we work on?</h2>
@@ -68,7 +68,7 @@ export default function AssistantView({ conversationId, title, onConversation, o
 
       {chat.error && <div className="px-4 pb-2"><Notice tone="error">{chat.error}</Notice></div>}
 
-      <div className="px-4 pb-3 pt-2"><div className="mx-auto w-full max-w-3xl">
+      <div className="px-4 pb-3 pt-2"><div className="w-full">
         {usable.length > 0 ? (
           <button onClick={onOpenIntegrations} className="mb-2 flex w-full flex-wrap items-center gap-1.5 text-left text-[12px] text-muted">
             <span>Connected:</span>
