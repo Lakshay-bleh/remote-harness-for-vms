@@ -51,9 +51,10 @@ export const UNSUPPORTED = 'Escanor can read photos, PDFs and text or code files
 export const humanSize = (n: number): string => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
 /** Whether another file may be added, and if not, the sentence to show. */
-export function canAdd(existing: Attachment[], next: { name: string; type: string; size: number }, allow: 'all' | 'text' = 'all'): string | null {
+export function canAdd(existing: Attachment[], next: { name: string; type: string; size: number }, allow: 'all' | 'text' | 'media' = 'all'): string | null {
   const kind = classify(next.name, next.type);
   if (!kind) return UNSUPPORTED;
+  if (allow === 'media' && kind === 'pdf') return 'Machines take photos and text or code files. To send a PDF, use the Escanor assistant chat.';
   if (allow === 'text' && kind !== 'text') return 'This chat takes text and code files. To send a photo or PDF, use the Escanor assistant chat.';
   if (existing.length >= LIMITS.files) return `You can attach up to ${LIMITS.files} files to one message.`;
   // photos are shrunk before sending, so only a PDF's own size counts here

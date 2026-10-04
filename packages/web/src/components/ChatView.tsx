@@ -4,7 +4,9 @@ import { useStore } from '../store';
 import { api } from '../api';
 import { groupMessages, latestTodos } from '../groupMessages';
 import Message, { PermissionRequest, Spinner, TodoList, CwdContext } from './Message';
-import Composer from './Composer';
+import ChatComposer from '../escanor/composer/ChatComposer';
+import { inlineText, type Attachment } from '../escanor/composer/attachments';
+import { DogState } from '../escanor/dog/DogState';
 import Dropdown, { Chip } from './Dropdown';
 import { EmbeddedContext, ScreenHeader } from '../escanor/ui';
 import { getPrefs } from '../escanor/settings/prefs';
@@ -150,8 +152,11 @@ export default function ChatView({ className, onBack }: { className: string; onB
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [items.length, busy, rows.length]);
 
-  function handleSend(text: string, images: ImageAttachment[]) {
+  function handleSend(typed: string, attached: Attachment[]) {
     if (!vmId) return;
+    // The hub takes photos as images and everything else as words, so a text or code file goes into the message under its name.
+    const images: ImageAttachment[] = attached.filter((a) => a.kind === 'image' && a.data).map((a) => ({ mediaType: a.mime, dataBase64: a.data! }));
+    const text = inlineText(typed, attached, 200_000) ?? typed;
     if (sessionId) actions.sendMessage(vmId, sessionId, text, images);
     else actions.startNewChat(vmId, project || undefined, text, images, accountId);
   }
@@ -161,7 +166,7 @@ export default function ChatView({ className, onBack }: { className: string; onB
   if (!vmId) {
     return (
       <div className={`${className} flex-1 flex-col items-center justify-center bg-canvas text-muted-soft`}>
-        <p className="text-sm">Select a VM to get started</p>
+        <DogState scene="sit" scale={4} title="Pick a machine" text="Choose one from the list to chat with it." />
       </div>
     );
   }
@@ -195,8 +200,8 @@ export default function ChatView({ className, onBack }: { className: string; onB
       <CwdContext.Provider value={session?.cwd ?? ''}>
       <div ref={scrollRef} className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-4 pb-4 pt-1">
         {items.length === 0 && (
-          <div className="flex h-full items-center justify-center text-sm text-muted-soft">
-            {sessionId ? 'No messages yet' : `Start a new chat on ${vm?.name}`}
+          <div className="flex h-full items-center justify-center">
+            <DogState scene="sit" scale={4} title={sessionId ? 'No messages yet' : `Start a new chat on ${vm?.name ?? 'this machine'}`} text={sessionId ? 'Say something and it shows up here.' : 'Ask for a change, a fix or an explanation. It runs on that machine.'} />
           </div>
         )}
         {items.map((item) => (
@@ -215,13 +220,15 @@ export default function ChatView({ className, onBack }: { className: string; onB
       )}
       </CwdContext.Provider>
 
-      <Composer
+      <div className={`${embedded ? 'pb-3' : 'safe-bottom'} border-t border-hairline bg-canvas px-3 pt-3`}>
+      <ChatComposer
+        key={`${vmId}:${sessionId ?? 'new'}`}
+        attach="media"
+        running={busy}
+        onStop={() => sessionId && actions.interrupt(vmId, sessionId)}
         onSend={handleSend}
-        onInterrupt={() => sessionId && actions.interrupt(vmId, sessionId)}
-        busy={busy}
         placeholder={sessionId ? 'Message Claude…' : 'Start a new conversation…'}
-        onOpenSidebar={onBack}
-        topChips={
+        chips={
           <>
             <Chip icon={<ServerIcon />} label={vm?.name ?? ''} />
             <Chip icon={<PersonIcon />} label={accountLabel ?? ''} />
@@ -242,10 +249,6 @@ export default function ChatView({ className, onBack }: { className: string; onB
                 if (sessionId) actions.setPermissionMode(vmId, sessionId, v);
               }}
             />
-          </>
-        }
-        footerExtra={
-          <>
             <Dropdown
               icon={<SparkleIcon />}
               value={model}
@@ -267,6 +270,7 @@ export default function ChatView({ className, onBack }: { className: string; onB
           </>
         }
       />
+      </div>
     </div>
   );
 }
