@@ -543,7 +543,44 @@ public class EscanorDevicePlugin extends Plugin {
         out.put("modelReady", WakeWordService.modelReady(getContext()));
         out.put("downloading", downloading);
         out.put("micAllowed", getContext().checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED);
+        // what lets "Hey Escanor" open the app when it is not showing (see WakeAction)
+        out.put("overlayAllowed", WakeAction.canOverlay(getContext()));
+        out.put("fullScreenAllowed", WakeAction.canFullScreen(getContext()));
         call.resolve(out);
+    }
+
+    /** Android's "Display over other apps" page for Escanor. */
+    @PluginMethod
+    public void wakeOpenOverlaySettings(PluginCall call) {
+        openSettings(call, new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getContext().getPackageName())));
+    }
+
+    /** Android 14+: "Full-screen notifications" for Escanor (the page that lets a notification take over the screen). */
+    @PluginMethod
+    public void wakeOpenFullScreenSettings(PluginCall call) {
+        if (Build.VERSION.SDK_INT < 34) {
+            call.resolve(result(true, null));
+            return;
+        }
+        openSettings(call, new Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:" + getContext().getPackageName())));
+    }
+
+    private void openSettings(PluginCall call, Intent i) {
+        try {
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(i);
+            call.resolve(result(true, null));
+        } catch (Exception e) {
+            call.resolve(result(false, "Android would not open that settings page. Open Settings, Apps, Escanor to find it."));
+        }
+    }
+
+    /** Act as though "Hey Escanor" was heard in a few seconds, so the person can press Home and see what happens. */
+    @PluginMethod
+    public void wakeTest(PluginCall call) {
+        final Context ctx = getContext().getApplicationContext();
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> WakeAction.fire(ctx), 6000);
+        call.resolve(result(true, null));
     }
 
     /** Download the small speech model (about 40 MB) once, over https, with progress events. */

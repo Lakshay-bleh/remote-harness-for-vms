@@ -12,6 +12,9 @@ interface WakeNative {
   wakeStop(): Promise<PluginResult>;
   wakePause(o: { paused: boolean }): Promise<PluginResult>;
   wakeDeleteModel(): Promise<PluginResult>;
+  wakeOpenOverlaySettings(): Promise<PluginResult>;
+  wakeOpenFullScreenSettings(): Promise<PluginResult>;
+  wakeTest(): Promise<PluginResult>;
   addListener(event: 'wake', cb: () => void): Promise<PluginListenerHandle>;
   addListener(event: 'wakeModelProgress', cb: (e: { percent: number }) => void): Promise<PluginListenerHandle>;
 }

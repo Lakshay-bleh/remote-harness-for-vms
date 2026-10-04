@@ -1,11 +1,11 @@
-import { Download, HandPointing, Microphone, Phone, ShieldCheck, Waveform } from '@phosphor-icons/react';
+import { AppWindow, Download, HandPointing, Microphone, Phone, ShieldCheck, Waveform } from '@phosphor-icons/react';
 import { useCallback, useEffect, useState } from 'react';
 import { isNative } from '../../api';
 import { Button, Notice, Spinner } from '../ui';
 import type { ControlStatus } from '../voice/actions';
 import { deviceOrNull } from '../voice/device';
 import PhoneControlSetup from '../voice/PhoneControlSetup';
-import { wake, wakeStep, type WakeStatus } from '../voice/wakeWord';
+import { outsideApp, wake, wakeStep, type WakeStatus } from '../voice/wakeWord';
 import { setVoicePrefs, useVoicePrefs } from '../voice/voicePrefs';
 import { Group, Page, Row, SwitchRow } from './parts';
 
@@ -38,6 +38,7 @@ export default function VoicePage({ onBack }: { onBack: () => void }) {
   }, [refresh]);
 
   const step = wakeStep(status);
+  const outside = outsideApp(status);
 
   const turnWakeOn = async () => {
     setNote(null);
@@ -88,6 +89,15 @@ export default function VoicePage({ onBack }: { onBack: () => void }) {
         {step === 'microphone' && <Row icon={<Microphone size={18} />} label="Microphone needed" sub="Allow it in Android Settings, Apps, Escanor, Permissions." chevron={false} />}
         {step === 'listening' && <Row label="Listening now" sub="Say “Hey Escanor” and then what you want." chevron={false} />}
       </Group>
+
+      {(step === 'listening' || step === 'ready') && (
+        <Group title="From other apps and the home screen" footer="Android does not let an app open itself from the background unless you allow it. These two switches are yours to turn on; Escanor only uses them when it hears “Hey Escanor”.">
+          <Row icon={<AppWindow size={18} />} label="Open Escanor when it hears you" sub={outside.line} chevron={false} />
+          {outside.canAllowOverlay && <Row label="Display over other apps" value="Not allowed" sub="Tap to open Android’s page, then switch Escanor on." onClick={() => void wake.openOverlaySettings()} />}
+          {outside.canAllowFullScreen && <Row label="Full-screen notifications" value="Not allowed" sub="Lets the notification take over a locked or idle screen." onClick={() => void wake.openFullScreenSettings()} />}
+          <Row label="Try it" sub="Tap, then press Home or open another app. In six seconds Escanor acts as though you had said it." onClick={() => void wake.test().then(() => setNote('Press Home now. Escanor will open in a few seconds.'))} />
+        </Group>
+      )}
       {note && <Notice tone="warn">{note}</Notice>}
 
       <Group
