@@ -83,7 +83,7 @@ export default function ChatComposer({ placeholder, running = false, disabled = 
   const err = note ?? dictation.error;
 
   return (
-    <div className="relative mx-auto w-full max-w-3xl">
+    <div className="relative w-full">
       {err && <p role="alert" className="mb-2 rounded-md border border-error/30 bg-error/10 px-3 py-2 text-[13px] text-error">{err}</p>}
       <form className="rounded-3xl border border-line-strong bg-surface-dark-soft transition focus-within:border-primary/60 focus-within:ring-4 focus-within:ring-primary/10" onSubmit={(e) => { e.preventDefault(); submit(); }}>
         {chips && <div className="flex flex-wrap items-center gap-1.5 px-3 pt-3">{chips}</div>}
