@@ -21,16 +21,37 @@ android {
     // The accessibility service (phone control) is a separate build: Play Protect blocks sideloaded apps that declare one.
     //   ./gradlew assembleDebug                       the normal build
     //   ./gradlew assembleDebug -PphoneControl=true   the build that can control the phone
-    if (project.findProperty('phoneControl') == 'true') {
-        sourceSets.debug.manifest.srcFile 'src/phonecontrol/AndroidManifest.xml'
-        sourceSets.release.manifest.srcFile 'src/phonecontrol/AndroidManifest.xml'
+    //   ./gradlew bundleRelease -Pplay=true          the Google Play build: phone control included (Play installs are not
+    //                                                 blocked), minus what Play does not allow this app (see src/play)
+    def play = project.findProperty('play') == 'true'
+    if (play || project.findProperty('phoneControl') == 'true') {
+        def manifest = play ? 'src/play/AndroidManifest.xml' : 'src/phonecontrol/AndroidManifest.xml'
+        sourceSets.debug.manifest.srcFile manifest
+        sourceSets.release.manifest.srcFile manifest
         sourceSets.debug.res.srcDir 'src/phonecontrol/res'
         sourceSets.release.res.srcDir 'src/phonecontrol/res'
+    }
+    // Release signing with the Play upload key. The key and its passwords never enter the repository: they are read from the
+    // file named by RH_SIGNING_PROPERTIES (default ~/.config/escanor-android/signing.properties) with
+    // storeFile, storePassword, keyAlias, keyPassword. Without it, release builds are left unsigned.
+    def signingFile = file(System.getenv("RH_SIGNING_PROPERTIES") ?: "${System.getProperty('user.home')}/.config/escanor-android/signing.properties")
+    def signing = new Properties()
+    if (signingFile.exists()) signingFile.withInputStream { signing.load(it) }
+    signingConfigs {
+        if (signing['storeFile']) {
+            upload {
+                storeFile file(signing['storeFile'])
+                storePassword signing['storePassword']
+                keyAlias signing['keyAlias']
+                keyPassword signing['keyPassword']
+            }
+        }
     }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (signing['storeFile']) signingConfig signingConfigs.upload
         }
     }
 }
@@ -52,8 +73,9 @@ dependencies {
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
     // "Hey Escanor": speech recognition that runs on the phone (the voice model is downloaded once, when the person turns it on)
-    implementation 'com.alphacephei:vosk-android:0.3.47'
-    implementation 'net.java.dev.jna:jna:5.13.0@aar'
+    // 0.3.75 and JNA 5.19 ship 16 KB-aligned native libraries, which Google Play requires (Android 15+ 16 KB page size)
+    implementation 'com.alphacephei:vosk-android:0.3.75'
+    implementation 'net.java.dev.jna:jna:5.19.1@aar'
 }
 
 apply from: 'capacitor.build.gradle'
