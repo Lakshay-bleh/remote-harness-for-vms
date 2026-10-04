@@ -9,7 +9,7 @@ import { useLoad } from '../hooks';
 import { useEscanorSession } from '../session';
 import { ago, Button, Notice, Sheet, Spinner } from '../ui';
 import { ConfirmSheet, Group, Page, Row } from './parts';
-import { resetChatMeta } from '../chatList';
+import { resetChatMeta } from '../chatMeta';
 import { resetPrefs } from './prefs';
 
 const host = (url: string) => { try { return new URL(url).host; } catch { return url; } };

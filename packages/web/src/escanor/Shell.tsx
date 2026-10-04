@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { DeletionNotice } from './account/DeleteAccountPage';
 import AssistantView from './AssistantView';
 import ChatList from './ChatList';
-import { useChatMeta } from './chatList';
+import { useChatMeta } from './chatMeta';
 import { useHardwareBack } from './back';
 import ComputersView from './computer/ComputersView';
 import { escanor } from './client';

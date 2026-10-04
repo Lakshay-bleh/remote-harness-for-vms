@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { EMPTY_META, cleanName, matches, organise, parseMeta, prune, rename, toggleArchived, togglePinned, type ChatItem } from './chatList';
+import { EMPTY_META, cleanName, matches, organise, parseMeta, prune, rename, toggleArchived, togglePinned, type ChatItem } from './chatMeta';
 
 const NOW = Date.parse('2026-10-03T15:00:00');
 const at = (daysAgo: number, hour = 9) => new Date(new Date(NOW).setHours(hour, 0, 0, 0) - daysAgo * 86_400_000).toISOString();
