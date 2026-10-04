@@ -61,3 +61,21 @@ jobs:
         with:
           name: ios-simulator-launch
           path: ${{ runner.temp }}/launch.png
+
+      # An UNSIGNED .ipa for a real iPhone: it does not install as it is. A sideloading tool (Sideloadly, AltStore) signs it with the
+      # installer's own Apple ID, which works for 7 days on a free account. Publishing to the App Store needs a paid account (docs/IOS.md).
+      - name: Package an unsigned .ipa
+        working-directory: packages/web/ios/App
+        run: |
+          xcodebuild archive -project App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath build/App.xcarchive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" | tail -5
+          rm -rf build/ipa && mkdir -p build/ipa/Payload
+          cp -R build/App.xcarchive/Products/Applications/App.app build/ipa/Payload/
+          (cd build/ipa && zip -qry "$RUNNER_TEMP/Escanor-unsigned.ipa" Payload)
+          ls -la "$RUNNER_TEMP/Escanor-unsigned.ipa"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: escanor-ios-unsigned-ipa
+          path: ${{ runner.temp }}/Escanor-unsigned.ipa
