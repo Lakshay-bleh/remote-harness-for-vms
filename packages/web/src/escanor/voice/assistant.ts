@@ -1,5 +1,5 @@
 import { explainFailure } from '../computer/errors';
-import { runPhoneAction, type DevicePlugin } from './actions';
+import { runPhoneAction, type DevicePlugin, type PhoneOptions } from './actions';
 import { parseVoiceCommand, type VoiceTab } from './commands';
 
 export interface AssistantDeps {
@@ -11,6 +11,8 @@ export interface AssistantDeps {
   /** Hand a sentence to the Escanor assistant; resolves with its answer when it has one (empty when it only started working). */
   toAssistant(text: string): Promise<string | void>;
   go(tab: VoiceTab): void;
+  /** How the person wants the phone to behave (calling directly). */
+  phone?: PhoneOptions;
 }
 
 export interface Reply {
@@ -18,6 +20,8 @@ export interface Reply {
   /** What to say out loud and show. */
   say: string;
   kind?: 'phone' | 'computer' | 'assistant' | 'go' | 'stop';
+  /** What the person has to turn on to make this work; voice mode shows a button for it. */
+  needs?: 'accessibility';
 }
 
 const TAB_NAMES: Record<VoiceTab, string> = { assistant: 'Chat', computers: 'Computers', connections: 'Connections', machines: 'Machines', settings: 'Settings' };
@@ -42,7 +46,7 @@ export async function handleUtterance(text: string, d: AssistantDeps): Promise<R
       case 'stop':
         return { ok: true, say: 'Okay.', kind: 'stop' };
       case 'phone':
-        return { ...(await runPhoneAction(cmd.action, d.device)), kind: 'phone' };
+        return { ...(await runPhoneAction(cmd.action, d.device, d.phone)), kind: 'phone' };
       case 'go':
         d.go(cmd.tab);
         return { ok: true, say: `Opening ${TAB_NAMES[cmd.tab]}.`, kind: 'go' };

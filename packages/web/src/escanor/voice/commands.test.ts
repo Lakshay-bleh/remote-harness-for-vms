@@ -43,6 +43,46 @@ describe('phone actions', () => {
   });
 });
 
+describe('using the phone itself', () => {
+  const act = (say: string) => (parseVoiceCommand(say, { hasComputer: true }) as { kind: string; action?: unknown }).action;
+  it('presses the phone\u2019s buttons', () => {
+    assert.deepEqual(act('go home'), { type: 'control', op: 'home' });
+    assert.deepEqual(act('go to the home screen'), { type: 'control', op: 'home' });
+    assert.deepEqual(act('go back'), { type: 'control', op: 'back' });
+    assert.deepEqual(act('show recent apps'), { type: 'control', op: 'recents' });
+    assert.deepEqual(act('open notifications'), { type: 'control', op: 'notifications' });
+    assert.deepEqual(act('quick settings'), { type: 'control', op: 'quick_settings' });
+    assert.deepEqual(act('lock the phone'), { type: 'control', op: 'lock' });
+    assert.deepEqual(act('take a screenshot'), { type: 'control', op: 'screenshot' });
+    assert.deepEqual(act('scroll down'), { type: 'control', op: 'scroll_down' });
+    assert.deepEqual(act('scroll up'), { type: 'control', op: 'scroll_up' });
+  });
+  it('taps what is on the screen by its words, and types', () => {
+    assert.deepEqual(act('tap Send'), { type: 'tap_text', text: 'send' });
+    assert.deepEqual(act('click on the sign in button'), { type: 'tap_text', text: 'sign in' });
+    assert.deepEqual(act('type hello there'), { type: 'type_text', text: 'hello there' });
+  });
+  it('keeps the case of what is typed', () => {
+    assert.deepEqual(act('type Meet me at 5 PM.'), { type: 'type_text', text: 'Meet me at 5 PM' });
+  });
+  it('reads the screen only when asked', () => {
+    assert.deepEqual(act('what is on my screen'), { type: 'read_screen' });
+    assert.deepEqual(act('read the screen'), { type: 'read_screen' });
+  });
+  it('opens a website by its address, however the dots were heard', () => {
+    assert.deepEqual(act('go to google.com'), { type: 'open_url', url: 'https://google.com' });
+    assert.deepEqual(act('open github dot com'), { type: 'open_url', url: 'https://github.com' });
+  });
+  it('does not mistake an app name or a question for any of these', () => {
+    assert.deepEqual(act('open youtube'), { type: 'open_app', name: 'youtube' });
+    assert.equal(act('why is the build back to failing'), undefined);
+  });
+  it('searches for what was said, not for the word google', () => {
+    assert.deepEqual(act('search google for cats'), { type: 'web_search', query: 'cats' });
+    assert.deepEqual(act('google best pizza near me'), { type: 'web_search', query: 'best pizza near me' });
+  });
+});
+
 describe('the computer', () => {
   it('goes to the computer when asked to, and sends the rest of the sentence', () => {
     assert.deepEqual(parseVoiceCommand('on my computer open youtube', ctx), { kind: 'computer', text: 'open youtube' });

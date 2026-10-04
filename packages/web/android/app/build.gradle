@@ -42,6 +42,9 @@ dependencies {
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
+    // "Hey Escanor": speech recognition that runs on the phone (the voice model is downloaded once, when the person turns it on)
+    implementation 'com.alphacephei:vosk-android:0.3.47'
+    implementation 'net.java.dev.jna:jna:5.13.0@aar'
 }
 
 apply from: 'capacitor.build.gradle'

@@ -1,4 +1,4 @@
-import { Bell, ChatCircleText, Code, Desktop, Info, Laptop, LifebuoyIcon, Lock, PaintBrush, PlugsConnected, ShieldCheck, SignOut, UsersThree, Wallet } from '@phosphor-icons/react';
+import { Bell, ChatCircleText, Code, Desktop, Info, Laptop, LifebuoyIcon, Lock, PaintBrush, PlugsConnected, ShieldCheck, SignOut, UsersThree, Wallet, Waveform } from '@phosphor-icons/react';
 import { useState } from 'react';
 import { describeUsage } from '@remote-harness/shared/escanor';
 import { APP_VERSION } from '../../appInfo';
@@ -19,11 +19,12 @@ import { AboutPage, LegalDocPage, PrivacyPage } from './InfoPages';
 import NotificationsPage from './NotificationsPage';
 import { Avatar, ConfirmSheet, Group, Row } from './parts';
 import { AppearancePage, ChatDefaultsPage } from './PreferencePages';
+import VoicePage from './VoicePage';
 import { usePrefs } from './prefs';
 
 type Page =
   | 'root' | 'account' | 'usage' | 'billing' | 'workspace' | 'security' | 'delete' | 'data' | 'report' | 'help'
-  | 'notifications' | 'appearance' | 'chats' | 'developer' | 'privacy' | 'about'
+  | 'notifications' | 'appearance' | 'chats' | 'voice' | 'developer' | 'privacy' | 'about'
   | `doc:${string}`;
 
 /**
@@ -55,6 +56,7 @@ export default function SettingsView({ onGo }: { onGo: (to: 'computers' | 'machi
     case 'notifications': return <NotificationsPage onBack={back} />;
     case 'appearance': return <AppearancePage onBack={back} />;
     case 'chats': return <ChatDefaultsPage onBack={back} />;
+    case 'voice': return <VoicePage onBack={back} />;
     case 'developer': return <DeveloperPage onBack={back} onHelp={() => to('help')} />;
     case 'privacy': return <PrivacyPage onBack={back} onOpenDoc={doc('privacy')} onOpenData={() => to('data')} />;
     case 'about': return <AboutPage onBack={back} onOpenDoc={doc('about')} />;
@@ -86,6 +88,7 @@ export default function SettingsView({ onGo }: { onGo: (to: 'computers' | 'machi
           <Row icon={<Bell size={18} />} label="Notifications" onClick={() => to('notifications')} />
           <Row icon={<PaintBrush size={18} />} label="Appearance and feel" value={prefs.theme === 'system' ? 'Match phone' : prefs.theme === 'dark' ? undefined : prefs.theme === 'light' ? 'Light' : 'Pure black'} onClick={() => to('appearance')} />
           <Row icon={<ChatCircleText size={18} />} label="New chats" sub="Permissions, model and effort" onClick={() => to('chats')} />
+          <Row icon={<Waveform size={18} />} label="Voice and phone control" sub="Hey Escanor, calling, controlling your phone" onClick={() => to('voice')} />
         </Group>
 
         <Group title="Connected">

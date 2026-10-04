@@ -39,8 +39,12 @@ const DOG = new Set(['f', 'd', 'c', 'n', 't', 'T', 'w']);
 export type Frame = string[];
 
 class Pix {
+  readonly w: number;
+  readonly h: number;
   readonly cells: string[][];
-  constructor(readonly w: number, readonly h: number) {
+  constructor(w: number, h: number) {
+    this.w = w;
+    this.h = h;
     this.cells = Array.from({ length: h }, () => Array<string>(w).fill('.'));
   }
   px(x: number, y: number, c: string): this {

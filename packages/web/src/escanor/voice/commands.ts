@@ -11,8 +11,16 @@
 export type VoiceTab = 'assistant' | 'computers' | 'connections' | 'machines' | 'settings';
 export type SettingsScreen = 'wifi' | 'bluetooth' | 'display' | 'sound' | 'battery' | 'apps' | 'location';
 
+/** The buttons and gestures of the phone itself, done through Android's Accessibility permission. */
+export type ControlOp = 'home' | 'back' | 'recents' | 'notifications' | 'quick_settings' | 'lock' | 'screenshot' | 'scroll_up' | 'scroll_down';
+
 export type PhoneAction =
   | { type: 'open_app'; name: string }
+  | { type: 'open_url'; url: string }
+  | { type: 'control'; op: ControlOp }
+  | { type: 'tap_text'; text: string }
+  | { type: 'type_text'; text: string }
+  | { type: 'read_screen' }
   | { type: 'call'; who: string }
   | { type: 'alarm'; hour: number; minute: number }
   | { type: 'timer'; seconds: number }
@@ -103,6 +111,26 @@ const tabOf = (name: string): VoiceTab | null => {
   return null;
 };
 
+/** "google dot com" -> "google.com": a speech recogniser writes the word, not the dot. */
+const spokenDots = (t: string): string => t.replace(/\s+dot\s+/g, '.');
+
+const CONTROL_WORDS: Array<[RegExp, ControlOp]> = [
+  [/^(?:go|take me|press|return|bring me)(?: back)?(?: to)?(?: the)? home(?: screen)?$|^home(?: screen)?$/, 'home'],
+  [/^(?:go|press) back$|^back$|^navigate back$/, 'back'],
+  [/^(?:show |open |press )?(?:the )?(?:recent apps|recents|app switcher|multitasking)$/, 'recents'],
+  [/^(?:show |open |pull down |check )?(?:the |my )?notifications?(?: shade| panel| drawer)?$/, 'notifications'],
+  [/^(?:show |open |pull down )?(?:the )?quick settings$/, 'quick_settings'],
+  [/^lock(?: the| my)?(?: phone| screen)?$|^turn off the screen$/, 'lock'],
+  [/^(?:take |grab )?(?:a )?screenshot$|^capture the screen$/, 'screenshot'],
+  [/^scroll down(?: a bit| more)?$|^page down$/, 'scroll_down'],
+  [/^scroll up(?: a bit| more)?$|^page up$/, 'scroll_up'],
+];
+
+export function parseControl(t: string): PhoneAction | null {
+  for (const [re, op] of CONTROL_WORDS) if (re.test(t)) return { type: 'control', op };
+  return null;
+}
+
 export function parseVoiceCommand(raw: string, ctx: VoiceContext): VoiceCommand {
   const heard = stripWake(raw);
   const t = clean(heard);
@@ -137,8 +165,19 @@ export function parseVoiceCommand(raw: string, ctx: VoiceContext): VoiceCommand 
     const digits = call.replace(/[\s-]/g, '');
     return { kind: 'phone', action: { type: 'call', who: /^\+?\d{3,}$/.test(digits) ? digits : call } };
   }
+  // Using the phone itself: its buttons and what is on its screen (needs the Accessibility permission, which the action explains).
+  const control = parseControl(t);
+  if (control) return { kind: 'phone', action: control };
+  const tap = /^(?:tap|click|press|select|hit)(?: on)?(?: the)? (.+?)(?: button)?$/.exec(t)?.[1];
+  if (tap) return { kind: 'phone', action: { type: 'tap_text', text: tap } };
+  const typed = /^(?:type|write|enter)(?: in)? (.+)$/.exec(heard.trim().replace(/[.!?]+$/, ''))?.[1];
+  if (typed) return { kind: 'phone', action: { type: 'type_text', text: typed } };
+  if (/^(?:read|what(?:'s| is) on)(?: out)?(?: the| my)? screen(?: to me)?$|^what(?:'s| is) on my screen$/.test(t)) return { kind: 'phone', action: { type: 'read_screen' } };
+  const site = /^(?:open|go to|visit|take me to)(?: the)? ((?:[a-z0-9-]+\.)+[a-z]{2,})(?:\/\S*)?$/.exec(spokenDots(t));
+  if (site) return { kind: 'phone', action: { type: 'open_url', url: `https://${site[1]}` } };
+
   const search = /^(?:search(?: the web)?(?: for)?|google|look up) (.+)$/.exec(t)?.[1];
-  if (search) return { kind: 'phone', action: { type: 'web_search', query: search } };
+  if (search) return { kind: 'phone', action: { type: 'web_search', query: search.replace(/^(?:google|the web) (?:for )?/, '') || search } };
   const settings = /^open (wi-?fi|wi fi|bluetooth|display|screen|sound|battery|apps|location) settings$/.exec(t)?.[1];
   if (settings) return { kind: 'phone', action: { type: 'settings', screen: SETTINGS_SCREENS[settings] } };
 

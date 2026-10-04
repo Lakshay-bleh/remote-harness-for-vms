@@ -7,6 +7,7 @@ import { forSpeech } from './assistantAnswer';
 import { chatWithComputer } from './computerChat';
 import { deviceOrNull } from './device';
 import { ensureMic, listen, speak, stopSpeaking } from './speech';
+import { getVoicePrefs } from './voicePrefs';
 
 export type VoicePhase = 'idle' | 'listening' | 'thinking' | 'speaking';
 
@@ -77,6 +78,7 @@ export function useVoiceSession({ go, onAssistant }: { go: (tab: VoiceTab) => vo
       toComputer: (text) => chatWithComputer(computers[0], text),
       toAssistant: (text) => latest.current.onAssistant(text, abort.current?.signal ?? new AbortController().signal),
       go: (tab) => latest.current.go(tab),
+      phone: { directCalls: getVoicePrefs().directCalls },
     });
     if (!alive()) return 'cancelled';
     setReply(r);

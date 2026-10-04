@@ -5,7 +5,12 @@ import { haptic } from '../settings/prefs';
 import { Logo, Spinner, useKeyboardOpen } from '../ui';
 import type { VoiceTab } from './commands';
 import { loadOrb, movedFar, orbCss, ORB_SIZE, posFromPoint, saveOrb, type OrbPos, type View } from './orbPosition';
+import { App as CapApp } from '@capacitor/app';
+import { isNative } from '../../api';
+import { deviceOrNull } from './device';
 import { useVoiceSession, type VoicePhase } from './useVoiceSession';
+import { getVoicePrefs } from './voicePrefs';
+import { wake } from './wakeWord';
 
 export interface VoiceApi {
   /** Open voice mode and start listening. */
@@ -85,6 +90,25 @@ export default function VoiceHost({ go, onAssistant, children }: { go: (tab: Voi
   }, [talk]);
 
   useHardwareBack(open, close, 3);
+
+  // "Hey Escanor": while voice mode has the microphone the background listener steps aside, and comes back when it is closed.
+  useEffect(() => {
+    void wake.pause(open);
+  }, [open]);
+  // Heard while the app is open, or the "Hey! I'm listening" notification was tapped (escanor://voice): open voice mode.
+  const showRef = useRef<() => void>(() => undefined);
+  showRef.current = show;
+  useEffect(() => {
+    const off = wake.onHeard(() => showRef.current());
+    let sub: Promise<{ remove: () => Promise<void> }> | null = null;
+    if (isNative()) sub = CapApp.addListener('appUrlOpen', ({ url }) => /^escanor:\/\/voice/.test(url) && showRef.current());
+    // The service ends with the phone's own housekeeping now and then: bring it back if the person left it switched on.
+    if (isNative() && getVoicePrefs().wakeWord) void wake.status().then((s) => { if (s?.modelReady && !s.running && s.micAllowed) void wake.start().catch(() => undefined); });
+    return () => {
+      off();
+      void sub?.then((x) => x.remove());
+    };
+  }, []);
   useEffect(() => () => void (live.current = false), []);
 
   const api = useMemo<VoiceApi>(() => ({ open: show, close }), [show, close]);
@@ -181,6 +205,9 @@ export default function VoiceHost({ go, onAssistant, children }: { go: (tab: Voi
                 {v.reply.ok ? <CheckCircle size={20} weight="fill" className="mt-0.5 shrink-0 text-success" aria-hidden /> : <WarningCircle size={20} weight="fill" className="mt-0.5 shrink-0 text-warning" aria-hidden />}
                 <p className="whitespace-pre-wrap text-[14px] leading-snug text-body-strong">{v.reply.say}</p>
               </div>
+            )}
+            {v.reply?.needs === 'accessibility' && (
+              <button type="button" onClick={() => void deviceOrNull()?.openControlSettings()} className="rounded-pill bg-primary px-5 py-2.5 text-sm font-medium text-on-primary transition active:scale-95">Turn on phone control</button>
             )}
             {!v.heard && !v.reply && <p className="max-w-xs text-[13px] leading-relaxed text-muted">Try “open YouTube”, “set a timer for 5 minutes”, “call Mom”, “on my computer, show my containers”, or ask anything.</p>}
           </div>

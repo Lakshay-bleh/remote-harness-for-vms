@@ -26,6 +26,15 @@ import com.getcapacitor.annotation.PermissionCallback;
 import com.getcapacitor.PermissionState;
 
 
+import android.os.Build;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -35,13 +44,17 @@ import java.util.List;
  * What the Escanor voice assistant can do on this phone: open any installed app, open a link, dial, set alarms and timers, the
  * torch, the volume and the system settings screens.
  *
- * Deliberately only things that are safe to get wrong. Dialing OPENS THE DIALER with the number filled in (it never places the
- * call by itself, so a misheard word cannot ring anyone), and the contacts are read only when the person asks to call someone by
- * name, behind Android's own permission prompt.
+ * Dialing opens the dialer with the number filled in unless the person has turned on "call directly" (and allowed Android's call
+ * permission), in which case the call is placed. The contacts are read only when the person asks to call someone by name, behind
+ * Android's own permission prompt. Controlling the phone (home, back, scroll, tap, type) works only while the person has switched
+ * Escanor on in Accessibility settings (EscanorControlService).
  */
 @CapacitorPlugin(
     name = "EscanorDevice",
-    permissions = { @Permission(strings = { Manifest.permission.READ_CONTACTS }, alias = "contacts") }
+    permissions = {
+        @Permission(strings = { Manifest.permission.READ_CONTACTS }, alias = "contacts"),
+        @Permission(strings = { Manifest.permission.CALL_PHONE }, alias = "call")
+    }
 )
 public class EscanorDevicePlugin extends Plugin {
 
@@ -111,6 +124,67 @@ public class EscanorDevicePlugin extends Plugin {
 
     // ------------------------------------------------------------------ calls
 
+    private boolean callAllowed() {
+        return getPermissionState("call") == PermissionState.GRANTED;
+    }
+
+    /** Ring the number if the call permission is there and `direct` was asked for; otherwise open the dialer with it filled in. */
+    private JSObject placeOrDial(String number, boolean direct, String label) {
+        Intent intent = direct && callAllowed() ? new Intent(Intent.ACTION_CALL, Uri.parse("tel:" + Uri.encode(number))) : new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(number)));
+        boolean rang = direct && callAllowed();
+        if (!start(intent)) return result(false, "This phone cannot make calls.");
+        JSObject out = result(true, label);
+        out.put("direct", rang);
+        return out;
+    }
+
+    /** Is Android's call permission granted? (So the settings page can show whether "call directly" will really ring.) */
+    @PluginMethod
+    public void callStatus(PluginCall call) {
+        JSObject out = new JSObject();
+        out.put("granted", callAllowed());
+        call.resolve(out);
+    }
+
+    @PluginMethod
+    public void requestCallPermission(PluginCall call) {
+        if (callAllowed()) {
+            call.resolve(result(true, null));
+            return;
+        }
+        requestPermissionForAlias("call", call, "callPermissionResult");
+    }
+
+    @PermissionCallback
+    private void callPermissionResult(PluginCall call) {
+        call.resolve(callAllowed() ? result(true, null) : result(false, "Calling directly needs the Phone permission. In Android Settings, open Apps, Escanor, Permissions, and allow Phone."));
+    }
+
+    /** A number, called directly when asked to and allowed (else the dialer). */
+    @PluginMethod
+    public void callNumber(PluginCall call) {
+        String number = call.getString("number", "");
+        if (number == null || !number.matches("\\+?[0-9]{3,20}")) {
+            call.resolve(result(false, "That is not a phone number."));
+            return;
+        }
+        boolean direct = Boolean.TRUE.equals(call.getBoolean("direct", false));
+        if (direct && !callAllowed()) {
+            requestPermissionForAlias("call", call, "callNumberPermission");
+            return;
+        }
+        call.resolve(placeOrDial(number, direct, null));
+    }
+
+    @PermissionCallback
+    private void callNumberPermission(PluginCall call) {
+        // allowed: ring; refused: open the dialer instead, and say why it did not ring
+        String number = call.getString("number", "");
+        JSObject out = placeOrDial(number, true, null);
+        if (!callAllowed() && out.getBoolean("ok", false)) out.put("message", "I opened the dialer: calling directly needs the Phone permission.");
+        call.resolve(out);
+    }
+
     /** Opens the dialer with the number typed in. The person presses call; a misheard word never rings anyone. */
     @PluginMethod
     public void dial(PluginCall call) {
@@ -174,7 +248,8 @@ public class EscanorDevicePlugin extends Plugin {
             call.resolve(out);
             return;
         }
-        call.resolve(start(new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(numbers.get(0))))) ? result(true, labels.get(0)) : result(false, "This phone cannot make calls."));
+        boolean direct = Boolean.TRUE.equals(call.getBoolean("direct", false)) && callAllowed();
+        call.resolve(placeOrDial(numbers.get(0), direct, labels.get(0)));
     }
 
     // ------------------------------------------------------------------ clock
@@ -259,5 +334,218 @@ public class EscanorDevicePlugin extends Plugin {
         else if ("location".equals(screen)) action = Settings.ACTION_LOCATION_SOURCE_SETTINGS;
         else action = Settings.ACTION_SETTINGS;
         call.resolve(start(new Intent(action)) ? result(true, null) : result(false, "That settings screen could not be opened."));
+    }
+
+    // ------------------------------------------------------------------ controlling the phone (Accessibility)
+
+    private static final String NEEDS_CONTROL = "Controlling your phone needs Escanor turned on in Accessibility settings.";
+
+    /** Has the person turned on Escanor in Accessibility settings? */
+    @PluginMethod
+    public void controlStatus(PluginCall call) {
+        JSObject out = new JSObject();
+        out.put("enabled", EscanorControlService.isRunning());
+        call.resolve(out);
+    }
+
+    /** Open Android's Accessibility settings, where the person switches Escanor on. Android allows nothing else: no app can do this for them. */
+    @PluginMethod
+    public void openControlSettings(PluginCall call) {
+        call.resolve(start(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) ? result(true, null) : result(false, "Open Android Settings, then Accessibility, and turn on Escanor."));
+    }
+
+    /**
+     * One thing done on the phone as a person would: {action: "global", name}, {action: "click", text}, {action: "scroll", direction},
+     * {action: "type", text}, {action: "read"}. Says so plainly when the person has not turned the permission on.
+     */
+    @PluginMethod
+    public void control(PluginCall call) {
+        EscanorControlService svc = EscanorControlService.get();
+        if (svc == null) {
+            JSObject out = result(false, NEEDS_CONTROL);
+            out.put("needs", "accessibility");
+            call.resolve(out);
+            return;
+        }
+        String action = call.getString("action", "");
+        boolean ok;
+        switch (action == null ? "" : action) {
+            case "global":
+                ok = svc.global(call.getString("name", ""));
+                call.resolve(ok ? result(true, null) : result(false, "This phone could not do that."));
+                return;
+            case "click":
+                ok = svc.clickText(call.getString("text", ""));
+                call.resolve(ok ? result(true, null) : result(false, "I could not find “" + call.getString("text", "") + "” on the screen."));
+                return;
+            case "scroll":
+                ok = svc.scroll(!"up".equals(call.getString("direction", "down")));
+                call.resolve(ok ? result(true, null) : result(false, "There is nothing to scroll here."));
+                return;
+            case "type":
+                ok = svc.typeText(call.getString("text", ""));
+                call.resolve(ok ? result(true, null) : result(false, "There is no text box on the screen to type into."));
+                return;
+            case "read": {
+                String words = svc.readScreen(1200);
+                call.resolve(words.isEmpty() ? result(false, "I could not read anything on this screen.") : result(true, words));
+                return;
+            }
+            default:
+                call.resolve(result(false, "I do not know how to do that."));
+        }
+    }
+
+    // ------------------------------------------------------------------ "Hey Escanor"
+
+    private static volatile EscanorDevicePlugin live;
+    private static volatile boolean downloading = false;
+    private static final String MODEL_URL = "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip";
+
+    @Override
+    public void load() {
+        live = this;
+    }
+
+    @Override
+    protected void handleOnDestroy() {
+        if (live == this) live = null;
+    }
+
+    /** Tell the app, if it is open and showing, that the phrase was heard. False when nothing is there to hear it (the service then raises a notification). */
+    static boolean notifyWake() {
+        EscanorDevicePlugin p = live;
+        if (p == null || !p.hasListeners("wake") || p.getActivity() == null || !p.getActivity().hasWindowFocus()) return false;
+        p.notifyListeners("wake", new JSObject(), true);
+        return true;
+    }
+
+    @PluginMethod
+    public void wakeStatus(PluginCall call) {
+        JSObject out = new JSObject();
+        out.put("running", WakeWordService.isRunning());
+        out.put("modelReady", WakeWordService.modelReady(getContext()));
+        out.put("downloading", downloading);
+        out.put("micAllowed", getContext().checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED);
+        call.resolve(out);
+    }
+
+    /** Download the small speech model (about 40 MB) once, over https, with progress events. */
+    @PluginMethod
+    public void wakeDownloadModel(final PluginCall call) {
+        if (WakeWordService.modelReady(getContext())) {
+            call.resolve(result(true, null));
+            return;
+        }
+        if (downloading) {
+            call.resolve(result(false, "It is already downloading."));
+            return;
+        }
+        downloading = true;
+        final Context ctx = getContext().getApplicationContext();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                File tmp = new File(ctx.getCacheDir(), "wake-model.zip");
+                try {
+                    HttpURLConnection c = (HttpURLConnection) new URL(MODEL_URL).openConnection();
+                    c.setConnectTimeout(15000);
+                    c.setReadTimeout(30000);
+                    long total = c.getContentLengthLong();
+                    long got = 0;
+                    int lastPct = -1;
+                    try (InputStream in = c.getInputStream(); FileOutputStream out = new FileOutputStream(tmp)) {
+                        byte[] buf = new byte[64 * 1024];
+                        int n;
+                        while ((n = in.read(buf)) > 0) {
+                            out.write(buf, 0, n);
+                            got += n;
+                            int pct = total > 0 ? (int) (got * 90 / total) : 0; // the last tenth is unpacking
+                            if (pct != lastPct) {
+                                lastPct = pct;
+                                JSObject p = new JSObject();
+                                p.put("percent", pct);
+                                notifyListeners("wakeModelProgress", p);
+                            }
+                        }
+                    }
+                    File dir = ctx.getFilesDir();
+                    String root = dir.getCanonicalPath() + File.separator;
+                    try (ZipInputStream zin = new ZipInputStream(new java.io.FileInputStream(tmp))) {
+                        ZipEntry e;
+                        byte[] buf = new byte[64 * 1024];
+                        while ((e = zin.getNextEntry()) != null) {
+                            File target = new File(dir, e.getName());
+                            if (!target.getCanonicalPath().startsWith(root)) throw new SecurityException("bad zip entry");
+                            if (e.isDirectory()) {
+                                target.mkdirs();
+                                continue;
+                            }
+                            target.getParentFile().mkdirs();
+                            try (FileOutputStream out = new FileOutputStream(target)) {
+                                int n;
+                                while ((n = zin.read(buf)) > 0) out.write(buf, 0, n);
+                            }
+                        }
+                    }
+                    JSObject p = new JSObject();
+                    p.put("percent", 100);
+                    notifyListeners("wakeModelProgress", p);
+                    call.resolve(WakeWordService.modelReady(ctx) ? result(true, null) : result(false, "The voice model did not unpack. Try again."));
+                } catch (Exception e) {
+                    call.resolve(result(false, "Could not download the voice model. Check your connection and try again."));
+                } finally {
+                    downloading = false;
+                    tmp.delete();
+                }
+            }
+        }, "escanor-wake-download").start();
+    }
+
+    @PluginMethod
+    public void wakeStart(PluginCall call) {
+        if (!WakeWordService.modelReady(getContext())) {
+            call.resolve(result(false, "The voice model is not downloaded yet."));
+            return;
+        }
+        if (getContext().checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            call.resolve(result(false, "Allow the microphone for Escanor first (Android Settings, Apps, Escanor, Permissions)."));
+            return;
+        }
+        Intent i = new Intent(getContext(), WakeWordService.class);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) getContext().startForegroundService(i);
+            else getContext().startService(i);
+            call.resolve(result(true, null));
+        } catch (Exception e) {
+            call.resolve(result(false, "Android would not let Escanor listen in the background. Open the app and try again."));
+        }
+    }
+
+    @PluginMethod
+    public void wakeStop(PluginCall call) {
+        getContext().stopService(new Intent(getContext(), WakeWordService.class));
+        call.resolve(result(true, null));
+    }
+
+    /** Voice mode is using the microphone: stop listening for the phrase until it is done. */
+    @PluginMethod
+    public void wakePause(PluginCall call) {
+        WakeWordService.pause(Boolean.TRUE.equals(call.getBoolean("paused", true)));
+        call.resolve(result(true, null));
+    }
+
+    @PluginMethod
+    public void wakeDeleteModel(PluginCall call) {
+        getContext().stopService(new Intent(getContext(), WakeWordService.class));
+        File dir = WakeWordService.modelDir(getContext());
+        deleteTree(dir);
+        call.resolve(result(true, null));
+    }
+
+    private static void deleteTree(File f) {
+        File[] kids = f.listFiles();
+        if (kids != null) for (File k : kids) deleteTree(k);
+        f.delete();
     }
 }
