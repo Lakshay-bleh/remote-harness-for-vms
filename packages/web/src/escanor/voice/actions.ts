@@ -120,8 +120,10 @@ export async function runPhoneAction(action: PhoneAction, dev: DevicePlugin | nu
         if (site) return outcome(await dev.openUrl({ url: site }), `Opening ${site.replace(/^https:\/\/(www\.)?/, '')}.`);
         return { ok: false, say: `I couldn’t find an app called ${action.name} on this phone.` };
       }
+      case 'open_package':
+        return outcome(await dev.launchPackage({ package: action.package }), `Opening ${action.label}.`);
       case 'open_url':
-        return outcome(await dev.openUrl({ url: action.url }), `Opening ${action.url.replace(/^https:\/\/(www\.)?/, '')}.`);
+        return outcome(await dev.openUrl({ url: action.url }), `Opening ${action.url.replace(/^https:\/\/(www\.)?/, '').replace(/\/.*$/, '')}.`);
       case 'call': {
         const direct = options.directCalls !== false; // on unless the person turned it off; the phone still needs Android's call permission
         const placed = (r: PluginResult, who: string): ActionOutcome => (!r.ok ? { ok: false, say: r.message || TROUBLE } : r.direct ? { ok: true, say: `Calling ${who}.` } : { ok: true, say: `Opening the dialer with ${who}. Press call to ring.${r.message && r.message !== who ? ` ${r.message}` : ''}` });

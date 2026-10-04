@@ -6,6 +6,7 @@ import type { VoiceTab } from './commands';
 import { forSpeech } from './assistantAnswer';
 import { chatWithComputer } from './computerChat';
 import { deviceOrNull } from './device';
+import { resolveOnServer } from './resolve';
 import { ensureMic, listen, speak, stopSpeaking } from './speech';
 import { getVoicePrefs } from './voicePrefs';
 
@@ -79,6 +80,7 @@ export function useVoiceSession({ go, onAssistant }: { go: (tab: VoiceTab) => vo
       toAssistant: (text) => latest.current.onAssistant(text, abort.current?.signal ?? new AbortController().signal),
       go: (tab) => latest.current.go(tab),
       phone: { directCalls: getVoicePrefs().directCalls },
+      resolve: (text) => resolveOnServer(text, deviceOrNull()),
     });
     if (!alive()) return 'cancelled';
     setReply(r);
