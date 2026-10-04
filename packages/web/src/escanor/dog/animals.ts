@@ -12,15 +12,17 @@ export interface AnimalInfo {
   /** What it is. */
   kind: string;
   blurb: string;
+  /** What it says when tapped. */
+  says: string[];
 }
 
 export const ANIMALS: readonly AnimalInfo[] = [
-  { id: 'dog', name: 'Shiro', kind: 'Dog', blurb: 'Chases balls and digs up bones.' },
-  { id: 'unicorn', name: 'Stacy', kind: 'Unicorn', blurb: 'Sparkly, with a rainbow mane.' },
-  { id: 'pigeon', name: 'Riti', kind: 'Pigeon', blurb: 'Bobs along and pecks at crumbs.' },
-  { id: 'hamster', name: 'Bubbly', kind: 'Hamster', blurb: 'Runs on a wheel, cheeks full of seeds.' },
-  { id: 'cat', name: 'Tom', kind: 'Cat', blurb: 'Curious, with whiskers and a long tail.' },
-  { id: 'elephant', name: 'Jumbo', kind: 'Elephant', blurb: 'Big ears, a gentle trunk.' },
+  { id: 'dog', name: 'Shiro', kind: 'Dog', blurb: 'Chases balls and digs up bones.', says: ['Woof!', 'Woof woof!', 'Arf!', 'Bork!'] },
+  { id: 'unicorn', name: 'Stacy', kind: 'Unicorn', blurb: 'Sparkly, with a rainbow mane.', says: ['Neigh!', '✨ Sparkle!', 'Hehe~', 'Neeeigh!'] },
+  { id: 'pigeon', name: 'Riti', kind: 'Pigeon', blurb: 'Bobs along and pecks at crumbs.', says: ['Coo coo!', 'Prrr-coo!', 'Coo!', 'Flap flap!'] },
+  { id: 'hamster', name: 'Bubbly', kind: 'Hamster', blurb: 'Runs on a wheel, cheeks full of seeds.', says: ['Squeak!', 'Squeak squeak!', 'Nom nom!', 'Eek!'] },
+  { id: 'cat', name: 'Tom', kind: 'Cat', blurb: 'Curious, with whiskers and a long tail.', says: ['Meow!', 'Mrrow?', 'Purrr…', 'Mew!'] },
+  { id: 'elephant', name: 'Jumbo', kind: 'Elephant', blurb: 'Big ears, a gentle trunk.', says: ['Toot!', 'Pawoo!', 'Brrrap!', 'Splash!'] },
 ];
 
 export const DEFAULT_ANIMAL: Animal = 'dog';

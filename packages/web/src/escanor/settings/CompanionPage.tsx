@@ -1,16 +1,17 @@
 import { CheckCircle } from '@phosphor-icons/react';
 import { useState } from 'react';
 import { ANIMALS, animalInfo, type Animal } from '../dog/animals';
-import { setCompanion, useCompanion } from '../dog/companion';
+import { setCompanion, setCompanionSound, useCompanion, useCompanionSound } from '../dog/companion';
 import PixelDog from '../dog/PixelDog';
 import { SCENES, type Scene } from '../dog/sprites';
 import { Page } from './parts';
 
-const SCENE_LABEL: Record<Scene, string> = { run: 'Loading', sniff: 'Looking up', dig: 'Digging', sit: 'All clear', sleep: 'Waiting', lick: 'Say something' };
+const SCENE_LABEL: Record<Scene, string> = { run: 'Loading', sniff: 'Looking up', dig: 'Digging', sit: 'All clear', sleep: 'Waiting', lick: 'Say something', home: 'At home', react: 'When tapped' };
 
 /** Pick the animal that keeps you company on every empty and loading screen. */
 export default function CompanionPage({ onBack }: { onBack: () => void }) {
   const chosen = useCompanion();
+  const sound = useCompanionSound();
   const [scene, setScene] = useState<Scene>('sit');
   const info = animalInfo(chosen);
 
@@ -20,6 +21,7 @@ export default function CompanionPage({ onBack }: { onBack: () => void }) {
         <div className="flex justify-center"><PixelDog animal={chosen} scene={scene} scale={7} /></div>
         <h2 className="mt-2 font-display text-2xl text-ink">{info.name} the {info.kind.toLowerCase()}</h2>
         <p className="text-[13.5px] text-muted">{info.blurb}</p>
+        <p className="mt-1 text-[12.5px] text-muted-soft">Tap {info.name} to say hello.</p>
         <div className="mt-3 flex flex-wrap justify-center gap-1.5" role="group" aria-label="Scene to preview">
           {SCENES.map((s) => (
             <button key={s} type="button" aria-pressed={scene === s} onClick={() => setScene(s)} className={`rounded-pill border px-3 py-1 text-[12.5px] ${scene === s ? 'border-primary bg-primary/10 text-primary' : 'border-hairline text-body'}`}>{SCENE_LABEL[s]}</button>
@@ -42,6 +44,10 @@ export default function CompanionPage({ onBack }: { onBack: () => void }) {
           );
         })}
       </ul>
+      <button type="button" role="switch" aria-checked={sound} onClick={() => setCompanionSound(!sound)} className="flex w-full items-center justify-between rounded-xl border border-hairline bg-surface-card px-4 py-3 text-left">
+        <span><span className="block text-[15px] text-ink">Sounds</span><span className="block text-[12.5px] text-muted">Woof, meow, toot and the rest when you tap them</span></span>
+        <span aria-hidden className={`flex h-6 w-11 items-center rounded-full p-0.5 transition ${sound ? 'bg-primary' : 'bg-hairline'}`}><span className={`h-5 w-5 rounded-full bg-white transition ${sound ? 'translate-x-5' : ''}`} /></span>
+      </button>
       <p className="px-1 text-[12px] leading-relaxed text-muted">Your companion shows on loading and empty screens on this phone. It does not change how anything works.</p>
     </Page>
   );

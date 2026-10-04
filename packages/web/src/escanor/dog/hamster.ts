@@ -4,7 +4,7 @@
  */
 import { GROUND_Y, H, Pix, W, type Frame } from './pix.ts';
 
-type Scene = 'run' | 'sniff' | 'dig' | 'sit' | 'sleep' | 'lick';
+type Scene = 'run' | 'sniff' | 'dig' | 'sit' | 'sleep' | 'lick' | 'home' | 'react';
 
 const HEART = ['.h.h.', 'hhhhh', '.hhh.', '..h..'];
 const Z = ['zzz', '..z', '.z.', 'z..', 'zzz'];
@@ -279,7 +279,113 @@ function lick(): Frame[] {
   return frames;
 }
 
+// -------------------------------------------------------------------------------------------------------------------- react
+
+/** Tapped: it stuffs its cheeks, hops, and squeaks, spitting seeds, with its ears going. */
+function react(): Frame[] {
+  const beats = [
+    { hop: 0, cheek: 2.6, open: false }, { hop: 1, cheek: 3.4, open: false }, { hop: 1, cheek: 4, open: true },
+    { hop: 0, cheek: 4, open: true }, { hop: 1, cheek: 3.6, open: true }, { hop: 0, cheek: 3, open: false },
+    { hop: 1, cheek: 2.8, open: true }, { hop: 0, cheek: 2.6, open: false },
+  ];
+  return beats.map(({ hop, cheek, open }, i) => {
+    const p = new Pix();
+    const y = -hop;
+    p.oval(16, 14.5 + y, 7, 4.6, 'f');
+    p.oval(16, 15.5 + y, 4.5, 3.4, 'c');
+    p.rect(10, 18, 4, 1, 't');
+    p.rect(18, 18, 4, 1, 't');
+    p.oval(16, 8 + y, 6, 5, 'f');
+    p.oval(11, 10 + y, cheek, cheek - 0.2, 'c');
+    p.oval(21, 10 + y, cheek, cheek - 0.2, 'c');
+    p.rect(10, 3 + y + (i % 2), 3, 3, 'f', true);
+    p.rect(19, 3 + y + ((i + 1) % 2), 3, 3, 'f', true);
+    p.px(11, 4 + y + (i % 2), 't');
+    p.px(20, 4 + y + ((i + 1) % 2), 't');
+    p.rect(12, 7 + y, 2, 2, 'n');
+    p.rect(18, 7 + y, 2, 2, 'n');
+    p.px(12, 7 + y, 'w');
+    p.px(18, 7 + y, 'w');
+    if (open) (p.rect(15, 10 + y, 3, 2, 'n'), p.px(16, 11 + y, 't')); // a squeak
+    else (p.rect(15, 10 + y, 2, 1, 't'), p.px(16, 11 + y, 'n'));
+    p.rect(11, 13 + y, 2, 2, 'c');
+    p.rect(19, 13 + y, 2, 2, 'c');
+    p.outline();
+    ground(p);
+    // seeds spat out of its cheeks, and the "!" of a squeak
+    if (open) for (let k = 0; k < 3; k++) p.px(24 + k * 3 + (i % 2), 6 + k * 3 - (i % 3), k % 2 ? 'x' : 'X');
+    if (open) p.stamp(27, 2, ['h', 'h', 'h', '.', 'h']);
+    return p.frame();
+  });
+}
+
+// ---------------------------------------------------------------------------------------------------------------------- home
+
+/** At home: its cage, with a wheel that turns, a water bottle, a dish of seeds and bedding. It nibbles a seed by the dish. */
+function home(): Frame[] {
+  const frames: Frame[] = [];
+  for (let i = 0; i < 8; i++) {
+    const p = new Pix();
+    // the tray and the bedding
+    p.rect(3, 18, 30, 2, 'm');
+    for (let x = 4; x < 32; x++) p.px(x, 18, (x * 5 + 2) % 7 < 3 ? 'Q' : 'W');
+    // the wheel on the right, spokes turning
+    const cx = 25;
+    const cy = 11;
+    for (let a = 0; a < 72; a++) {
+      const t = (a / 72) * Math.PI * 2;
+      p.px(cx + Math.cos(t) * 6, cy + Math.sin(t) * 6, 'I');
+    }
+    for (let k = 0; k < 3; k++) {
+      const t = (k / 3) * Math.PI * 2 + (i / 8) * (Math.PI * 2 / 3);
+      p.line(cx, cy, cx + Math.cos(t) * 5.5, cy + Math.sin(t) * 5.5, 'g');
+    }
+    p.px(cx, cy, 'I');
+    p.line(cx, cy, cx - 3, 18, 'I');
+    p.line(cx, cy, cx + 3, 18, 'I');
+    // the dish with seeds
+    p.rect(5, 16, 5, 2, 'e');
+    for (const [x, y] of [[6, 15], [8, 15], [7, 14]] as const) p.px(x, y, 'x');
+    // the hamster by the dish, chewing a seed, cheeks pulsing
+    const t = new Pix();
+    const nib = i % 2;
+    t.oval(14, 14, 4, 3.4, 'f');
+    t.oval(14, 15, 2.6, 2, 'c');
+    t.oval(14, 10 + nib, 3.2, 2.8, 'f');
+    t.oval(11.5, 11 + nib, 1.8 + (i % 4 < 2 ? 0.4 : 0), 1.7, 'c');
+    t.oval(16.5, 11 + nib, 1.8 + (i % 4 < 2 ? 0.4 : 0), 1.7, 'c');
+    t.rect(11, 7 + nib, 2, 2, 'f', true);
+    t.rect(16, 7 + nib, 2, 2, 'f', true);
+    t.px(12, 8 + nib, 't');
+    t.px(17, 8 + nib, 't');
+    if (i === 3 || i === 7) t.rect(12, 10, 2, 1, 'n');
+    else (t.px(12, 10 + nib, 'n'), t.px(16, 10 + nib, 'n'));
+    t.px(14, 12 + nib, 't');
+    t.rect(13, 13, 2, 1, 'x');
+    t.rect(11, 16, 2, 1, 'c');
+    t.rect(16, 16, 2, 1, 'c');
+    t.outline();
+    p.stamp(0, 0, t.frame());
+    // the bottle hanging on the outside, on the left
+    p.rect(1, 6, 3, 9, 'a');
+    p.rect(1, 5, 3, 1, 'I');
+    p.px(2, 15, 'I');
+    p.px(2, 16, 'A');
+    p.px(2, 9 + (i % 3), 'w');
+    // the cage: a rail at the top, bars across the front (over everything), a handle
+    p.rect(3, 3, 30, 1, 'I');
+    p.rect(3, 2, 30, 1, 'i');
+    p.rect(14, 1, 8, 1, 'I');
+    for (let x = 6; x < 33; x += 4) for (let y = 4; y < 18; y++) p.px(x, y, y % 5 === 0 ? 'I' : 'i');
+    p.rect(3, 4, 1, 14, 'I');
+    p.rect(32, 4, 1, 14, 'I');
+    ground(p);
+    frames.push(p.frame());
+  }
+  return frames;
+}
+
 export function hamsterScene(scene: Scene): Frame[] {
-  return { run, sniff, dig, sit, sleep, lick }[scene]();
+  return { run, sniff, dig, sit, sleep, lick, home, react }[scene]();
 }
 export { H };

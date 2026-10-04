@@ -39,3 +39,31 @@ export function setCompanion(animal: Animal): void {
 export function useCompanion(): Animal {
   return useSyncExternalStore((cb) => (listeners.add(cb), () => void listeners.delete(cb)), () => current, () => DEFAULT_ANIMAL);
 }
+
+// ---- the sound it makes when tapped: on by default, one switch per device
+export const SOUND_KEY = 'escanor.companion.sound.v1';
+const soundListeners = new Set<() => void>();
+const readSound = (): boolean => {
+  try {
+    return localStorage.getItem(SOUND_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+};
+let soundOn = typeof localStorage === 'undefined' ? true : readSound();
+
+export const getCompanionSound = (): boolean => soundOn;
+
+export function setCompanionSound(on: boolean): void {
+  soundOn = on;
+  try {
+    localStorage.setItem(SOUND_KEY, on ? 'on' : 'off');
+  } catch {
+    // not saved, but it applies until the app is closed
+  }
+  soundListeners.forEach((l) => l());
+}
+
+export function useCompanionSound(): boolean {
+  return useSyncExternalStore((cb) => (soundListeners.add(cb), () => void soundListeners.delete(cb)), () => soundOn, () => true);
+}

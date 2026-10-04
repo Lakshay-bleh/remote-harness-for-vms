@@ -30,7 +30,7 @@ for (const animal of ANIMALS.map((a) => a.id)) describe(`the ${animal}`, () => {
       it('is drawn, outlined and not clipped at the edges', () => {
         for (const f of frames) {
           const body = f.join('');
-          assert.ok((body.match(/f/g) ?? []).length > 30, 'fur');
+          assert.ok((body.match(/f/g) ?? []).length > (scene === 'home' ? 12 : 30), 'fur');
           assert.ok((body.match(/o/g) ?? []).length > 20, 'outline');
           // the dog itself (outline pixels) never touches the edge of the picture, where it would be cut off
           for (const [y, row] of f.entries()) {
@@ -62,5 +62,39 @@ describe('the companions', () => {
     assert.equal(isAnimal('cat'), true);
     assert.equal(isAnimal('Cat'), false);
     assert.match(COMPANION_KEY, /companion/);
+  });
+});
+
+describe('how each one talks', () => {
+  it('says its own words when tapped, at least three different ones', () => {
+    const all = new Set<string>();
+    for (const a of ANIMALS) {
+      assert.ok(new Set(a.says).size >= 3, a.name);
+      for (const w of a.says) all.add(w);
+    }
+    assert.ok(all.size >= 20, 'every animal has its own words');
+    assert.ok(ANIMALS.find((a) => a.id === 'dog')!.says.includes('Woof!'));
+    assert.ok(ANIMALS.find((a) => a.id === 'cat')!.says.includes('Meow!'));
+  });
+  it('makes its own sound: a short call that is not the same as any other animal\'s', async () => {
+    const { VOICES, callLength } = await import('./sounds.ts');
+    const seen = new Set<string>();
+    for (const a of ANIMALS) {
+      const calls = VOICES[a.id];
+      assert.ok(calls.length >= 1);
+      for (const call of calls) {
+        assert.ok(callLength(call) >= 200 && callLength(call) <= 1500, `${a.id} call is ${callLength(call)}ms`);
+        for (const n of call) assert.ok(n.from > 50 && n.to > 50 && n.from < 6000 && n.to < 6000 && n.gain > 0 && n.gain <= 0.6 && n.dur > 0);
+      }
+      seen.add(JSON.stringify(calls));
+    }
+    assert.equal(seen.size, ANIMALS.length);
+  });
+  it('has a home of its own and a reaction, each well away from the other scenes', () => {
+    for (const a of ANIMALS) {
+      assert.ok(sceneFrames('react', a.id).frames.length >= 6, `${a.id} react`);
+      assert.ok(sceneFrames('home', a.id).frames.length >= 6, `${a.id} home`);
+      assert.notEqual(sceneFrames('home', a.id).frames[0].join(), sceneFrames('sit', a.id).frames[0].join(), `${a.id} home is not just sitting`);
+    }
   });
 });
