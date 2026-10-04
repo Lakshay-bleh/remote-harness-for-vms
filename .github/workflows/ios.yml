@@ -1,0 +1,63 @@
+# Builds the iPhone app for the simulator on a Mac runner and runs the web tests, so an iOS build can be checked without owning a Mac:
+# Actions → "iOS build" → Run workflow. It does not sign or publish anything (that needs an Apple developer account: docs/IOS.md).
+name: iOS build
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'packages/web/ios/**'
+      - 'packages/web/src/**'
+      - 'packages/web/package.json'
+      - '.github/workflows/ios.yml'
+
+jobs:
+  simulator:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Web tests
+        run: npm test -w @remote-harness/web
+
+      - name: Build the web app and copy it into the iOS project
+        working-directory: packages/web
+        run: |
+          npx vite build
+          npx cap sync ios
+
+      - name: Build for the iOS simulator
+        working-directory: packages/web/ios/App
+        run: |
+          xcodebuild build \
+            -project App.xcodeproj \
+            -scheme App \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee /tmp/xcodebuild.log | tail -40
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: Boot a simulator, install the app and take a screenshot
+        working-directory: packages/web/ios/App
+        run: |
+          xcodebuild build -project App.xcodeproj -scheme App -configuration Debug \
+            -destination 'platform=iOS Simulator,name=iPhone 16' -derivedDataPath build CODE_SIGNING_ALLOWED=NO | tail -5
+          xcrun simctl boot "iPhone 16" || true
+          xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/App.app
+          xcrun simctl launch booted io.visey.remoteharness
+          sleep 12
+          xcrun simctl io booted screenshot "$RUNNER_TEMP/launch.png"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-launch
+          path: ${{ runner.temp }}/launch.png

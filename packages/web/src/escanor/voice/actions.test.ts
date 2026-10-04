@@ -155,3 +155,50 @@ describe('using the phone itself', () => {
     assert.deepEqual(await runPhoneAction({ type: 'open_app', name: 'google' }, dev), { ok: true, say: 'Opening google.com in the browser.' });
   });
 });
+
+
+describe('calling by name', () => {
+  const book = [
+    { name: 'Tanishq USICT 2027', numbers: ['+919876500001'] },
+    { name: 'Aman Gupta', numbers: ['+919876500002'] },
+    { name: 'Amit Gupta', numbers: ['+919876500003'] },
+  ];
+  it('finds the contact however the recogniser spelled the name, and calls the number', async () => {
+    const calls: unknown[] = [];
+    const { dev } = fakePhone({ listContacts: async () => ({ ok: true, contacts: book }), callNumber: async (o) => (calls.push(o), { ok: true, direct: true }) });
+    for (const said of ['tanishq usic 2027', 'tanishq usict twenty twenty seven']) {
+      assert.deepEqual(await runPhoneAction({ type: 'call', who: said }, dev), { ok: true, say: 'Calling Tanishq USICT 2027.' }, said);
+    }
+    assert.deepEqual(calls[0], { number: '+919876500001', direct: true });
+  });
+  it('asks which one when two fit equally, instead of ringing the wrong person', async () => {
+    const { dev } = fakePhone({ listContacts: async () => ({ ok: true, contacts: book }) });
+    const r = await runPhoneAction({ type: 'call', who: 'gupta' }, dev);
+    assert.equal(r.ok, true);
+    assert.equal(r.ask, true);
+    assert.match(r.say, /Did you mean (Aman Gupta or Amit Gupta|Amit Gupta or Aman Gupta)\?/);
+  });
+  it('says so when nobody matches, and passes on a missing permission', async () => {
+    assert.deepEqual(await runPhoneAction({ type: 'call', who: 'zebra' }, fakePhone({ listContacts: async () => ({ ok: true, contacts: book }) }).dev), { ok: false, say: 'I couldn’t find zebra in your contacts.' });
+    assert.deepEqual(await runPhoneAction({ type: 'call', who: 'tanishq' }, fakePhone({ listContacts: async () => ({ ok: false, message: 'Allow Escanor to read your contacts so it can find who to call.' }) }).dev), { ok: false, say: 'Allow Escanor to read your contacts so it can find who to call.' });
+  });
+});
+
+
+describe('answering "Did you mean …?"', () => {
+  it('takes the next sentence as the answer: by name, or "the second one"', async () => {
+    const { handleUtterance } = await import('./assistant');
+    const calls: string[] = [];
+    const device = fakePhone({
+      listContacts: async () => ({ ok: true, contacts: [{ name: 'Aman Gupta', numbers: ['111'] }, { name: 'Amit Gupta', numbers: ['222'] }] }),
+      callNumber: async (o) => (calls.push(o.number), { ok: true, direct: true }),
+    }).dev;
+    const deps = { device, hasComputer: false, toComputer: async () => '', toAssistant: async () => undefined, go: () => undefined };
+    const asked = await handleUtterance('call gupta', deps);
+    assert.equal(asked.ask, true);
+    assert.equal((await handleUtterance('amit', deps)).say, 'Calling Amit Gupta.');
+    await handleUtterance('call gupta', deps);
+    assert.equal((await handleUtterance('the first one', deps)).say, 'Calling Aman Gupta.');
+    assert.deepEqual(calls, ['222', '111']);
+  });
+});

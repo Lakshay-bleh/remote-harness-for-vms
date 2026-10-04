@@ -10,8 +10,10 @@ export interface ComposerProps {
   placeholder: string;
   running?: boolean;
   disabled?: boolean;
-  /** `all`: photos, PDFs and text. `text`: text and code files only. `none`: no attach button. */
-  attach?: 'all' | 'text' | 'none';
+  /** `all`: photos, PDFs and text. `media`: photos and text, no PDFs. `text`: text and code files only. `none`: no attach button. */
+  attach?: 'all' | 'media' | 'text' | 'none';
+  /** Choices that belong to this chat (which machine, mode, model), in a row above the text. */
+  chips?: React.ReactNode;
   onSend: (text: string, attachments: Attachment[]) => void;
   onStop?: () => void;
   /** Reported above the box, in the chat's own error style. */
@@ -23,7 +25,7 @@ export interface ComposerProps {
  * never covers the send button. On the right: speak instead of typing, voice mode (a conversation by voice), or send. Attached files
  * show as chips above the text, with a picture for photos and a button to take any of them off.
  */
-export default function ChatComposer({ placeholder, running = false, disabled = false, attach = 'all', onSend, onStop, onProblem }: ComposerProps) {
+export default function ChatComposer({ placeholder, running = false, disabled = false, attach = 'all', chips, onSend, onStop, onProblem }: ComposerProps) {
   const [text, setText] = useState('');
   const [files, setFiles] = useState<Attachment[]>([]);
   const [menu, setMenu] = useState(false);
@@ -50,7 +52,7 @@ export default function ChatComposer({ placeholder, running = false, disabled = 
     problem(null);
     let current = files;
     for (const f of Array.from(list)) {
-      const why = canAdd(current, f, attach === 'text' ? 'text' : 'all');
+      const why = canAdd(current, f, attach === 'text' ? 'text' : attach === 'media' ? 'media' : 'all');
       if (why) { problem(why); continue; }
       setReading((n) => n + 1);
       try {
@@ -84,6 +86,7 @@ export default function ChatComposer({ placeholder, running = false, disabled = 
     <div className="relative mx-auto w-full max-w-3xl">
       {err && <p role="alert" className="mb-2 rounded-md border border-error/30 bg-error/10 px-3 py-2 text-[13px] text-error">{err}</p>}
       <form className="rounded-3xl border border-line-strong bg-surface-dark-soft transition focus-within:border-primary/60 focus-within:ring-4 focus-within:ring-primary/10" onSubmit={(e) => { e.preventDefault(); submit(); }}>
+        {chips && <div className="flex flex-wrap items-center gap-1.5 px-3 pt-3">{chips}</div>}
         {(files.length > 0 || reading > 0) && (
           <ul className="flex gap-2 overflow-x-auto px-3 pt-3 [scrollbar-width:none]" aria-label="Attached files">
             {files.map((a) => (
@@ -131,7 +134,7 @@ export default function ChatComposer({ placeholder, running = false, disabled = 
         <>
           <div className="fixed inset-0 z-10" onClick={() => setMenu(false)} aria-hidden />
           <div role="menu" aria-label="Attach" className="absolute bottom-full left-0 z-20 mb-2 w-56 overflow-hidden rounded-2xl border border-line-strong bg-surface-card py-1 shadow-elevated">
-            {attach === 'all' && (
+            {(attach === 'all' || attach === 'media') && (
               <>
                 <MenuItem icon={<ImageIcon size={20} />} label="Photos" onClick={() => gallery.current?.click()} />
                 <MenuItem icon={<Camera size={20} />} label="Take a photo" onClick={() => camera.current?.click()} />

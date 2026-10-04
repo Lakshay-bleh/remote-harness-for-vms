@@ -6,7 +6,7 @@ import { Logo, Spinner, useKeyboardOpen } from '../ui';
 import type { VoiceTab } from './commands';
 import { loadOrb, movedFar, orbCss, ORB_SIZE, posFromPoint, saveOrb, type OrbPos, type View } from './orbPosition';
 import { App as CapApp } from '@capacitor/app';
-import { isNative } from '../../api';
+import { isAndroid, isNative } from '../../api';
 import { deviceOrNull } from './device';
 import PhoneControlSetup from './PhoneControlSetup';
 import { useVoiceSession, type VoicePhase } from './useVoiceSession';
@@ -23,6 +23,8 @@ const VoiceContext = createContext<VoiceApi | null>(null);
 
 /** Open Escanor's voice from anywhere (the message boxes have a button for it). Null outside the signed-in app. */
 export const useVoiceMode = (): VoiceApi | null => useContext(VoiceContext);
+
+let launchHandled = false;
 
 const LABEL: Record<VoicePhase, string> = { idle: 'Tap the mic to talk', listening: 'Listening…', thinking: 'Working on it…', speaking: 'Speaking' };
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -107,8 +109,13 @@ export default function VoiceHost({ go, onAssistant, children }: { go: (tab: Voi
     const off = wake.onHeard(() => showRef.current());
     let sub: Promise<{ remove: () => Promise<void> }> | null = null;
     if (isNative()) sub = CapApp.addListener('appUrlOpen', ({ url }) => /^escanor:\/\/voice/.test(url) && showRef.current());
+    // Opened from a closed app by "Hey Escanor": Android hands over the address it started with, once.
+    if (isNative() && !launchHandled) {
+      launchHandled = true;
+      void CapApp.getLaunchUrl().then((r) => r?.url && /^escanor:\/\/voice/.test(r.url) && showRef.current()).catch(() => undefined);
+    }
     // The service ends with the phone's own housekeeping now and then: bring it back if the person left it switched on.
-    if (isNative() && getVoicePrefs().wakeWord) void wake.status().then((s) => { if (s?.modelReady && !s.running && s.micAllowed) void wake.start().catch(() => undefined); });
+    if (isAndroid() && getVoicePrefs().wakeWord) void wake.status().then((s) => { if (s?.modelReady && !s.running && s.micAllowed) void wake.start().catch(() => undefined); });
     return () => {
       off();
       void sub?.then((x) => x.remove());

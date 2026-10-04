@@ -3,6 +3,7 @@ import { SafeMarkdown } from './SafeMarkdown';
 import type { DisplayItem, Block, ToolItem, Todo } from '../groupMessages';
 import { useStore } from '../store';
 import { diffLines, diffStat } from '../diff';
+import { DogSpinner } from '../escanor/dog/DogState';
 
 // Session working directory, used to show paths relative to it like the CLI does.
 export const CwdContext = createContext<string>('');
@@ -391,8 +392,6 @@ function Thinking({ text }: { text: string }) {
 
 // ---------- spinner + todos ----------
 
-const SPINNER_FRAMES = ['·', '✢', '*', '✶', '✻', '✽'];
-const PINGPONG = [...SPINNER_FRAMES, ...[...SPINNER_FRAMES].reverse()];
 const VERBS = [
   'Accomplishing', 'Architecting', 'Brewing', 'Calculating', 'Cerebrating', 'Cogitating', 'Computing', 'Concocting',
   'Crafting', 'Deliberating', 'Elucidating', 'Finagling', 'Forging', 'Hatching', 'Ideating', 'Manifesting', 'Marinating',
@@ -401,17 +400,18 @@ const VERBS = [
 ];
 
 export function Spinner({ startedAt, thinking, task }: { startedAt: number; thinking: boolean; task?: string }) {
-  const [tick, setTick] = useState(0);
   const [verb] = useState(() => VERBS[Math.floor(Math.random() * VERBS.length)]);
+  // the elapsed time moves on every second
+  const [, setTick] = useState(0);
   useEffect(() => {
-    const t = setInterval(() => setTick((n) => n + 1), 120);
+    const t = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(t);
   }, []);
   const secs = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
   const status = [fmtDuration(secs * 1000), thinking ? 'thinking' : ''].filter(Boolean).join(' · ');
   return (
-    <div className={`mt-3 flex ${MONO} text-primary`}>
-      <span className="w-5 shrink-0 select-none">{PINGPONG[tick % PINGPONG.length]}</span>
+    <div className={`mt-3 flex items-center ${MONO} text-primary`}>
+      <span className="mr-2 shrink-0 select-none"><DogSpinner /></span>
       <span>
         {task ?? verb}…<span className="ml-1.5 text-muted-soft">({status})</span>
       </span>

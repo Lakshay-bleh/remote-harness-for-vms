@@ -1,7 +1,7 @@
 import type { AssistantCapabilities, AssistantConversation, AssistantMessages, AssistantStatus, AssistantUsage, MachineView } from '@remote-harness/shared/escanor';
 import { isNative } from '../api';
 import { escanorApiBase } from './config';
-import type { BillingPlan, BillingSub } from './account/billing';
+import type { BillingPlan, BillingSub, Cycle, Invoice } from './account/billing';
 import type { ApiAttachment } from './composer/attachments';
 import type { ConsentState } from './account/privacy';
 import type { ManagedHub } from './managed';
@@ -366,7 +366,9 @@ export const escanor = {
   // -- plan and billing
   billingPlans: () => request<{ plans: BillingPlan[] }>('/billing/plans', {}, { auth: false }).then((r) => r.plans),
   billingSubscription: () => request<BillingSub>('/billing/subscription'),
-  billingCheckout: (planId: string) => request<{ status?: string; message?: string | null; razorpay_key_id?: string; razorpay_subscription_id?: string; plan_id?: string }>('/billing/checkout', json({ plan_id: planId })),
+  billingCheckout: (planId: string, cycle: Cycle = 'monthly') => request<{ status?: string; message?: string | null; razorpay_key_id?: string; razorpay_subscription_id?: string; plan_id?: string }>('/billing/checkout', json({ plan_id: planId, cycle })),
+  billingChangePlan: (planId: string) => request<{ status: string; plan_id: string; scheduled_plan_id: string | null; effective: string }>('/billing/change-plan', json({ plan_id: planId })),
+  billingInvoices: () => request<{ invoices: Invoice[] }>('/billing/invoices').then((r) => r.invoices),
   billingVerify: (body: { razorpay_payment_id: string; razorpay_subscription_id: string; razorpay_signature: string }) => request<{ status: string; plan_id: string; plan_name: string }>('/billing/verify', json(body)),
   billingCancel: () => request<{ status: string; cancel_at_period_end: boolean }>('/billing/cancel', { method: 'POST' }),
 

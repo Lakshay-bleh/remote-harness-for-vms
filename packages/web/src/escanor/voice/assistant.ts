@@ -1,6 +1,7 @@
 import { explainFailure } from '../computer/errors';
 import { runPhoneAction, type DevicePlugin, type PhoneOptions } from './actions';
 import { parseVoiceCommand, type PhoneAction, type VoiceTab } from './commands';
+import { chooseContact } from './contacts';
 import { planToActions, type ServerPlan } from './serverPlan';
 
 export interface AssistantDeps {
@@ -19,13 +20,17 @@ export interface AssistantDeps {
    * Resolves null when it cannot be asked (signed out, offline); never throws.
    */
   resolve?(text: string): Promise<ServerPlan | null>;
+  /** Say something now, while work continues (the short acknowledgement before a task finishes). Resolves when it has been spoken. */
+  ack?(text: string): Promise<void>;
+  /** Show something on screen now, while work continues. */
+  interim?(text: string): void;
 }
 
 export interface Reply {
   ok: boolean;
   /** What to say out loud and show. */
   say: string;
-  kind?: 'phone' | 'computer' | 'assistant' | 'go' | 'stop';
+  kind?: 'phone' | 'computer' | 'assistant' | 'chat' | 'go' | 'stop';
   /** What the person has to turn on to make this work; voice mode shows a button for it. */
   needs?: 'accessibility' | 'controlBuild';
   /** The reply is a question: speak it, then listen for the answer. */
@@ -53,6 +58,16 @@ async function viaServer(text: string, d: AssistantDeps): Promise<Reply | null> 
   const plan = await d.resolve?.(text).catch(() => null);
   if (!plan) return null;
   if (plan.needs === 'clarify' && plan.say) return { ok: true, say: plan.say, kind: 'phone', ask: true };
+  // Small talk or a general question: the server's fast model already answered it.
+  if (plan.chat && plan.say) return { ok: true, say: plan.say, kind: 'chat' };
+  // A job for the full assistant: say so at once, and let it work while that is being said.
+  if (plan.delegate) {
+    const work = d.toAssistant(text);
+    d.interim?.(plan.say);
+    await Promise.race([d.ack?.(plan.say), work.then(() => undefined)]).catch(() => undefined);
+    const answer = await work;
+    return { ok: true, say: (typeof answer === 'string' && answer.trim()) || plan.say || 'Asking your Escanor assistant.', kind: 'assistant' };
+  }
   const { actions, skipped } = planToActions(plan);
   if (actions.length > 0) {
     const results: Array<{ ok: boolean; say: string }> = [];
@@ -66,8 +81,24 @@ async function viaServer(text: string, d: AssistantDeps): Promise<Reply | null> 
   return null;
 }
 
+/** Names offered by the last "Did you mean … ?", so the next sentence can answer it. Forgotten after 40 seconds. */
+let pendingChoice: { options: string[]; at: number } | null = null;
+const ORDINALS: Array<[RegExp, number]> = [[/\b(?:first|1st|one)\b/, 0], [/\b(?:second|2nd|two)\b/, 1], [/\b(?:third|3rd|three)\b/, 2]];
+
+/** If the person is answering a "Did you mean …?" (by name or "the second one"), the name they chose. */
+function answerToChoice(text: string): string | null {
+  const pending = pendingChoice;
+  pendingChoice = null;
+  if (!pending || Date.now() - pending.at > 40_000) return null;
+  const lower = text.toLowerCase();
+  for (const [re, i] of ORDINALS) if (re.test(lower) && pending.options[i]) return pending.options[i];
+  const c = chooseContact(text, pending.options.map((name) => ({ name, numbers: [] })));
+  return c.kind === 'one' ? c.contact.name : null;
+}
+
 export async function handleUtterance(text: string, d: AssistantDeps): Promise<Reply> {
-  const cmd = parseVoiceCommand(text, { hasComputer: d.hasComputer });
+  const chosen = answerToChoice(text);
+  const cmd = chosen ? ({ kind: 'phone', action: { type: 'call', who: chosen } } as const) : parseVoiceCommand(text, { hasComputer: d.hasComputer });
   try {
     switch (cmd.kind) {
       case 'empty':
@@ -76,6 +107,10 @@ export async function handleUtterance(text: string, d: AssistantDeps): Promise<R
         return { ok: true, say: 'Okay.', kind: 'stop' };
       case 'phone': {
         const done = { ...(await runPhoneAction(cmd.action, d.device, d.phone)), kind: 'phone' as const };
+        if (done.ask && cmd.action.type === 'call') {
+          const named = /^Did you mean (.+)\?$/.exec(done.say)?.[1];
+          if (named) pendingChoice = { options: named.split(/, | or /), at: Date.now() };
+        }
         // "open <name>" that the phone's own matching could not find: the server may know the app by another name.
         if (!done.ok && cmd.action.type === 'open_app') return (await viaServer(text, d)) ?? done;
         return done;

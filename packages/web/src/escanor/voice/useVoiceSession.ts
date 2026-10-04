@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { isNative } from '../../api';
+import { isIOS, isNative } from '../../api';
 import { loadComputers } from '../computer/storage';
 import { handleUtterance, type Reply } from './assistant';
 import type { VoiceTab } from './commands';
@@ -47,7 +47,7 @@ export function useVoiceSession({ go, onAssistant }: { go: (tab: VoiceTab) => vo
     if (mic !== 'granted') {
       setReply({
         ok: false,
-        say: mic === 'denied' ? 'I need the microphone. In Android Settings, open Apps, then Escanor, then Permissions, and allow the microphone.' : 'Voice needs the Escanor Android app, or a browser that can listen (Chrome or Safari).',
+        say: mic === 'denied' ? 'I need the microphone. ' + (isIOS() ? 'In iPhone Settings, open Escanor and allow the microphone.' : 'In Android Settings, open Apps, then Escanor, then Permissions, and allow the microphone.') + '' : 'Voice needs the Escanor phone app, or a browser that can listen (Chrome or Safari).',
       });
       return 'error';
     }
@@ -59,7 +59,7 @@ export function useVoiceSession({ go, onAssistant }: { go: (tab: VoiceTab) => vo
       said = await listen({ onPartial: (t) => alive() && setHeard(t), signal: abort.current.signal });
     } catch (e) {
       if (alive()) {
-        setReply({ ok: false, say: `I couldn’t hear you. ${e instanceof Error ? e.message : ''} ${isNative() ? 'Check the microphone permission in Android Settings, under Apps, Escanor.' : 'Allow the microphone for this page in your browser.'}`.replace(/\s+/g, ' ').trim() });
+        setReply({ ok: false, say: `I couldn’t hear you. ${e instanceof Error ? e.message : ''} ${isNative() ? (isIOS() ? 'Check the microphone permission in iPhone Settings, under Escanor.' : 'Check the microphone permission in Android Settings, under Apps, Escanor.') : 'Allow the microphone for this page in your browser.'}`.replace(/\s+/g, ' ').trim() });
         setPhase('idle');
       }
       return alive() ? 'error' : 'cancelled';
@@ -80,6 +80,8 @@ export function useVoiceSession({ go, onAssistant }: { go: (tab: VoiceTab) => vo
       toAssistant: (text) => latest.current.onAssistant(text, abort.current?.signal ?? new AbortController().signal),
       go: (tab) => latest.current.go(tab),
       phone: { directCalls: getVoicePrefs().directCalls },
+      ack: (t) => speak(forSpeech(t)),
+      interim: (t) => alive() && setReply({ ok: true, say: t }),
       resolve: (text) => resolveOnServer(text, deviceOrNull()),
     });
     if (!alive()) return 'cancelled';

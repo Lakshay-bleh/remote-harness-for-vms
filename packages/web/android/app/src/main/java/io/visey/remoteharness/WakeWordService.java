@@ -8,11 +8,8 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
-import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
-import android.os.VibrationEffect;
-import android.os.Vibrator;
 
 import androidx.core.app.NotificationCompat;
 
@@ -38,10 +35,13 @@ public class WakeWordService extends Service {
     static final String CHANNEL_LISTENING = "escanor_wake_listening";
     static final String CHANNEL_HEARD = "escanor_wake_heard";
     private static final int ID_LISTENING = 4101;
-    private static final int ID_HEARD = 4102;
 
     private static volatile boolean running = false;
-    private static volatile boolean paused = false;
+    /** The app has the microphone (voice mode is open). */
+    private static volatile boolean appHolds = false;
+    /** The phrase was just heard and the app has not taken over yet: stop listening, but only for a little while. */
+    private static volatile boolean heardHold = false;
+    private static final long HEARD_HOLD_MS = 25000;
 
     /**
      * Speech recognisers write "Escanor" as it sounds: "escaner", "is canon", "ex canner". A small word list (the phrases this
@@ -67,11 +67,20 @@ public class WakeWordService extends Service {
         return new File(modelDir(c), "am/final.mdl").exists();
     }
 
+    private static boolean paused() {
+        return appHolds || heardHold;
+    }
+
+    private static void apply() {
+        WakeWordService s = current;
+        if (s != null && s.speech != null) s.speech.setPause(paused());
+    }
+
     /** The app is using the microphone (voice mode): stop listening for the phrase until it is done. */
     static void pause(boolean p) {
-        paused = p;
-        WakeWordService s = current;
-        if (s != null && s.speech != null) s.speech.setPause(p);
+        appHolds = p;
+        if (p) heardHold = false; // the app has taken over: its own hold is the one that counts now
+        apply();
     }
 
     private static volatile WakeWordService current;
@@ -121,7 +130,7 @@ public class WakeWordService extends Service {
             model = new Model(modelDir(this).getAbsolutePath());
             Recognizer rec = new Recognizer(model, 16000.0f, GRAMMAR);
             speech = new SpeechService(rec, 16000.0f);
-            speech.setPause(paused);
+            speech.setPause(paused());
             speech.startListening(new RecognitionListener() {
                 @Override public void onPartialResult(String hypothesis) { check(hypothesis, "partial"); }
                 @Override public void onResult(String hypothesis) { check(hypothesis, "text"); }
@@ -135,7 +144,7 @@ public class WakeWordService extends Service {
     }
 
     private void check(String json, String field) {
-        if (paused) return;
+        if (paused()) return;
         try {
             String said = new JSONObject(json).optString(field, "").toLowerCase();
             if (said.isEmpty() || !HEARD.matcher(said).find()) return;
@@ -149,29 +158,15 @@ public class WakeWordService extends Service {
     }
 
     private void heard() {
-        pause(true); // the assistant needs the microphone now; the app resumes listening when it is done
-        Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
-        if (v != null) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) v.vibrate(VibrationEffect.createOneShot(60, VibrationEffect.DEFAULT_AMPLITUDE));
-            else v.vibrate(60);
-        }
-        // The app is open: it opens voice mode itself. Otherwise this notification does, straight into listening.
-        if (!EscanorDevicePlugin.notifyWake()) {
-            Intent open = new Intent(Intent.ACTION_VIEW, Uri.parse("escanor://voice")).setPackage(getPackageName()).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-            PendingIntent pi = PendingIntent.getActivity(this, 3, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-            Notification n = new NotificationCompat.Builder(this, CHANNEL_HEARD)
-                .setSmallIcon(R.drawable.ic_stat_escanor)
-                .setContentTitle("Hey! I’m listening")
-                .setContentText("Tap to talk to Escanor.")
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setCategory(NotificationCompat.CATEGORY_CALL)
-                .setFullScreenIntent(pi, true)
-                .setContentIntent(pi)
-                .setAutoCancel(true)
-                .setTimeoutAfter(20000)
-                .build();
-            ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).notify(ID_HEARD, n);
-        }
+        // The assistant needs the microphone now. If the app takes over it holds the pause itself; if it never does (the person
+        // ignored the notification) listening comes back by itself after a while, so one missed "Hey Escanor" is not the last.
+        heardHold = true;
+        apply();
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            heardHold = false;
+            apply();
+        }, HEARD_HOLD_MS);
+        WakeAction.fire(this);
     }
 
     static void ensureChannels(Context c) {

@@ -90,15 +90,17 @@ export default function PhoneControlSetup({ dev, onStatus, onDismiss }: { dev: D
   if (step === 'restricted') {
     return (
       <div className="space-y-2.5 px-3.5 py-3">
-        <p className={text}>Escanor was installed from a downloaded file, so Android greys its switch out (“Controlled by restricted setting”) until you allow it. Only you can do that:</p>
+        <p className={text}>Escanor was installed from a downloaded file, so Android greys its switch out (“Controlled by restricted setting”) until you lift that. Only you can do it. First lift the restriction, then switch Escanor on:</p>
         <ol className={`list-decimal space-y-1 pl-5 ${text}`}>
-          <li>Open Accessibility settings and tap <b className="text-ink">Escanor</b>. Android says “App was denied access”: tap <b className="text-ink">Close</b>. (Android shows the next option only after this.)</li>
           <li>Open Escanor’s App info, tap <b className="text-ink">⋮</b> at the top right, then <b className="text-ink">Allow restricted settings</b>, and confirm with your PIN or fingerprint.</li>
-          <li>Open Accessibility settings again and switch Escanor on. (Allowed it before? Go straight to this step.)</li>
+          <li>Open Accessibility settings, tap <b className="text-ink">Escanor</b> and switch it on.</li>
         </ol>
-        <Button kind={done === 0 ? 'primary' : 'quiet'} onClick={() => { setDone(Math.max(done, 1)); void dev.openControlSettings(); }} className="w-full">1. Try it in Accessibility settings</Button>
-        <Button kind={done === 1 ? 'primary' : 'quiet'} onClick={() => { setDone(Math.max(done, 2)); void dev.openAppInfo(); }} className="w-full">2. Allow restricted settings in App info</Button>
-        <Button kind={done === 2 ? 'primary' : 'quiet'} onClick={() => void dev.openControlSettings()} className="w-full">3. Switch Escanor on</Button>
+        <Button kind={done === 0 ? 'primary' : 'quiet'} onClick={() => { setDone(Math.max(done, 1)); void dev.openAppInfo(); }} className="w-full">1. Allow restricted settings in App info</Button>
+        <Button kind={done >= 1 ? 'primary' : 'quiet'} onClick={() => void dev.openControlSettings()} className="w-full">2. Switch Escanor on in Accessibility</Button>
+        <p className="text-[12px] leading-relaxed text-muted">
+          No <b className="text-ink">Allow restricted settings</b> under ⋮? Android only shows it after you have tried once: tap Escanor in Accessibility settings, close the “denied” message, then repeat step 1.{' '}
+          <button type="button" onClick={() => void dev.openControlSettings()} className="text-ink underline">Open Accessibility settings</button>
+        </p>
         {withdraw}
       </div>
     );
@@ -109,7 +111,7 @@ export default function PhoneControlSetup({ dev, onStatus, onDismiss }: { dev: D
       <p className={text}>In the next screen, find <b className="text-ink">Escanor</b>, tap it and switch it on. Android then shows its own warning, which it shows for every app that can press buttons for you.</p>
       <Button onClick={() => void dev.openControlSettings()} className="w-full">Open Accessibility settings</Button>
       <p className="text-[12px] leading-relaxed text-muted">
-        Greyed out, “Controlled by restricted setting”? Open <button type="button" onClick={() => void dev.openAppInfo()} className="text-ink underline">Escanor’s App info</button>, tap ⋮ at the top right, then Allow restricted settings.
+        Greyed out, “Controlled by restricted setting”? Lift it first: open <button type="button" onClick={() => void dev.openAppInfo()} className="text-ink underline">Escanor’s App info</button>, tap ⋮ at the top right, then Allow restricted settings.
       </p>
       {withdraw}
     </div>

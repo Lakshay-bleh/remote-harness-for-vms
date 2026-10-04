@@ -1,4 +1,4 @@
-import { ChatCircleText, ClockCounterClockwise, Gauge, LockKey, PencilSimple, ShieldCheck, Sliders, ArrowsClockwise, Trash } from '@phosphor-icons/react';
+import { ChatCircleText, ClockCounterClockwise, Gauge, LockKey, PencilSimple, PencilSimpleLine, ShieldCheck, Sliders, ArrowsClockwise, Trash } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useHardwareBack } from '../back';
 import { dropCache } from '../cache';
@@ -8,7 +8,7 @@ import { ConfirmSheet } from '../settings/parts';
 import { Notice, ScreenHeader } from '../ui';
 import ActivityTab from './ActivityTab';
 import ApprovalsTab, { type Approval } from './ApprovalsTab';
-import ComputerChat from './ComputerChat';
+import ComputerChat, { type ChatActions } from './ComputerChat';
 import ResourcesTab from './ResourcesTab';
 import { applyRoute, displayName, forgetComputerPrefs, setComputerPrefs, useComputerPrefs } from './computerPrefs';
 import ComputerSettings from './ComputerSettings';
@@ -30,7 +30,7 @@ const TABS: Array<{ id: Tab; label: string; Icon: typeof ChatCircleText }> = [
 ];
 
 /** The strip of sections: icons with names, a badge where something waits, scrolls sideways if the phone is narrow. */
-function TabStrip({ tab, onPick, badges }: { tab: Tab; onPick: (t: Tab) => void; badges: Partial<Record<Tab, number>> }) {
+function TabStrip({ tab, onPick, badges, chat }: { tab: Tab; onPick: (t: Tab) => void; badges: Partial<Record<Tab, number>>; chat: ChatActions | null }) {
   return (
     <div role="tablist" aria-label="Sections" className="flex shrink-0 gap-0.5 overflow-x-auto border-b border-hairline px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {TABS.map(({ id, label, Icon }) => {
@@ -45,6 +45,13 @@ function TabStrip({ tab, onPick, badges }: { tab: Tab; onPick: (t: Tab) => void;
           </button>
         );
       })}
+      {/* The chat's own buttons sit in this bar, after the sections, so no row of their own takes space from the conversation. */}
+      {chat && tab === 'chat' && (
+        <span className="sticky right-0 ml-auto flex shrink-0 items-center gap-0.5 bg-canvas pl-2">
+          <button type="button" onClick={chat.history} aria-label="Chat history" className="flex h-9 w-9 items-center justify-center rounded-full text-body transition hover:bg-surface-card active:scale-90"><ClockCounterClockwise size={20} /></button>
+          <button type="button" onClick={chat.newChat} aria-label="New chat" disabled={!chat.canNew} className="flex h-9 w-9 items-center justify-center rounded-full text-body transition hover:bg-surface-card active:scale-90 disabled:opacity-40"><PencilSimpleLine size={20} /></button>
+        </span>
+      )}
     </div>
   );
 }
@@ -60,6 +67,7 @@ export default function ComputerDetail({ computer, onBack, onRemove }: { compute
   const [tab, setTab] = useState<Tab>('chat');
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [sheet, setSheet] = useState<'rename' | 'remove' | null>(null);
+  const [chatActions, setChatActions] = useState<ChatActions | null>(null);
   useHardwareBack(view === 'main', onBack);
 
   // Approvals arrive by push on the local network, and are fetched on a timer over the cloud.
@@ -143,7 +151,7 @@ export default function ComputerDetail({ computer, onBack, onRemove }: { compute
         />
       </ScreenHeader>
 
-      <TabStrip tab={tab} onPick={setTab} badges={{ approvals: approvals.length }} />
+      <TabStrip tab={tab} onPick={setTab} badges={{ approvals: approvals.length }} chat={chatActions} />
 
       {link.state === 'offline' && <div className="px-4 pt-3"><ErrorCard error={link.error ?? 'This computer is not reachable.'} onRetry={() => void link.reconnect()} /></div>}
       {approvals.length > 0 && tab !== 'approvals' && (
@@ -152,7 +160,7 @@ export default function ComputerDetail({ computer, onBack, onRemove }: { compute
 
       <div className="min-h-0 flex-1">
         {/* The chat stays mounted while another section is open, so what you were typing and the reply on its way are not lost. */}
-        <div className={tab === 'chat' ? 'h-full' : 'hidden'}><ComputerChat computerId={computer.id} request={link.request} online={online} onAsk={askToAllow} /></div>
+        <div className={tab === 'chat' ? 'h-full' : 'hidden'}><ComputerChat computerId={computer.id} request={link.request} online={online} onAsk={askToAllow} onActions={setChatActions} /></div>
         {tab === 'resources' && <div className="h-full overflow-y-auto"><ResourcesTab computerId={computer.id} request={link.request} online={online} route={link.route} /></div>}
         {tab === 'approvals' && <div className="h-full overflow-y-auto"><ApprovalsTab items={approvals} onAnswer={answer} online={online} /></div>}
         {tab === 'permissions' && <div className="h-full overflow-y-auto"><PermissionsTab computerId={computer.id} request={link.request} online={online} /></div>}

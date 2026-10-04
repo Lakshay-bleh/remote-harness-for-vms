@@ -1,4 +1,4 @@
-import { Bell, ChatCircleText, Code, Desktop, Info, Laptop, LifebuoyIcon, Lock, PaintBrush, PlugsConnected, ShieldCheck, SignOut, UsersThree, Wallet, Waveform } from '@phosphor-icons/react';
+import { Bell, ChatCircleText, Code, Desktop, Info, Laptop, LifebuoyIcon, Lock, PaintBrush, PawPrint, PlugsConnected, ShieldCheck, SignOut, UsersThree, Wallet, Waveform } from '@phosphor-icons/react';
 import { useState } from 'react';
 import { describeUsage } from '@remote-harness/shared/escanor';
 import { APP_VERSION } from '../../appInfo';
@@ -9,11 +9,14 @@ import PrivacyDataPage from '../account/PrivacyDataPage';
 import SecurityPage from '../account/SecurityPage';
 import WorkspacePage from '../account/WorkspacePage';
 import { escanor } from '../client';
+import { animalInfo } from '../dog/animals';
+import { useCompanion } from '../dog/companion';
 import { loadComputers } from '../computer/storage';
 import { useLoad } from '../hooks';
 import { useEscanorSession } from '../session';
 import { ScreenHeader } from '../ui';
 import { AccountPage, UsagePage } from './AccountPages';
+import CompanionPage from './CompanionPage';
 import DeveloperPage from './DeveloperPage';
 import { AboutPage, LegalDocPage, PrivacyPage } from './InfoPages';
 import NotificationsPage from './NotificationsPage';
@@ -24,7 +27,7 @@ import { usePrefs } from './prefs';
 
 type Page =
   | 'root' | 'account' | 'usage' | 'billing' | 'workspace' | 'security' | 'delete' | 'data' | 'report' | 'help'
-  | 'notifications' | 'appearance' | 'chats' | 'voice' | 'developer' | 'privacy' | 'about'
+  | 'notifications' | 'appearance' | 'companion' | 'chats' | 'voice' | 'developer' | 'privacy' | 'about'
   | `doc:${string}`;
 
 /**
@@ -37,6 +40,7 @@ export default function SettingsView({ onGo }: { onGo: (to: 'computers' | 'machi
   const [from, setFrom] = useState<Page>('privacy');
   const [confirmOut, setConfirmOut] = useState(false);
   const prefs = usePrefs();
+  const companion = useCompanion();
   const usage = useLoad(() => escanor.usage(), 120000);
   const u = usage.data ? describeUsage(usage.data) : null;
   const back = () => setPage('root');
@@ -55,6 +59,7 @@ export default function SettingsView({ onGo }: { onGo: (to: 'computers' | 'machi
     case 'help': return <HelpPage onBack={back} onOpenDoc={doc('help')} onReport={() => to('report')} />;
     case 'notifications': return <NotificationsPage onBack={back} />;
     case 'appearance': return <AppearancePage onBack={back} />;
+    case 'companion': return <CompanionPage onBack={back} />;
     case 'chats': return <ChatDefaultsPage onBack={back} />;
     case 'voice': return <VoicePage onBack={back} />;
     case 'developer': return <DeveloperPage onBack={back} onHelp={() => to('help')} />;
@@ -87,6 +92,7 @@ export default function SettingsView({ onGo }: { onGo: (to: 'computers' | 'machi
         <Group title="Preferences">
           <Row icon={<Bell size={18} />} label="Notifications" onClick={() => to('notifications')} />
           <Row icon={<PaintBrush size={18} />} label="Appearance and feel" value={prefs.theme === 'system' ? 'Match phone' : prefs.theme === 'dark' ? undefined : prefs.theme === 'light' ? 'Light' : 'Pure black'} onClick={() => to('appearance')} />
+          <Row icon={<PawPrint size={18} />} label="Companion" value={animalInfo(companion).name} onClick={() => to('companion')} />
           <Row icon={<ChatCircleText size={18} />} label="New chats" sub="Permissions, model and effort" onClick={() => to('chats')} />
           <Row icon={<Waveform size={18} />} label="Voice and phone control" sub="Hey Escanor, calling, controlling your phone" onClick={() => to('voice')} />
         </Group>

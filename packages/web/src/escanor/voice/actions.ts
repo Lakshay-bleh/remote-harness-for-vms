@@ -1,5 +1,6 @@
 import { matchApp, type InstalledApp } from './apps';
 import type { ControlOp, PhoneAction, SettingsScreen } from './commands';
+import { chooseContact, type Contact } from './contacts';
 
 export interface PluginResult {
   ok: boolean;
@@ -33,6 +34,8 @@ export interface DevicePlugin {
   dial(o: { number: string }): Promise<PluginResult>;
   callNumber(o: { number: string; direct: boolean }): Promise<PluginResult>;
   callContact(o: { name: string; direct?: boolean }): Promise<PluginResult>;
+  /** Every contact with a number (asks Android for permission the first time). Optional: an older build only has callContact. */
+  listContacts?(): Promise<PluginResult & { contacts?: Contact[] }>;
   callStatus(): Promise<{ granted: boolean }>;
   requestCallPermission(): Promise<PluginResult>;
   controlStatus(): Promise<ControlStatus>;
@@ -53,6 +56,8 @@ export interface ActionOutcome {
   say: string;
   /** What to turn on to make this work: the screen offers a button for it. */
   needs?: 'accessibility' | 'controlBuild';
+  /** The answer is a question ("Did you mean …?"): speak it, then listen for the answer. */
+  ask?: boolean;
 }
 
 /** Sites that have no app on the phone but are worth opening when asked by name. */
@@ -139,6 +144,18 @@ export async function runPhoneAction(action: PhoneAction, dev: DevicePlugin | nu
         const direct = options.directCalls !== false; // on unless the person turned it off; the phone still needs Android's call permission
         const placed = (r: PluginResult, who: string): ActionOutcome => (!r.ok ? { ok: false, say: r.message || TROUBLE } : r.direct ? { ok: true, say: `Calling ${who}.` } : { ok: true, say: `Opening the dialer with ${who}. Press call to ring.${r.message && r.message !== who ? ` ${r.message}` : ''}` });
         if (/^\+?\d{3,}$/.test(action.who)) return placed(await dev.callNumber({ number: action.who, direct }), action.who);
+        if (dev.listContacts) {
+          // Find the person among the phone's own contacts, forgiving how the recogniser spelled the name ("usic" for "USICT", "20 27" for 2027).
+          const list = await dev.listContacts();
+          if (!list.ok) return { ok: false, say: list.message || TROUBLE };
+          const choice = chooseContact(action.who, list.contacts ?? []);
+          if (choice.kind === 'none') return { ok: false, say: `I couldn’t find ${action.who} in your contacts.` };
+          if (choice.kind === 'ask') {
+            const names = choice.options.map((o) => o.name);
+            return { ok: true, ask: true, say: `Did you mean ${names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names.at(-1)}` : names[0]}?` };
+          }
+          return placed(await dev.callNumber({ number: choice.contact.numbers[0], direct }), choice.contact.name);
+        }
         const r = await dev.callContact({ name: action.who, direct });
         return placed(r, r.ok && r.message ? r.message : action.who);
       }
