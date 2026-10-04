@@ -1,12 +1,19 @@
 import type { AssistantCapabilities, AssistantConversation, AssistantMessages, AssistantStatus, AssistantUsage, MachineView } from '@remote-harness/shared/escanor';
+import { isNative } from '../api';
 import { escanorApiBase } from './config';
 import type { BillingPlan, BillingSub } from './account/billing';
+import type { ApiAttachment } from './composer/attachments';
 import type { ConsentState } from './account/privacy';
 import type { ManagedHub } from './managed';
 import type { ServerPlan } from './voice/serverPlan';
 
 const ACCESS = 'escanor_access';
 const REFRESH = 'escanor_refresh';
+const EXPIRES = 'escanor_access_expires';
+/** Renew the access token this long before it runs out, so a request is never sent with one about to be refused. */
+const RENEW_EARLY_MS = 90_000;
+/** What the server gives an access token when it does not say (it lives 15 minutes). */
+const DEFAULT_ACCESS_SECONDS = 900;
 
 export class SessionEnded extends Error {
   constructor() {
@@ -140,15 +147,26 @@ const tokens = {
   get refresh() {
     return localStorage.getItem(REFRESH);
   },
-  set(access: string, refresh: string) {
+  /** When the access token stops working (ms since 1970), or 0 when unknown. */
+  get expiresAt() {
+    return Number(localStorage.getItem(EXPIRES)) || 0;
+  },
+  set(access: string, refresh: string, expiresInSeconds = DEFAULT_ACCESS_SECONDS) {
     localStorage.setItem(ACCESS, access);
     localStorage.setItem(REFRESH, refresh);
+    localStorage.setItem(EXPIRES, String(Date.now() + expiresInSeconds * 1000));
   },
   clear() {
     localStorage.removeItem(ACCESS);
     localStorage.removeItem(REFRESH);
+    localStorage.removeItem(EXPIRES);
   },
 };
+
+/** Is it time to get a new access token before asking for anything? True when its end is near, or already past. */
+export function accessIsStale(expiresAt: number, now = Date.now()): boolean {
+  return expiresAt > 0 && now >= expiresAt - RENEW_EARLY_MS;
+}
 
 /** Online now, or heard from within `windowMs` (default ten minutes). */
 export function isRecentlySeen(status: string, lastHeartbeat?: string | null, now = Date.now(), windowMs = 600_000): boolean {
@@ -186,7 +204,7 @@ async function refreshTokens(): Promise<RefreshResult> {
       const res = await fetch(`${escanorApiBase()}/auth/refresh`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ refresh_token: refresh }) });
       if (!res.ok) return refreshOutcome(res.status);
       const body = await res.json();
-      tokens.set(body.access_token, body.refresh_token ?? refresh);
+      tokens.set(body.access_token, body.refresh_token ?? refresh, Number(body.expires_in) || DEFAULT_ACCESS_SECONDS);
       return 'ok';
     } catch {
       return 'unavailable'; // offline is not "signed out": keep the tokens and let the caller see the network error
@@ -197,28 +215,51 @@ async function refreshTokens(): Promise<RefreshResult> {
   return refreshing;
 }
 
+/**
+ * Send a request signed in. A person is signed out only when the server refuses the refresh token itself: a refused access token is
+ * the ordinary 15-minute expiry (or another request renewing it at the same moment), never a reason to sign anyone out.
+ */
 async function request<T>(path: string, init: RequestInit = {}, opts: { auth?: boolean } = {}): Promise<T> {
   const auth = opts.auth !== false;
-  const send = () =>
-    fetch(`${escanorApiBase()}${path}`, {
+  let used: string | null = null;
+  const send = () => {
+    used = auth ? tokens.access : null;
+    return fetch(`${escanorApiBase()}${path}`, {
       ...init,
-      headers: { 'content-type': 'application/json', ...(auth && tokens.access ? { authorization: `Bearer ${tokens.access}` } : {}), ...init.headers },
+      headers: { 'content-type': 'application/json', ...(used ? { authorization: `Bearer ${used}` } : {}), ...init.headers },
     });
+  };
+
+  if (auth && accessIsStale(tokens.expiresAt)) {
+    // Renew before asking. If the server cannot be reached the old token is still tried: it may have a little time left.
+    if ((await refreshTokens()) === 'rejected') {
+      tokens.clear();
+      throw new SessionEnded();
+    }
+  }
+
   let res: Response;
   try {
     res = await send();
   } catch {
     throw new ApiError('Could not reach Escanor. Check your connection.', 0);
   }
-  if (res.status === 401 && auth) {
+  // Up to two renewals: a second request can renew the token between this one leaving and arriving, which makes the first one's
+  // fresh token the old one. Trying again with whatever is current settles it.
+  for (let attempt = 0; res.status === 401 && auth && attempt < 2; attempt++) {
+    if (tokens.access && tokens.access !== used) {
+      res = await send(); // another request already renewed it: just use the new one
+      continue;
+    }
     const refreshed = await refreshTokens();
     if (refreshed === 'unavailable') throw new ApiError('Could not reach Escanor to keep you signed in. Try again in a moment.', 0);
-    if (refreshed === 'ok') res = await send();
-    if (refreshed === 'rejected' || res.status === 401) {
+    if (refreshed === 'rejected') {
       tokens.clear();
       throw new SessionEnded();
     }
+    res = await send();
   }
+  if (res.status === 401 && auth) throw new ApiError('Escanor could not confirm it is you for that. Try again in a moment.', 401);
   if (!res.ok) throw new ApiError(messageOf(await res.json().catch(() => null), `Something went wrong (${res.status}).`), res.status);
   if (res.status === 204) return undefined as T;
   return res.json();
@@ -237,13 +278,13 @@ export const escanor = {
     return r.authorization_url;
   },
   async exchangeCode(code: string, codeVerifier?: string): Promise<void> {
-    const t = await request<{ access_token: string; refresh_token: string }>('/auth/oauth/exchange', json({ code, provider: 'google', ...(codeVerifier ? { code_verifier: codeVerifier } : {}) }), { auth: false });
-    tokens.set(t.access_token, t.refresh_token);
+    const t = await request<{ access_token: string; refresh_token: string; expires_in?: number }>('/auth/oauth/exchange', json({ code, provider: 'google', client: isNative() ? 'mobile' : 'web', ...(codeVerifier ? { code_verifier: codeVerifier } : {}) }), { auth: false });
+    tokens.set(t.access_token, t.refresh_token, t.expires_in);
   },
   /** For development only: the backend refuses this unless ENABLE_DEV_AUTH is set. */
   async devLogin(email: string): Promise<void> {
-    const t = await request<{ access_token: string; refresh_token: string }>('/auth/dev/login', json({ email, name: email.split('@')[0] }), { auth: false });
-    tokens.set(t.access_token, t.refresh_token);
+    const t = await request<{ access_token: string; refresh_token: string; expires_in?: number }>('/auth/dev/login', json({ email, name: email.split('@')[0] }), { auth: false });
+    tokens.set(t.access_token, t.refresh_token, t.expires_in);
   },
   async me(): Promise<EscanorUser> {
     const s = await request<{ user: EscanorUser }>('/auth/session');
@@ -264,7 +305,7 @@ export const escanor = {
   capabilities: (live = false) => request<AssistantCapabilities>(`/ai/capabilities${live ? '?live=true' : ''}`),
   machine: (logs = false) => request<MachineView>(`/ai/machine?logs=${logs}&tail=120`),
   conversations: () => request<{ conversations: AssistantConversation[] }>('/ai/conversations').then((r) => r.conversations),
-  send: (text: string, conversationId?: string) => request<{ conversation_id: string }>('/ai/chat', json({ text, conversation_id: conversationId ?? null })),
+  send: (text: string, conversationId?: string, attachments: ApiAttachment[] = []) => request<{ conversation_id: string }>('/ai/chat', json({ text, conversation_id: conversationId ?? null, ...(attachments.length ? { attachments } : {}) })),
   messages: (id: string, after: number) => request<AssistantMessages>(`/ai/conversations/${enc(id)}/messages?after=${after}`),
   answer: (id: string, requestId: string, allow: boolean) => request<{ status: string }>(`/ai/conversations/${enc(id)}/permissions/${enc(requestId)}`, json({ allow })),
   stop: (id: string) => request<{ ok: boolean }>(`/ai/conversations/${enc(id)}/stop`, { method: 'POST' }),
@@ -282,8 +323,9 @@ export const escanor = {
     type Cmd = { id: string; status: string; result?: Record<string, any>; error?: string | null };
     let cmd = await request<Cmd>('/agents/commands', json({ agent_id: agentId, plugin: 'desktop', action, parameters, approve_immediately: true, wait_for_result: true }));
     const until = Date.now() + timeoutMs;
-    while (cmd.status !== 'succeeded' && cmd.status !== 'failed' && cmd.status !== 'cancelled' && Date.now() < until) {
-      await new Promise((r) => setTimeout(r, 1200));
+    // Quick at first (the computer answers within a second or two when it is awake), then easier on the server.
+    for (let n = 0; cmd.status !== 'succeeded' && cmd.status !== 'failed' && cmd.status !== 'cancelled' && Date.now() < until; n++) {
+      await new Promise((r) => setTimeout(r, Math.min(1000, 350 + n * 150)));
       cmd = await request<Cmd>(`/agents/commands/${enc(cmd.id)}`);
     }
     if (cmd.status !== 'succeeded') throw new Error(cmd.status === 'failed' ? (cmd.error ?? 'The computer refused that.') : 'The computer did not answer. Is it on and online?');

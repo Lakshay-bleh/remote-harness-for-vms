@@ -89,3 +89,27 @@ describe('listenOnce', () => {
     assert.equal(await p, 'real words');
   });
 });
+
+describe('webSpeechPlugin', () => {
+  it('is null where the browser has no recogniser', async () => {
+    const { webSpeechPlugin } = await import('./speech');
+    assert.equal(webSpeechPlugin({}), null);
+  });
+
+  it('speaks the plugin interface on top of a browser recogniser, so listenOnce works unchanged', async () => {
+    const { webSpeechPlugin } = await import('./speech');
+    let rec: any;
+    class Fake {
+      onresult: any; onerror: any; onend: any;
+      constructor() { rec = this; }
+      start() {}
+      stop() { this.onend?.(); }
+    }
+    const plugin = webSpeechPlugin({ webkitSpeechRecognition: Fake })!;
+    const p = listenOnce(plugin, {});
+    await new Promise((x) => setTimeout(x, 5));
+    rec.onresult({ results: [[{ transcript: 'open ' }], [{ transcript: 'youtube' }]] });
+    rec.onend();
+    assert.equal(await p, 'open youtube');
+  });
+});

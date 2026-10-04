@@ -38,7 +38,32 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="escanor" android:host="auth" />
             </intent-filter>
+            <!-- the "Hey Escanor" notification opens voice mode: escanor://voice -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="escanor" android:host="voice" />
+            </intent-filter>
         </activity>
+
+        <!-- Controlling the phone by voice ("go home", "scroll down", "tap Send"): only if the person switches it on in Accessibility settings -->
+        <service
+            android:name=".EscanorControlService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/escanor_accessibility" />
+        </service>
+
+        <!-- "Hey Escanor": runs only while the person has switched it on, with a notification saying so -->
+        <service
+            android:name=".WakeWordService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -66,7 +91,14 @@
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- calling by voice: asked for only when the person turns on "call directly"; without it the dialer opens with the number filled in -->
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <!-- haptic feedback (Settings > Appearance and feel) -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- "Hey Escanor" listens in the background through a foreground service that shows a notification -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 </manifest>

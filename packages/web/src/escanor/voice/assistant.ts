@@ -1,5 +1,5 @@
 import { explainFailure } from '../computer/errors';
-import { runPhoneAction, type DevicePlugin } from './actions';
+import { runPhoneAction, type DevicePlugin, type PhoneOptions } from './actions';
 import { parseVoiceCommand, type PhoneAction, type VoiceTab } from './commands';
 import { planToActions, type ServerPlan } from './serverPlan';
 
@@ -9,9 +9,11 @@ export interface AssistantDeps {
   hasComputer: boolean;
   /** Run a sentence on the paired computer; resolves with what it said back. */
   toComputer(text: string): Promise<string>;
-  /** Hand a sentence to the Escanor assistant (opens it in the app). */
-  toAssistant(text: string): Promise<void>;
+  /** Hand a sentence to the Escanor assistant; resolves with its answer when it has one (empty when it only started working). */
+  toAssistant(text: string): Promise<string | void>;
   go(tab: VoiceTab): void;
+  /** How the person wants the phone to behave (calling directly). */
+  phone?: PhoneOptions;
   /**
    * Ask the server's brain what a sentence means (semantic match, then the AI model) and which of this phone's apps it names.
    * Resolves null when it cannot be asked (signed out, offline); never throws.
@@ -24,6 +26,8 @@ export interface Reply {
   /** What to say out loud and show. */
   say: string;
   kind?: 'phone' | 'computer' | 'assistant' | 'go' | 'stop';
+  /** What the person has to turn on to make this work; voice mode shows a button for it. */
+  needs?: 'accessibility';
   /** The reply is a question: speak it, then listen for the answer. */
   ask?: boolean;
 }
@@ -71,7 +75,7 @@ export async function handleUtterance(text: string, d: AssistantDeps): Promise<R
       case 'stop':
         return { ok: true, say: 'Okay.', kind: 'stop' };
       case 'phone': {
-        const done = { ...(await runPhoneAction(cmd.action, d.device)), kind: 'phone' as const };
+        const done = { ...(await runPhoneAction(cmd.action, d.device, d.phone)), kind: 'phone' as const };
         // "open <name>" that the phone's own matching could not find: the server may know the app by another name.
         if (!done.ok && cmd.action.type === 'open_app') return (await viaServer(text, d)) ?? done;
         return done;
@@ -95,8 +99,8 @@ export async function handleUtterance(text: string, d: AssistantDeps): Promise<R
       case 'assistant': {
         const served = await viaServer(text, d);
         if (served) return served;
-        await d.toAssistant(cmd.text);
-        return { ok: true, say: 'Asking your Escanor assistant.', kind: 'assistant' };
+        const answer = await d.toAssistant(cmd.text);
+        return { ok: true, say: (typeof answer === 'string' && answer.trim()) || 'Asking your Escanor assistant.', kind: 'assistant' };
       }
     }
   } catch (e) {

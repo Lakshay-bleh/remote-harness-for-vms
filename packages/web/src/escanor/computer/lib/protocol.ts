@@ -19,7 +19,8 @@ export type ClientMsg =
   | { t: 'list' }
   | { t: 'pending' }
   | { t: 'call'; id: string; capability: string; input?: unknown }
-  | { t: 'chat'; id: string; text: string }
+  /** `fresh`: start a new conversation (forget what this phone said before). */
+  | { t: 'chat'; id: string; text: string; fresh?: boolean }
   | { t: 'approve'; approvalId: string; ok: boolean }
   | { t: 'subscribe'; channels: Array<'events' | 'stats'> }
   /** Which kinds of action are switched on for phones (Settings > Permissions on the computer). */
@@ -27,7 +28,8 @@ export type ClientMsg =
   /** Ask the computer's owner to switch one on. Only the owner, at the computer, can say yes: a phone can never grant itself this. */
   | { t: 'request_group'; group: string }
   /** What phones and the voice assistant have recently done on this computer. */
-  | { t: 'activity' }
+  /** A page of it, newest first: `limit` entries older than `before` (an `at` from an earlier page). Older computers ignore both and send everything. */
+  | { t: 'activity'; limit?: number; before?: string }
   | { t: 'ping' };
 
 /** Messages to the phone. */
@@ -43,7 +45,8 @@ export type ServerMsg =
   | { t: 'stats'; stats: unknown }
   | { t: 'groups'; items: PermissionGroup[] }
   | { t: 'group_request'; group: string; status: GroupRequestStatus }
-  | { t: 'activity'; items: ActivityItem[] }
+  /** `more`: there are older entries after these. Absent from an older computer, which sends everything at once. */
+  | { t: 'activity'; items: ActivityItem[]; more?: boolean }
   | { t: 'pong' }
   | { t: 'error'; id?: string; message: string };
 
@@ -111,10 +114,11 @@ export function isClientMsg(v: unknown): v is ClientMsg {
     case 'call':
       return typeof m.id === 'string' && typeof m.capability === 'string' && m.capability.length < 100;
     case 'chat':
-      return typeof m.id === 'string' && typeof m.text === 'string' && m.text.length > 0 && m.text.length <= 4000;
+      return typeof m.id === 'string' && typeof m.text === 'string' && m.text.length > 0 && m.text.length <= 4000 && (m.fresh === undefined || typeof m.fresh === 'boolean');
     case 'groups':
-    case 'activity':
       return true;
+    case 'activity':
+      return (m.limit === undefined || (Number.isInteger(m.limit) && (m.limit as number) >= 1 && (m.limit as number) <= 50)) && (m.before === undefined || (typeof m.before === 'string' && m.before.length <= 40));
     case 'request_group':
       return typeof m.group === 'string' && /^[a-z0-9_]{1,40}$/.test(m.group);
     case 'approve':

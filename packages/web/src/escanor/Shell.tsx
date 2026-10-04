@@ -1,5 +1,5 @@
 import { ChatCircleText, Desktop, GearSix, Laptop, PencilSimpleLine, PlugsConnected, X, type Icon } from '@phosphor-icons/react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { DeletionNotice } from './account/DeleteAccountPage';
 import AssistantView from './AssistantView';
 import ChatList from './ChatList';
@@ -12,7 +12,8 @@ import IntegrationsView from './IntegrationsView';
 import { listenPush, resumePush, type PushDest } from './push';
 import { useEscanorSession } from './session';
 import SettingsView from './settings/SettingsView';
-import VoiceOrb from './voice/VoiceOrb';
+import { waitForAnswer } from './voice/assistantAnswer';
+import VoiceHost from './voice/VoiceOrb';
 import { getPrefs, haptic } from './settings/prefs';
 import { Logo, NavContext, useKeyboardOpen } from './ui';
 
@@ -139,12 +140,21 @@ export default function Shell({ machines }: { machines: React.ReactNode }) {
 
   const show = useCallback((t: Tab) => { setTab(t); setVisited((v) => (v.has(t) ? v : new Set(v).add(t))); setDrawer(false); }, []);
   const openChat = useCallback((id: string | null) => { setConversationId(id); show('assistant'); }, [show]);
-  /** A voice request for the Escanor assistant: start that conversation and show it. */
-  const askAssistant = useCallback(async (text: string) => {
-    const r = await escanor.send(text);
+  /**
+   * A voice request for the Escanor assistant: send it into the open conversation (or a new one), wait for the answer, and hand it
+   * back to be read out. The chat itself is updated behind voice mode, so closing it lands on the whole conversation.
+   */
+  const conversationRef = useRef<string | null>(null);
+  conversationRef.current = conversationId;
+  const askAssistant = useCallback(async (text: string, signal: AbortSignal) => {
+    const r = await escanor.send(text, conversationRef.current ?? undefined);
     chats.reload();
-    openChat(r.conversation_id);
-  }, [chats, openChat]);
+    setConversationId(r.conversation_id);
+    const a = await waitForAnswer({ fetch: (after) => escanor.messages(r.conversation_id, after), wait: (ms) => new Promise((res) => setTimeout(res, ms)), now: Date.now }, text, { signal });
+    if (a.needsApproval) return 'I need your OK to go on. Open the chat to approve it.';
+    if (a.timedOut) return 'Still working on it. The answer will be in the chat.';
+    return a.text;
+  }, [chats]);
   const removeChat = useCallback((id: string, name: string) => {
     if (!window.confirm(`Delete “${name}”? This cannot be undone.`)) return;
     void escanor.remove(id).then(() => { if (id === conversationId) setConversationId(null); chats.reload(); });
@@ -186,6 +196,7 @@ export default function Shell({ machines }: { machines: React.ReactNode }) {
 
   return (
     <NavContext.Provider value={{ open: () => setDrawer(true) }}>
+      <VoiceHost go={show} onAssistant={askAssistant}>
       <div className="flex h-[100svh] flex-col overflow-hidden bg-canvas text-ink md:flex-row">
         <aside className="safe-top hidden w-[76px] shrink-0 border-r border-hairline bg-surface-soft md:block lg:w-72">
           <div className="hidden h-full lg:block"><Nav {...navProps} expanded /></div>
@@ -204,8 +215,6 @@ export default function Shell({ machines }: { machines: React.ReactNode }) {
         <TabBar tab={tab} onPick={show} />
 
         {deletion.data?.scheduled && <DeletionNotice status={deletion.data} onCancelled={deletion.reload} />}
-        {/* Escanor's voice, on every screen. */}
-        <VoiceOrb go={show} onAssistant={askAssistant} />
 
         {banner && (
           <button type="button" role="status" onClick={() => { show(banner.dest); setBanner(null); }} className="fixed inset-x-3 top-[calc(env(safe-area-inset-top)+8px)] z-[60] rounded-xl border border-line-strong bg-surface-card p-3.5 text-left shadow-elevated md:left-auto md:max-w-sm">
@@ -223,6 +232,7 @@ export default function Shell({ machines }: { machines: React.ReactNode }) {
           </div>
         </div>
       </div>
+      </VoiceHost>
     </NavContext.Provider>
   );
 }
