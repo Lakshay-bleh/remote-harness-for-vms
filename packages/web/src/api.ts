@@ -7,6 +7,16 @@ const HUB_URL_KEY = 'rh_hub_url';
 // Android app there is no such origin, so the user enters the hub's address once.
 export const isNative = (): boolean => Boolean((window as any).Capacitor?.isNativePlatform?.());
 
+/** 'android', 'ios' or 'web'. The two phone apps share this code but not what the phone lets an app do. */
+export const platform = (): 'android' | 'ios' | 'web' => {
+  const p = (window as any).Capacitor?.getPlatform?.();
+  return p === 'android' || p === 'ios' ? p : 'web';
+};
+export const isAndroid = (): boolean => platform() === 'android';
+export const isIOS = (): boolean => platform() === 'ios';
+/** What the phone's own settings app is called, for the sentences that send the person there. */
+export const settingsName = (): string => (isIOS() ? 'iPhone Settings' : 'Android Settings');
+
 /** In the phone app a hub must be https: its token and every message cross the internet, and the app also talks plain http to a
  *  computer on the local network, so this is what keeps the two apart. (In a browser the hub serves the page itself.) */
 export function hubUrlProblem(url: string, native = isNative()): string | null {

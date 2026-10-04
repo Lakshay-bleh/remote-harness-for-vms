@@ -1,5 +1,5 @@
 import { PushNotifications } from '@capacitor/push-notifications';
-import { isNative } from '../api';
+import { isAndroid, isNative } from '../api';
 import { escanor } from './client';
 
 /** unsupported: not the Android app. unavailable: it is, but this build was made without Firebase's config, so it cannot register. */
@@ -34,7 +34,7 @@ export function channelState(channels: Array<{ id: string; importance?: number }
 
 /** Ask Android how the Alerts channel is set right now (the person can change it in the phone's settings at any time). */
 export async function alertChannelState(): Promise<ChannelState | null> {
-  if (!isNative()) return null;
+  if (!isAndroid()) return null;
   try {
     return channelState((await PushNotifications.listChannels()).channels);
   } catch {
@@ -79,7 +79,7 @@ async function createChannel(): Promise<void> {
 }
 
 export async function pushState(): Promise<PushState> {
-  if (!isNative()) return 'unsupported';
+  if (!isAndroid()) return 'unsupported'; // the iPhone app needs Apple push set up in Firebase first (docs/IOS.md)
   try {
     return stateFromPermission((await PushNotifications.checkPermissions()).receive);
   } catch {
@@ -89,7 +89,7 @@ export async function pushState(): Promise<PushState> {
 
 /** Ask the person's permission (Android 13+), then register this phone. Returns where that left things. */
 export async function enablePush(): Promise<PushState> {
-  if (!isNative()) return 'unsupported';
+  if (!isAndroid()) return 'unsupported';
   try {
     let p = (await PushNotifications.checkPermissions()).receive;
     if (p !== 'granted') p = (await PushNotifications.requestPermissions()).receive;
@@ -118,7 +118,7 @@ export async function forgetPush(): Promise<void> {
 
 /** Tapping a notification, and one arriving while the app is open. Returns how to stop listening. */
 export function listenPush(onOpen: (dest: PushDest) => void, onForeground: (n: { title: string; body: string; dest: PushDest }) => void): () => void {
-  if (!isNative()) return () => undefined;
+  if (!isAndroid()) return () => undefined;
   const subs = [
     PushNotifications.addListener('pushNotificationActionPerformed', (a) => onOpen(routeFor(a.notification.data))),
     PushNotifications.addListener('pushNotificationReceived', (n) => onForeground({ title: n.title ?? 'Escanor', body: n.body ?? '', dest: routeFor(n.data) })),

@@ -1,6 +1,6 @@
 import { AppWindow, Download, HandPointing, Microphone, Phone, ShieldCheck, Waveform } from '@phosphor-icons/react';
 import { useCallback, useEffect, useState } from 'react';
-import { isNative } from '../../api';
+import { isAndroid, isIOS, isNative } from '../../api';
 import { Button, Notice, Spinner } from '../ui';
 import type { ControlStatus } from '../voice/actions';
 import { deviceOrNull } from '../voice/device';
@@ -74,9 +74,10 @@ export default function VoicePage({ onBack }: { onBack: () => void }) {
 
   return (
     <Page title="Voice and phone control" subtitle="Talk to Escanor and let it use your phone" onBack={onBack}>
-      {!isNative() && <Notice>These work in the Escanor Android app. You can look at what each one does here.</Notice>}
+      {!isNative() && <Notice>These work in the Escanor phone app. You can look at what each one does here.</Notice>}
+      {isIOS() && <Notice>iOS does not let an app listen for “Hey Escanor” in the background or press buttons in other apps, so those two are Android only. Talking to Escanor with the microphone button, calling, torch and opening websites work here.</Notice>}
 
-      <Group title="Hey Escanor" footer="Escanor listens for the two words on this phone only, using a small voice model. Nothing is recorded or sent anywhere. A notification shows while it is listening, and it uses a little battery. Switch it off any time.">
+      {!isIOS() && <Group title="Hey Escanor" footer="Escanor listens for the two words on this phone only, using a small voice model. Nothing is recorded or sent anywhere. A notification shows while it is listening, and it uses a little battery. Switch it off any time.">
         <SwitchRow
           icon={<Waveform size={18} />}
           label="Say “Hey Escanor”"
@@ -88,9 +89,9 @@ export default function VoicePage({ onBack }: { onBack: () => void }) {
         {progress !== null && <Row label={`Downloading… ${progress}%`} right={<Spinner />} chevron={false} />}
         {step === 'microphone' && <Row icon={<Microphone size={18} />} label="Microphone needed" sub="Allow it in Android Settings, Apps, Escanor, Permissions." chevron={false} />}
         {step === 'listening' && <Row label="Listening now" sub="Say “Hey Escanor” and then what you want." chevron={false} />}
-      </Group>
+      </Group>}
 
-      {(step === 'listening' || step === 'ready') && (
+      {isAndroid() && (step === 'listening' || step === 'ready') && (
         <Group title="From other apps and the home screen" footer="Android does not let an app open itself from the background unless you allow it. These two switches are yours to turn on; Escanor only uses them when it hears “Hey Escanor”.">
           <Row icon={<AppWindow size={18} />} label="Open Escanor when it hears you" sub={outside.line} chevron={false} />
           {outside.canAllowOverlay && <Row label="Display over other apps" value="Not allowed" sub="Tap to open Android’s page, then switch Escanor on." onClick={() => void wake.openOverlaySettings()} />}
@@ -100,7 +101,7 @@ export default function VoicePage({ onBack }: { onBack: () => void }) {
       )}
       {note && <Notice tone="warn">{note}</Notice>}
 
-      <Group
+      {!isIOS() && <Group
         title="Control your phone"
         footer="Escanor asks before each step. Android requires you to switch this on yourself, in its Accessibility settings, and you can switch it off there any time."
       >
@@ -112,9 +113,9 @@ export default function VoicePage({ onBack }: { onBack: () => void }) {
           chevron={false}
         />
         {dev && <PhoneControlSetup dev={dev} onStatus={setControl} />}
-      </Group>
+      </Group>}
 
-      <Group title="Calling" footer="With this on, “call Mom” rings straight away. Off, Escanor opens the dialer with the number filled in and you press call. Android asks for the Phone permission the first time.">
+      {!isIOS() && <Group title="Calling" footer="With this on, “call Mom” rings straight away. Off, Escanor opens the dialer with the number filled in and you press call. Android asks for the Phone permission the first time.">
         <SwitchRow icon={<Phone size={18} />} label="Call directly" on={prefs.directCalls} onChange={(v) => setVoicePrefs({ directCalls: v })} />
         <Row
           icon={<ShieldCheck size={18} />}
@@ -124,7 +125,7 @@ export default function VoicePage({ onBack }: { onBack: () => void }) {
           sub={!call ? 'Tap to allow Escanor to place calls.' : undefined}
           chevron={false}
         />
-      </Group>
+      </Group>}
     </Page>
   );
 }
