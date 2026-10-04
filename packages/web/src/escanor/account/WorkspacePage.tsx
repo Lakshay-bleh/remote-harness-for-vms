@@ -4,7 +4,7 @@ import { ApiError, escanor, type OrgMember } from '../client';
 import { useLoad } from '../hooks';
 import { ChoiceSheet, Group, Page, Row } from '../settings/parts';
 import { ago, Button, Notice, Sheet, Spinner } from '../ui';
-import { cleanWorkspaceName, describeAction, ENVIRONMENTS, environmentLabel, REGIONS, regionLabel, roleLabel } from './workspace';
+import { ACTIVITY_PAGE, activityGroups, canLoadMore, cleanWorkspaceName, describeAction, ENVIRONMENTS, environmentLabel, filterActivity, nextActivityLimit, REGIONS, regionLabel, roleLabel } from './workspace';
 
 const FIELD = 'mt-1 w-full rounded-md border border-line-strong bg-surface-card px-3 py-3 text-[15px] text-ink outline-none transition placeholder:text-muted-soft focus:border-primary focus:ring-4 focus:ring-primary/15';
 
@@ -12,7 +12,10 @@ const FIELD = 'mt-1 w-full rounded-md border border-line-strong bg-surface-card 
 export default function WorkspacePage({ onBack }: { onBack: () => void }) {
   const ws = useLoad(() => escanor.workspaceSettings(), 0);
   const org = useLoad(() => escanor.organization().catch((e) => (e instanceof ApiError && e.status === 404 ? null : Promise.reject(e))), 0);
-  const log = useLoad(() => escanor.auditLogs(50).catch(() => []), 0);
+  const [asked, setAsked] = useState(ACTIVITY_PAGE);
+  const log = useLoad(() => escanor.auditLogs(asked).catch(() => []), 0, [asked]);
+  const [group, setGroup] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
   const [editName, setEditName] = useState(false);
   const [name, setName] = useState('');
   const [picker, setPicker] = useState<null | 'region' | 'environment'>(null);
@@ -20,6 +23,7 @@ export default function WorkspacePage({ onBack }: { onBack: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const w = ws.data;
+  const shown = filterActivity(log.data ?? [], { group, query });
 
   const save = async (patch: { workspace_name?: string; default_region?: string; environment?: string }) => {
     setSaving(true);
@@ -60,11 +64,22 @@ export default function WorkspacePage({ onBack }: { onBack: () => void }) {
 
       <section>
         <h2 className="mb-1.5 px-1 text-[12px] font-medium uppercase tracking-wide text-muted">Recent activity</h2>
+        {(log.data ?? []).length > 0 && (
+          <div className="mb-2 space-y-2">
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search activity" aria-label="Search activity" className={FIELD.replace('mt-1 ', '')} />
+            <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1" role="group" aria-label="Filter by kind">
+              {[{ value: null as string | null, label: 'All', count: (log.data ?? []).length }, ...activityGroups(log.data ?? [])].map((g) => (
+                <button key={g.value ?? 'all'} type="button" aria-pressed={group === g.value} onClick={() => setGroup(g.value)} className={`shrink-0 rounded-pill border px-3 py-1 text-[13px] ${group === g.value ? 'border-primary bg-primary/10 text-primary' : 'border-hairline text-body'}`}>{g.label} <span className="text-muted">{g.count}</span></button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="divide-y divide-hairline overflow-hidden rounded-xl border border-hairline bg-surface-card">
-          {log.loading && !log.data ? <div className="p-4 text-center"><Spinner /></div> : (log.data ?? []).length === 0 ? <p className="px-3.5 py-3 text-sm text-muted">Nothing yet.</p> : (log.data ?? []).map((l, i) => (
+          {log.loading && !log.data ? <div className="p-4 text-center"><Spinner /></div> : (log.data ?? []).length === 0 ? <p className="px-3.5 py-3 text-sm text-muted">Nothing yet.</p> : shown.length === 0 ? <p className="px-3.5 py-3 text-sm text-muted">Nothing matches. {canLoadMore((log.data ?? []).length, asked) ? 'Load more to look further back.' : ''}</p> : shown.map((l, i) => (
             <Row key={l.id ?? i} icon={<ClockCounterClockwise size={18} />} label={describeAction(l.action)} sub={[l.actor_email, l.target, l.detail].filter(Boolean).join(' · ')} value={ago(l.created_at)} />
           ))}
         </div>
+        {canLoadMore((log.data ?? []).length, asked) && <Button kind="quiet" className="mt-2 w-full" disabled={log.loading} onClick={() => setAsked(nextActivityLimit(asked))}>{log.loading ? 'Loading…' : 'Show more'}</Button>}
       </section>
 
       {editName && (

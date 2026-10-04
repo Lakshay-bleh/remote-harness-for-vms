@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { cleanWorkspaceName, describeAction, environmentLabel, regionLabel, roleLabel } from './workspace';
+import { ACTIVITY_MAX, activityGroups, canLoadMore, cleanWorkspaceName, describeAction, filterActivity, nextActivityLimit, environmentLabel, regionLabel, roleLabel } from './workspace';
 
 describe('workspace', () => {
   it('cleans a name to one line of 1 to 80 characters, or refuses it', () => {
@@ -19,5 +19,26 @@ describe('workspace', () => {
     assert.equal(describeAction('workspace.settings_updated'), 'Workspace settings updated');
     assert.equal(describeAction('billing.plan_changed'), 'Billing plan changed');
     assert.equal(describeAction(''), 'Activity');
+  });
+});
+
+describe('activity paging and filters', () => {
+  const line = (action: string, actor = 'a@x.io', target = '', detail = '') => ({ action, actor_email: actor, target, detail });
+  const lines = [line('billing.plan_changed', 'a@x.io', 'pro'), line('member.role_changed', 'b@x.io', 'carol'), line('billing.cancel_requested'), line('integration.connected', 'a@x.io', 'github')];
+  it('groups by the kind before the dot, most frequent first', () => {
+    assert.deepEqual(activityGroups(lines).map((g) => [g.value, g.count]), [['billing', 2], ['integration', 1], ['member', 1]]);
+  });
+  it('filters by kind and by any word in the line', () => {
+    assert.equal(filterActivity(lines, { group: 'billing', query: '' }).length, 2);
+    assert.equal(filterActivity(lines, { group: null, query: 'CAROL' }).length, 1);
+    assert.equal(filterActivity(lines, { group: 'billing', query: 'carol' }).length, 0);
+    assert.equal(filterActivity(lines, { group: null, query: 'plan changed' }).length, 1);
+  });
+  it('offers more only while the last answer was full and the ceiling is not reached', () => {
+    assert.equal(canLoadMore(25, 25), true);
+    assert.equal(canLoadMore(12, 25), false);
+    assert.equal(canLoadMore(ACTIVITY_MAX, ACTIVITY_MAX), false);
+    assert.equal(nextActivityLimit(25), 75);
+    assert.equal(nextActivityLimit(480), ACTIVITY_MAX);
   });
 });
