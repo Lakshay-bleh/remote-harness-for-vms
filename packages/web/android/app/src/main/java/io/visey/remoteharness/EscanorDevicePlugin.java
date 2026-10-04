@@ -1,8 +1,10 @@
 package io.visey.remoteharness;
 
 import android.Manifest;
+import android.app.AppOpsManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.database.Cursor;
@@ -27,6 +29,7 @@ import com.getcapacitor.PermissionState;
 
 
 import android.os.Build;
+import android.os.Process;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -350,19 +353,60 @@ public class EscanorDevicePlugin extends Plugin {
         }
     }
 
-    /** Has the person turned on Escanor in Accessibility settings? */
+    /**
+     * Android 13+ greys out Accessibility for apps installed from a downloaded file ("Controlled by restricted setting") until the
+     * person allows it in App info. True: restricted (or, where Android will not say, installed from a file and so probably
+     * restricted). False: not restricted. Null: this Android does not say.
+     */
+    private Boolean controlRestricted() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false;
+        String pkg = getContext().getPackageName();
+        try {
+            AppOpsManager ops = getContext().getSystemService(AppOpsManager.class);
+            int mode = ops.unsafeCheckOpNoThrow("android:access_restricted_settings", Process.myUid(), pkg);
+            return mode == AppOpsManager.MODE_ERRORED || mode == AppOpsManager.MODE_IGNORED;
+        } catch (Exception e) {
+            // Newer Android lets only the system read that setting: go by how the app was installed instead.
+        }
+        try {
+            int source = getContext().getPackageManager().getInstallSourceInfo(pkg).getPackageSource();
+            if (source == PackageInstaller.PACKAGE_SOURCE_DOWNLOADED_FILE || source == PackageInstaller.PACKAGE_SOURCE_LOCAL_FILE) return true;
+            if (source == PackageInstaller.PACKAGE_SOURCE_STORE) return false;
+        } catch (Exception e) {
+            // not known
+        }
+        return null;
+    }
+
+    /** Has the person turned on Escanor in Accessibility settings, and is Android still holding that switch back? */
     @PluginMethod
     public void controlStatus(PluginCall call) {
         JSObject out = new JSObject();
         out.put("enabled", EscanorControlService.isRunning());
         out.put("available", controlIncluded());
+        Boolean restricted = controlRestricted();
+        out.put("restricted", restricted == null ? JSObject.NULL : restricted);
         call.resolve(out);
     }
 
-    /** Open Android's Accessibility settings, where the person switches Escanor on. Android allows nothing else: no app can do this for them. */
+    /**
+     * Open Android's Accessibility settings, where the person switches Escanor on. Android allows nothing else: no app can do this
+     * for them. Goes straight to Escanor's own switch where the phone supports it, else to the list.
+     */
     @PluginMethod
     public void openControlSettings(PluginCall call) {
-        call.resolve(start(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) ? result(true, null) : result(false, "Open Android Settings, then Accessibility, and turn on Escanor."));
+        Intent direct = new Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS")
+            .putExtra(Intent.EXTRA_COMPONENT_NAME, new android.content.ComponentName(getContext(), EscanorControlService.class).flattenToString());
+        boolean opened = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && start(direct);
+        if (!opened) opened = start(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+        call.resolve(opened ? result(true, null) : result(false, "Open Android Settings, then Accessibility, and turn on Escanor."));
+    }
+
+    /** Open Escanor's App info, where the ⋮ menu has "Allow restricted settings" (Android 13+, for apps installed from a file). */
+    @PluginMethod
+    public void openAppInfo(PluginCall call) {
+        Intent info = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", getContext().getPackageName(), null));
+        call.resolve(start(info) ? result(true, null) : result(false, "Open Android Settings, then Apps, then Escanor."));
     }
 
     /**

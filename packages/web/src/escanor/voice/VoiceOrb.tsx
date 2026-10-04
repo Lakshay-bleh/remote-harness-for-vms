@@ -8,6 +8,7 @@ import { loadOrb, movedFar, orbCss, ORB_SIZE, posFromPoint, saveOrb, type OrbPos
 import { App as CapApp } from '@capacitor/app';
 import { isNative } from '../../api';
 import { deviceOrNull } from './device';
+import PhoneControlSetup from './PhoneControlSetup';
 import { useVoiceSession, type VoicePhase } from './useVoiceSession';
 import { getVoicePrefs } from './voicePrefs';
 import { wake } from './wakeWord';
@@ -59,6 +60,10 @@ export default function VoiceHost({ go, onAssistant, children }: { go: (tab: Voi
   const keyboard = useKeyboardOpen();
 
   const v = useVoiceSession({ go: (t) => { go(t); close(); }, onAssistant });
+  const dev = deviceOrNull();
+  // The phone-control steps open under an answer that needs them; "Not now" hides them until the next answer.
+  const [setupClosed, setSetupClosed] = useState(false);
+  useEffect(() => setSetupClosed(false), [v.reply]);
 
   const talk = useCallback(async () => {
     live.current = true;
@@ -206,8 +211,10 @@ export default function VoiceHost({ go, onAssistant, children }: { go: (tab: Voi
                 <p className="whitespace-pre-wrap text-[14px] leading-snug text-body-strong">{v.reply.say}</p>
               </div>
             )}
-            {v.reply?.needs === 'accessibility' && (
-              <button type="button" onClick={() => void deviceOrNull()?.openControlSettings()} className="rounded-pill bg-primary px-5 py-2.5 text-sm font-medium text-on-primary transition active:scale-95">Turn on phone control</button>
+            {v.reply?.needs === 'accessibility' && !setupClosed && dev && (
+              <div className="w-full max-w-md overflow-y-auto rounded-xl border border-hairline bg-surface-card text-left">
+                <PhoneControlSetup dev={dev} onDismiss={() => setSetupClosed(true)} />
+              </div>
             )}
             {!v.heard && !v.reply && <p className="max-w-xs text-[13px] leading-relaxed text-muted">Try “open YouTube”, “set a timer for 5 minutes”, “call Mom”, “on my computer, show my containers”, or ask anything.</p>}
           </div>

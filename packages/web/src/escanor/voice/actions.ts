@@ -16,6 +16,15 @@ export interface PhoneOptions {
   directCalls?: boolean;
 }
 
+export interface ControlStatus {
+  /** The person has switched Escanor on in Accessibility settings. */
+  enabled: boolean;
+  /** Phone control is part of this download. */
+  available?: boolean;
+  /** Android still greys out the switch ("Controlled by restricted setting"); null when this Android does not say. */
+  restricted?: boolean | null;
+}
+
 /** What the native EscanorDevice plugin offers. (Declared here so the logic below can be tested with a fake phone.) */
 export interface DevicePlugin {
   listApps(): Promise<{ apps: InstalledApp[] }>;
@@ -26,8 +35,10 @@ export interface DevicePlugin {
   callContact(o: { name: string; direct?: boolean }): Promise<PluginResult>;
   callStatus(): Promise<{ granted: boolean }>;
   requestCallPermission(): Promise<PluginResult>;
-  controlStatus(): Promise<{ enabled: boolean; /** Phone control is part of this download. */ available?: boolean }>;
+  controlStatus(): Promise<ControlStatus>;
   openControlSettings(): Promise<PluginResult>;
+  /** Escanor's App info, where Android 13+ offers "Allow restricted settings". */
+  openAppInfo(): Promise<PluginResult>;
   control(o: { action: 'global'; name: string } | { action: 'click'; text: string } | { action: 'scroll'; direction: 'up' | 'down' } | { action: 'type'; text: string } | { action: 'read' }): Promise<PluginResult>;
   setAlarm(o: { hour: number; minute: number }): Promise<PluginResult>;
   setTimer(o: { seconds: number }): Promise<PluginResult>;
