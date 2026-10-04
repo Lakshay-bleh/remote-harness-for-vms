@@ -6,9 +6,11 @@ export interface VoicePrefs {
   directCalls: boolean;
   /** Listen for "Hey Escanor" in the background. */
   wakeWord: boolean;
+  /** Read what phone control does and agreed to it, in the app, before being sent to Android's Accessibility settings. */
+  controlConsent: boolean;
 }
 
-export const DEFAULT_VOICE_PREFS: VoicePrefs = { directCalls: true, wakeWord: false };
+export const DEFAULT_VOICE_PREFS: VoicePrefs = { directCalls: true, wakeWord: false, controlConsent: false };
 const KEY = 'escanor.voice.v1';
 
 export function parseVoicePrefs(raw: string | null): VoicePrefs {
@@ -22,6 +24,7 @@ export function parseVoicePrefs(raw: string | null): VoicePrefs {
   return {
     directCalls: typeof o.directCalls === 'boolean' ? o.directCalls : DEFAULT_VOICE_PREFS.directCalls,
     wakeWord: typeof o.wakeWord === 'boolean' ? o.wakeWord : DEFAULT_VOICE_PREFS.wakeWord,
+    controlConsent: typeof o.controlConsent === 'boolean' ? o.controlConsent : DEFAULT_VOICE_PREFS.controlConsent,
   };
 }
 

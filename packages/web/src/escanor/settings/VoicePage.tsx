@@ -2,7 +2,9 @@ import { Download, HandPointing, Microphone, Phone, ShieldCheck, Waveform } from
 import { useCallback, useEffect, useState } from 'react';
 import { isNative } from '../../api';
 import { Button, Notice, Spinner } from '../ui';
+import type { ControlStatus } from '../voice/actions';
 import { deviceOrNull } from '../voice/device';
+import PhoneControlSetup from '../voice/PhoneControlSetup';
 import { wake, wakeStep, type WakeStatus } from '../voice/wakeWord';
 import { setVoicePrefs, useVoicePrefs } from '../voice/voicePrefs';
 import { Group, Page, Row, SwitchRow } from './parts';
@@ -14,8 +16,7 @@ import { Group, Page, Row, SwitchRow } from './parts';
 export default function VoicePage({ onBack }: { onBack: () => void }) {
   const dev = deviceOrNull();
   const prefs = useVoicePrefs();
-  const [control, setControl] = useState<boolean | null>(null);
-  const [controlBuilt, setControlBuilt] = useState(true);
+  const [control, setControl] = useState<ControlStatus | null>(null);
   const [call, setCall] = useState<boolean | null>(null);
   const [status, setStatus] = useState<WakeStatus | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
@@ -24,9 +25,6 @@ export default function VoicePage({ onBack }: { onBack: () => void }) {
 
   const refresh = useCallback(async () => {
     if (!dev) return;
-    const c = await dev.controlStatus().catch(() => ({ enabled: false, available: true }));
-    setControl(c.enabled);
-    setControlBuilt(c.available !== false);
     setCall((await dev.callStatus().catch(() => ({ granted: false }))).granted);
     setStatus(await wake.status());
   }, [dev]);
@@ -94,26 +92,16 @@ export default function VoicePage({ onBack }: { onBack: () => void }) {
 
       <Group
         title="Control your phone"
-        footer="Escanor can then go home or back, open your notifications, scroll, tap a button by its name and type, but only when you ask. It never does anything on its own, and it reads what is on your screen only when you ask “what is on my screen”. Android requires you to switch this on yourself, in its Accessibility settings."
+        footer="Escanor asks before each step. Android requires you to switch this on yourself, in its Accessibility settings, and you can switch it off there any time."
       >
         <Row
           icon={<HandPointing size={18} />}
           label="Phone control"
-          sub={!controlBuilt ? 'Not in this download. See below.' : control ? 'On. Try: “go home”, “scroll down”, “tap Send”.' : 'Off. Turn it on in Android’s Accessibility settings.'}
-          value={control === null ? <Spinner /> : control ? 'On' : 'Off'}
+          sub={control?.enabled ? 'Try: “go home”, “scroll down”, “tap Send”.' : 'Go home or back, scroll, tap and type when you ask.'}
+          value={dev && !control ? <Spinner /> : control?.enabled ? 'On' : 'Off'}
           chevron={false}
         />
-        {!controlBuilt && dev && (
-          <div className="px-3.5 py-3 text-[13px] leading-relaxed text-body">
-            Android’s Play Protect blocks apps installed from outside the Play Store when they ask to control the phone, so the normal Escanor download leaves this out. If you want it, install the <b className="text-ink">“with phone control”</b> APK from the Escanor release page (Play Protect may warn: choose “Install anyway”).
-          </div>
-        )}
-        {controlBuilt && !control && dev && (
-          <div className="px-3.5 py-3">
-            <p className="mb-2 text-[13px] leading-relaxed text-body">In the next screen, find <b className="text-ink">Escanor</b>, tap it and switch it on. Android shows a warning that is normal for any app that can press buttons for you.</p>
-            <Button onClick={() => void dev.openControlSettings()} className="w-full">Open Accessibility settings</Button>
-          </div>
-        )}
+        {dev && <PhoneControlSetup dev={dev} onStatus={setControl} />}
       </Group>
 
       <Group title="Calling" footer="With this on, “call Mom” rings straight away. Off, Escanor opens the dialer with the number filled in and you press call. Android asks for the Phone permission the first time.">

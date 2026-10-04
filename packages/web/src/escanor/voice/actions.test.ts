@@ -12,7 +12,7 @@ function fakePhone(over: Partial<DevicePlugin> = {}) {
     launchPackage: rec('launchPackage'), openUrl: rec('openUrl'), dial: rec('dial'), callNumber: rec('callNumber'), callContact: rec('callContact'), setAlarm: rec('setAlarm'),
     setTimer: rec('setTimer'), setTorch: rec('setTorch'), setVolume: rec('setVolume'), openSettings: rec('openSettings'),
     callStatus: rec('callStatus', (async () => ({ granted: true })) as DevicePlugin['callStatus']), requestCallPermission: rec('requestCallPermission'),
-    controlStatus: rec('controlStatus', (async () => ({ enabled: true })) as DevicePlugin['controlStatus']), openControlSettings: rec('openControlSettings'), control: rec('control'), ...over,
+    controlStatus: rec('controlStatus', (async () => ({ enabled: true })) as DevicePlugin['controlStatus']), openControlSettings: rec('openControlSettings'), openAppInfo: rec('openAppInfo'), control: rec('control'), ...over,
   };
   void ok;
   return { dev, calls };
