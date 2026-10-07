@@ -71,10 +71,12 @@ jobs:
             printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
             printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' "$RUNNER_TEMP/release.jks" "$ANDROID_KEYSTORE_PASSWORD" "$ANDROID_KEY_ALIAS" "$ANDROID_KEY_PASSWORD" > "$RUNNER_TEMP/signing.properties"
             echo "props=$RUNNER_TEMP/signing.properties" >> "$GITHUB_OUTPUT"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
             echo "script=android:apk:release" >> "$GITHUB_OUTPUT"
             echo "apk=release/app-release.apk" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::ANDROID_KEYSTORE_BASE64 is not set: this is a debug-signed APK, which Play Protect is more likely to block."
+            echo "::warning::ANDROID_KEYSTORE_BASE64 is not set: this is a debug-signed APK (kept as a build artifact only, never published to the release)."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
             echo "props=$RUNNER_TEMP/none.properties" >> "$GITHUB_OUTPUT"
             echo "script=android:apk" >> "$GITHUB_OUTPUT"
             echo "apk=debug/app-debug.apk" >> "$GITHUB_OUTPUT"
@@ -96,7 +98,10 @@ jobs:
           name: remote-harness-${{ steps.v.outputs.version }}-apk
           path: remote-harness-${{ steps.v.outputs.version }}.apk
 
+      # Only a release-signed APK goes on the release page. A debug build would replace the signed one attached by hand (same file
+      # name) and users could no longer update over it.
       - name: Publish the release
+        if: steps.sign.outputs.signed == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.v.outputs.version }}
