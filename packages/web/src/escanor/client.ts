@@ -393,7 +393,7 @@ export const escanor = {
   twoFactorDisable: (code: string) => request<{ enabled: boolean }>('/security/2fa/disable', json({ code })),
   twoFactorBackupCodes: (code: string) => request<{ backup_codes: string[] }>('/security/2fa/backup-codes', json({ code })),
   deletionStatus: () => request<DeletionStatus>('/account/deletion'),
-  requestDeletion: (code: string, confirmEmail: string) => request<DeletionStatus>('/account/deletion', json({ code, confirm_email: confirmEmail })),
+  requestDeletion: (code: string | null, confirmEmail: string) => request<DeletionStatus>('/account/deletion', json({ code: code ?? '', confirm_email: confirmEmail })),
   cancelDeletion: () => request<DeletionStatus>('/account/deletion/cancel', { method: 'POST' }),
   /** How long the backend takes to answer, in ms: the Developer screen's "is it me or the server" check. Needs no sign-in. */
   async ping(): Promise<{ ms: number; ok: boolean; status: number }> {

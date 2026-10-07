@@ -9,8 +9,8 @@ import { daysUntil, DELETION_FACTS, emailConfirmed, parseCodeInput } from './sec
 
 const FIELD = 'mt-1 w-full rounded-md border border-line-strong bg-surface-card px-3 py-3 text-[15px] text-ink outline-none transition placeholder:text-muted-soft focus:border-primary focus:ring-4 focus:ring-primary/15';
 
-/** Delete the account. Needs two-step verification and the account email, and is scheduled for a week so it can be taken back. */
-export default function DeleteAccountPage({ onBack, onSetUp2fa }: { onBack: () => void; onSetUp2fa: () => void }) {
+/** Delete the account: confirmed with the account email (and a code when two-step verification is on), scheduled for a week so it can be taken back. */
+export default function DeleteAccountPage({ onBack }: { onBack: () => void; onSetUp2fa?: () => void }) {
   const { user, signOut } = useEscanorSession();
   const status = useLoad(() => escanor.deletionStatus(), 0);
   const [email, setEmail] = useState('');
@@ -20,14 +20,15 @@ export default function DeleteAccountPage({ onBack, onSetUp2fa }: { onBack: () =
   const [done, setDone] = useState<DeletionStatus | null>(null);
   const s = status.data;
   const parsed = parseCodeInput(code);
-  const ready = emailConfirmed(email, user?.email) && Boolean(parsed);
+  const needsCode = Boolean(status.data?.two_factor_enabled);
+  const ready = emailConfirmed(email, user?.email) && (!needsCode || Boolean(parsed));
 
   const submit = async () => {
-    if (!parsed) return;
+    if (needsCode && !parsed) return;
     setBusy(true);
     setError(null);
     try {
-      setDone(await escanor.requestDeletion(parsed, email.trim()));
+      setDone(await escanor.requestDeletion(needsCode ? parsed : null, email.trim()));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'That did not work. Nothing was changed.');
     } finally {
@@ -48,23 +49,18 @@ export default function DeleteAccountPage({ onBack, onSetUp2fa }: { onBack: () =
             <h2 className="flex items-center gap-2 font-display text-lg text-error"><Warning size={20} weight="fill" aria-hidden /> What happens</h2>
             <ul className="space-y-2 text-[13.5px] leading-relaxed text-body-strong">{DELETION_FACTS.map((f) => <li key={f}>• {f}</li>)}</ul>
           </section>
-          {!s.two_factor_enabled ? (
-            <section className="space-y-3">
-              <Notice tone="warn">Deleting an account needs two-step verification. Turn it on first.</Notice>
-              <Button className="w-full" onClick={onSetUp2fa}>Turn on two-step verification</Button>
-            </section>
-          ) : (
-            <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (ready) void submit(); }}>
-              {error && <Notice tone="error">{error}</Notice>}
-              <label className="block text-sm text-body">Type your email to confirm ({user?.email})
-                <input value={email} onChange={(e) => setEmail(e.target.value)} inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} className={FIELD} aria-label="Account email" />
-              </label>
+          <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (ready) void submit(); }}>
+            {error && <Notice tone="error">{error}</Notice>}
+            <label className="block text-sm text-body">Type your email to confirm ({user?.email})
+              <input value={email} onChange={(e) => setEmail(e.target.value)} inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} className={FIELD} aria-label="Account email" />
+            </label>
+            {needsCode && (
               <label className="block text-sm text-body">Code from your authenticator app (or a backup code)
                 <input value={code} onChange={(e) => setCode(e.target.value)} autoComplete="one-time-code" autoCapitalize="characters" autoCorrect="off" spellCheck={false} placeholder="123 456" className={`${FIELD} font-mono tracking-widest`} aria-label="Code" />
               </label>
-              <Button kind="danger" type="submit" className="w-full" disabled={!ready || busy}>{busy ? 'Scheduling…' : 'Delete my account'}</Button>
-            </form>
-          )}
+            )}
+            <Button kind="danger" type="submit" className="w-full" disabled={!ready || busy}>{busy ? 'Scheduling…' : 'Delete my account'}</Button>
+          </form>
         </>
       )}
       {done && (

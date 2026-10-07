@@ -1,6 +1,7 @@
 import { ChatCircleText, Desktop, GearSix, Laptop, PencilSimpleLine, PlugsConnected, X, type Icon } from '@phosphor-icons/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DeletionNotice } from './account/DeleteAccountPage';
+import PolicyGate from './account/PolicyGate';
 import AssistantView from './AssistantView';
 import ChatList from './ChatList';
 import { useChatMeta } from './chatMeta';
@@ -222,7 +223,7 @@ export default function Shell({ machines }: { machines: React.ReactNode }) {
         {/* the companion: small, in the corner of every screen, running whenever something loads */}
         <Buddy top={48} className="fixed bottom-[calc(env(safe-area-inset-bottom)+72px)] left-1 z-30 md:bottom-3 md:left-auto md:right-3" />
 
-        {deletion.data?.scheduled && <DeletionNotice status={deletion.data} onCancelled={deletion.reload} />}
+        {deletion.data?.scheduled ? <DeletionNotice status={deletion.data} onCancelled={deletion.reload} /> : <PolicyGate />}
 
         {banner && (
           <button type="button" role="status" onClick={() => { show(banner.dest); setBanner(null); }} className="fixed inset-x-3 top-[calc(env(safe-area-inset-top)+8px)] z-[60] rounded-xl border border-line-strong bg-surface-card p-3.5 text-left shadow-elevated md:left-auto md:max-w-sm">

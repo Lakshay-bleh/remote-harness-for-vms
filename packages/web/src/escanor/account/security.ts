@@ -25,7 +25,7 @@ export function daysUntil(iso: string, now: Date = new Date()): string {
 /** What the server does not do for the person, said before they confirm: shown as the list on the delete screen. */
 export const DELETION_FACTS = [
   'You are signed out everywhere and every key you made stops working straight away.',
-  'After 7 days your account and everything in it is deleted: connected services, chats, machines, keys and plans. A subscription is cancelled.',
+  'Any paid plan stops renewing now. After 7 days your account and everything in it is deleted: connected services, chats, machines and keys.',
   'If you sign in during those 7 days you can cancel the deletion.',
-  'A few records are kept because the law asks for them: your consent history and privacy requests (without your contact details) and the audit trail.',
+  'A few records are kept because the law asks for them: your name, email and sign-up date for 180 days, payment records, and your consent and request history without your contact details.',
 ] as const;
