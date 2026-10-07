@@ -18,7 +18,7 @@ export const legalDocuments: Record<string, LegalDocument> = {
     description: 'What we collect, why, who we share it with, how long we keep it, and your rights.',
     sections: [
       { heading: 'Who we are', paragraphs: [
-        'Escanor is provided by Escanor Labs Private Limited, Guru Gobind Singh Indraprastha University, Sector 16C, Dwarka, New Delhi 110078, India ("Escanor", "we"). We decide why and how your personal data is processed for the service, and we are responsible for it under the Information Technology Act, 2000, the rules made under it, and the Digital Personal Data Protection Act, 2023.',
+        'Escanor is provided by Escanor Labs, ATF-39, Gaur World Smart Street, Sector-16B, Greater Noida West, Uttar Pradesh 201308, India ("Escanor", "we"). We decide why and how your personal data is processed for the service, and we are responsible for it under the Information Technology Act, 2000, the rules made under it, and the Digital Personal Data Protection Act, 2023.',
         'Where your organisation adds you to its workspace, it decides what its workspace is used for; we process that workspace content on its behalf. Questions about it can go to your workspace administrator or to us.',
       ] },
       { heading: 'What we collect and why', id: 'data', items: [
@@ -94,10 +94,10 @@ export const legalDocuments: Record<string, LegalDocument> = {
 
   terms: {
     title: 'Terms of service',
-    description: 'The agreement between you and Escanor Labs Private Limited for using Escanor.',
+    description: 'The agreement between you and Escanor Labs for using Escanor.',
     sections: [
       { heading: 'This agreement', paragraphs: [
-        'These terms are a contract between you and Escanor Labs Private Limited, New Delhi ("Escanor", "we") for the Escanor website, web app, desktop app, Android app and API (the "service"). You accept them when you create an account or tick "I agree"; we record the version you accepted. If you use Escanor for an organisation, you confirm you have its authority, and these terms bind it too.',
+        'These terms are a contract between you and Escanor Labs, Greater Noida, Uttar Pradesh ("Escanor", "we") for the Escanor website, web app, desktop app, Android app and API (the "service"). You accept them when you create an account or tick "I agree"; we record the version you accepted. If you use Escanor for an organisation, you confirm you have its authority, and these terms bind it too.',
       ] },
       { heading: 'Who can use Escanor', paragraphs: [
         'You must be 18 or older and able to enter a contract under Indian law. Keep your password and keys secret, use two-step verification where you can, and tell us at once at security@escanor.in if you suspect someone else is using your account.',
@@ -128,7 +128,7 @@ export const legalDocuments: Record<string, LegalDocument> = {
         'We work to keep Escanor available and secure but cannot promise it will be uninterrupted or error-free, and services you connect are run by their own providers. To the extent the law allows, our total liability to you for any claim is limited to the fees you paid us in the 12 months before the claim. This limit does not apply to fraud, gross negligence, or anything the law does not allow us to limit, and nothing in these terms affects your rights under the Consumer Protection Act, 2019.',
       ] },
       { heading: 'Changes, law and disputes', paragraphs: [
-        'We will tell you about material changes to these terms before they apply and ask you to accept them in the app. These terms are governed by the laws of India. Please raise any problem with us first through [Support](/support) or [Grievances](/grievances); we aim to resolve it quickly. Subject to that, the courts at New Delhi have jurisdiction, and you may also use a consumer commission or the National Consumer Helpline (1915) where the law allows.',
+        'We will tell you about material changes to these terms before they apply and ask you to accept them in the app. These terms are governed by the laws of India. Please raise any problem with us first through [Support](/support) or [Grievances](/grievances); we aim to resolve it quickly. Subject to that, the courts at Gautam Buddh Nagar, Uttar Pradesh have jurisdiction, and you may also use a consumer commission or the National Consumer Helpline (1915) where the law allows.',
       ] },
     ],
   },
@@ -258,7 +258,7 @@ export const legalDocuments: Record<string, LegalDocument> = {
     description: 'Make a complaint, report content, or appeal a decision.',
     sections: [
       { heading: 'Grievance Officer', paragraphs: [
-        '**Lakshay Jain**, Grievance Officer, Escanor Labs Private Limited, Guru Gobind Singh Indraprastha University, Sector 16C, Dwarka, New Delhi 110078. Email: support@escanor.in.',
+        '**Lakshay Jain**, Grievance Officer, Escanor Labs, ATF-39, Gaur World Smart Street, Sector-16B, Greater Noida West, Uttar Pradesh 201308, India. Email: support@escanor.in.',
         'Use the form below, or email the Grievance Officer. You do not need an account. You get a reference number and an emailed receipt straight away.',
       ] },
       { heading: 'How fast we act', items: [
