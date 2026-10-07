@@ -16,6 +16,10 @@ export interface ComposerProps {
   chips?: React.ReactNode;
   onSend: (text: string, attachments: Attachment[]) => void;
   onStop?: () => void;
+  /** A stop is on its way: the stop button shows it is working instead of looking ignored. */
+  stopping?: boolean;
+  /** Send stays usable while `running` (a turn that looks lost); the stop button stays beside it. */
+  sendWhileRunning?: boolean;
   /** Reported above the box, in the chat's own error style. */
   onProblem?: (message: string | null) => void;
 }
@@ -25,7 +29,7 @@ export interface ComposerProps {
  * never covers the send button. On the right: speak instead of typing, voice mode (a conversation by voice), or send. Attached files
  * show as chips above the text, with a picture for photos and a button to take any of them off.
  */
-export default function ChatComposer({ placeholder, running = false, disabled = false, attach = 'all', chips, onSend, onStop, onProblem }: ComposerProps) {
+export default function ChatComposer({ placeholder, running = false, disabled = false, attach = 'all', chips, onSend, onStop, stopping = false, sendWhileRunning = false, onProblem }: ComposerProps) {
   const [text, setText] = useState('');
   const [files, setFiles] = useState<Attachment[]>([]);
   const [menu, setMenu] = useState(false);
@@ -70,7 +74,7 @@ export default function ChatComposer({ placeholder, running = false, disabled = 
 
   const content = text.trim().length > 0 || files.length > 0;
   const submit = () => {
-    if (!content || disabled || running || reading > 0) return;
+    if (!content || disabled || (running && !sendWhileRunning) || reading > 0) return;
     dictation.stop();
     onSend(text.trim(), files);
     setText('');
@@ -118,9 +122,10 @@ export default function ChatComposer({ placeholder, running = false, disabled = 
           {dictation.supported && !running && (
             <button type="button" onClick={() => dictation.toggle(text)} aria-label={dictation.listening ? 'Stop dictating' : 'Speak your message'} aria-pressed={dictation.listening} disabled={disabled} className={`${iconBtn} ${dictation.listening ? 'animate-pulse bg-primary text-on-primary' : 'text-body hover:bg-surface-card'}`}><Microphone size={21} weight={dictation.listening ? 'fill' : 'regular'} /></button>
           )}
-          {running ? (
-            <button type="button" onClick={onStop} aria-label="Stop" className={`${iconBtn} bg-surface-card text-ink hover:bg-surface-cream-strong`}><Stop size={18} weight="fill" /></button>
-          ) : content ? (
+          {running && onStop && (
+            <button type="button" onClick={onStop} disabled={stopping} aria-label={stopping ? 'Stopping' : 'Stop'} title={stopping ? 'Stopping…' : 'Stop'} className={`${iconBtn} bg-surface-card text-ink hover:bg-surface-cream-strong`}>{stopping ? <Spinner /> : <Stop size={18} weight="fill" />}</button>
+          )}
+          {running && (!sendWhileRunning || !content) ? null : content ? (
             <button type="submit" disabled={disabled || reading > 0} aria-label="Send" className={`${iconBtn} bg-primary text-on-primary hover:bg-primary-active`}><ArrowUp size={20} weight="bold" /></button>
           ) : voice ? (
             <button type="button" onClick={() => voice.open()} aria-label="Talk to Escanor" disabled={disabled} className={`${iconBtn} bg-primary text-on-primary hover:bg-primary-active`}><Waveform size={21} weight="bold" /></button>

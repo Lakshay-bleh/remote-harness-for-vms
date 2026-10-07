@@ -12,7 +12,7 @@ import { escanor } from '../client';
 import { animalInfo } from '../dog/animals';
 import { useCompanion } from '../dog/companion';
 import { loadComputers } from '../computer/storage';
-import { useLoad } from '../hooks';
+import { useLoad, useOnPlanChange } from '../hooks';
 import { useEscanorSession } from '../session';
 import { ScreenHeader } from '../ui';
 import { AccountPage, UsagePage } from './AccountPages';
@@ -42,6 +42,7 @@ export default function SettingsView({ onGo }: { onGo: (to: 'computers' | 'machi
   const prefs = usePrefs();
   const companion = useCompanion();
   const usage = useLoad(() => escanor.usage(), 120000);
+  useOnPlanChange(usage.reload);
   const u = usage.data ? describeUsage(usage.data) : null;
   const back = () => setPage('root');
   const to = (next: Page) => setPage(next);

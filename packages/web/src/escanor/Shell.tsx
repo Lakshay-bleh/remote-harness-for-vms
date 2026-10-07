@@ -7,7 +7,7 @@ import ChatList from './ChatList';
 import { useChatMeta } from './chatMeta';
 import { useHardwareBack } from './back';
 import ComputersView from './computer/ComputersView';
-import { escanor } from './client';
+import { ApiError, escanor } from './client';
 import { useLoad } from './hooks';
 import IntegrationsView from './IntegrationsView';
 import { listenPush, resumePush, type PushDest } from './push';
@@ -122,6 +122,17 @@ function TabBar({ tab, onPick }: { tab: Tab; onPick: (t: Tab) => void }) {
   );
 }
 
+/** Stop a conversation's turn and wait (up to ~10 s) for it to end. True when it has. */
+async function stopAndSettle(id: string, signal: AbortSignal): Promise<boolean> {
+  await escanor.stop(id).catch(() => undefined);
+  for (let i = 0; i < 20 && !signal.aborted; i++) {
+    const m = await escanor.messages(id, Number.MAX_SAFE_INTEGER).catch(() => null);
+    if (m && !m.running) return true;
+    await new Promise((res) => setTimeout(res, 500));
+  }
+  return false;
+}
+
 /**
  * The signed-in app. Phones get a tab bar along the bottom, like any other app, with the list of chats in a drawer from the Chat
  * screen; wider screens keep the sidebar. `machines` is the Remote Harness (hub) view.
@@ -153,18 +164,47 @@ export default function Shell({ machines }: { machines: React.ReactNode }) {
   const conversationRef = useRef<string | null>(null);
   conversationRef.current = conversationId;
   const askAssistant = useCallback(async (text: string, signal: AbortSignal) => {
-    const r = await escanor.send(text, conversationRef.current ?? undefined);
+    const open = conversationRef.current;
+    let r: { conversation_id: string };
+    try {
+      r = await escanor.send(text, open ?? undefined);
+    } catch (e) {
+      // The open chat is still answering something earlier: speaking again means "this instead", so stop that and ask again.
+      if (!(e instanceof ApiError && e.status === 409 && open)) throw e;
+      if (!(await stopAndSettle(open, signal))) return 'I’m still finishing your last request in this chat. Open it to follow along, or stop it there.';
+      r = await escanor.send(text, open);
+    }
     chats.reload();
     setConversationId(r.conversation_id);
-    const a = await waitForAnswer({ fetch: (after) => escanor.messages(r.conversation_id, after), wait: (ms) => new Promise((res) => setTimeout(res, ms)), now: Date.now }, text, { signal });
-    if (a.needsApproval) return 'I need your OK to go on. Open the chat to approve it.';
-    if (a.timedOut) return 'Still working on it. The answer will be in the chat.';
-    return a.text;
+    // Cancelling voice mode stops the turn it started, not only the waiting for it.
+    const stop = () => void escanor.stop(r.conversation_id).catch(() => undefined);
+    signal.addEventListener('abort', stop, { once: true });
+    try {
+      const a = await waitForAnswer({ fetch: (after) => escanor.messages(r.conversation_id, after), wait: (ms) => new Promise((res) => setTimeout(res, ms)), now: Date.now }, text, { signal });
+      if (a.needsApproval) return 'I need your OK to go on. Open the chat to approve it.';
+      if (a.timedOut) return 'Still working on it. The answer will be in the chat.';
+      return a.text;
+    } finally {
+      signal.removeEventListener('abort', stop);
+    }
   }, [chats]);
+  // A chat deleted while it is still working is stopped first (servers that do not stop it themselves on delete would otherwise
+  // carry on with a conversation nobody can see). Being open, it gives way to a new chat.
+  const [problem, setProblem] = useState<string | null>(null);
   const removeChat = useCallback((id: string, name: string) => {
     if (!window.confirm(`Delete “${name}”? This cannot be undone.`)) return;
-    void escanor.remove(id).then(() => { if (id === conversationId) setConversationId(null); chats.reload(); });
-  }, [conversationId, chats]);
+    void (async () => {
+      await escanor.stop(id).catch(() => undefined);
+      try {
+        await escanor.remove(id);
+        if (conversationRef.current === id) setConversationId(null);
+      } catch (e) {
+        setProblem(`Could not delete “${name}”. ${e instanceof Error ? e.message : 'Try again.'}`);
+      } finally {
+        chats.reload();
+      }
+    })();
+  }, [chats]);
 
   // A screen deep inside (the hub page) can ask to be taken to a tab without knowing about this component.
   useEffect(() => {
@@ -185,6 +225,11 @@ export default function Shell({ machines }: { machines: React.ReactNode }) {
     const t = setTimeout(() => setBanner(null), 6000);
     return () => clearTimeout(t);
   }, [banner]);
+  useEffect(() => {
+    if (!problem) return;
+    const t = setTimeout(() => setProblem(null), 6000);
+    return () => clearTimeout(t);
+  }, [problem]);
 
   // The phone's back button: close the chat list, else leave a tab for Chat, else (nothing left to undo) minimise the app.
   useHardwareBack(drawer, () => setDrawer(false), 2);
@@ -230,6 +275,10 @@ export default function Shell({ machines }: { machines: React.ReactNode }) {
             <span className="block truncate text-[14px] font-medium text-ink">{banner.title}</span>
             {banner.body && <span className="mt-0.5 line-clamp-2 block text-[13px] text-body">{banner.body}</span>}
           </button>
+        )}
+
+        {problem && (
+          <button type="button" role="alert" onClick={() => setProblem(null)} className="fixed inset-x-3 top-[calc(env(safe-area-inset-top)+8px)] z-[60] rounded-xl border border-error/30 bg-surface-card p-3.5 text-left text-[14px] text-error shadow-elevated md:left-auto md:max-w-sm">{problem}</button>
         )}
 
         {/* Phones: your chats, sliding in from the left. */}

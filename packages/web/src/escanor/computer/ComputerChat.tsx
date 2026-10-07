@@ -40,6 +40,8 @@ export default function ComputerChat({ computerId, request, online, onAsk, onAct
   const [history, setHistory] = useState(false);
   const end = useRef<HTMLDivElement>(null);
   const live = useRef(true);
+  // The request each chat is waiting on. Stop (or deleting the chat) forgets it, so a late reply is dropped instead of landing.
+  const asked = useRef(new Map<string, string>());
   const chatsRef = useRef(chats);
   chatsRef.current = chats;
   // `live`: this screen is still showing, so a reply that arrives late does not touch a screen that has gone. Set here, not only cleared,
@@ -100,9 +102,11 @@ export default function ComputerChat({ computerId, request, online, onAsk, onAct
       }
       setWorking((w) => ({ ...w, [id]: Date.now() }));
       const fresh = served.get(computerId) !== id; // the assistant on the computer is holding a different conversation in mind
+      const ask = uid();
+      asked.current.set(id, ask);
       let turn: Turn;
       try {
-        const out = await request({ t: 'chat', id: uid(), text: body, ...(fresh ? { fresh: true } : {}) });
+        const out = await request({ t: 'chat', id: ask, text: body, ...(fresh ? { fresh: true } : {}) });
         served.set(computerId, id);
         const reply = out.find((m) => m.t === 'reply' || m.t === 'error');
         const said = reply ? (reply.t === 'reply' ? reply.reply : reply.message) : 'Done.';
@@ -111,11 +115,21 @@ export default function ComputerChat({ computerId, request, online, onAsk, onAct
       } catch (e) {
         turn = { who: 'computer', text: e instanceof Error ? e.message : 'That did not work.', problem: true, at: Date.now() };
       }
-      change(id, (c) => addTurn(c, turn)); // into the chat it was asked in, even if another is open now
+      // Stopped, or the chat was deleted while the computer worked: the answer has nowhere to go (and must not bring the chat back).
+      if (asked.current.get(id) !== ask) return;
+      asked.current.delete(id);
+      if (chatsRef.current.some((c) => c.id === id)) change(id, (c) => addTurn(c, turn)); // into the chat it was asked in, even if another is open now
       if (live.current) setWorking((w) => { const { [id]: _done, ...rest } = w; return rest; });
     },
     [chat.id, working, online, change, computerId, request],
   );
+
+  /** Stop waiting on the computer for this chat. The computer may still finish the job; its answer is not shown. */
+  const stopWaiting = useCallback((id: string) => {
+    if (!asked.current.delete(id)) return;
+    setWorking((w) => { const { [id]: _done, ...rest } = w; return rest; });
+    change(id, (c) => addTurn(c, { who: 'computer', text: 'Stopped waiting. The computer may still finish what it was doing.', at: Date.now() }));
+  }, [change]);
 
   const open = useCallback((c: Chat) => { setActiveId(c.id); setHistory(false); }, []);
   const startNew = useCallback(() => {
@@ -124,6 +138,16 @@ export default function ComputerChat({ computerId, request, online, onAsk, onAct
     setActiveId(fresh.id);
     setHistory(false);
   }, []);
+
+  const deleteChat = useCallback((c: Chat) => {
+    asked.current.delete(c.id);
+    setWorking((w) => { const { [c.id]: _done, ...rest } = w; return rest; });
+    const next = remove(chatsRef.current, c.id);
+    chatsRef.current = next;
+    setChats(next);
+    saveChats(computerId, next);
+    if (c.id === chat.id) startNew();
+  }, [computerId, chat.id, startNew]);
 
   // New chat and history live in the section bar above (beside Permissions and Activity), not in a row of their own.
   const canNew = chat.turns.length > 0;
@@ -165,7 +189,7 @@ export default function ComputerChat({ computerId, request, online, onAsk, onAct
       </div>
 
       <div className="px-4 pb-3 pt-2">
-        <ChatComposer key={chat.id} placeholder={online ? 'Message your computer' : 'Computer offline'} disabled={!online || busy} running={false} attach="text" onSend={(t, f) => void send(t, f)} />
+        <ChatComposer key={chat.id} placeholder={online ? 'Message your computer' : 'Computer offline'} disabled={!online} running={busy} attach="text" onSend={(t, f) => void send(t, f)} onStop={() => stopWaiting(chat.id)} />
       </div>
 
       {history && (
@@ -184,7 +208,7 @@ export default function ComputerChat({ computerId, request, online, onAsk, onAct
                         <span className="block truncate text-[15px] text-ink">{c.title}</span>
                         <span className="block truncate text-[12px] text-muted">{c.turns.length} message{c.turns.length === 1 ? '' : 's'} · {c.turns.at(-1)?.text.slice(0, 40)}</span>
                       </button>
-                      <button type="button" aria-label={`Delete ${c.title}`} onClick={() => { const next = remove(chats, c.id); chatsRef.current = next; setChats(next); saveChats(computerId, next); if (c.id === chat.id) startNew(); }} className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition hover:bg-surface-strong hover:text-error"><Trash size={18} /></button>
+                      <button type="button" aria-label={`Delete ${c.title}`} onClick={() => deleteChat(c)} className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition hover:bg-surface-strong hover:text-error"><Trash size={18} /></button>
                     </div>
                   </li>
                 ))}

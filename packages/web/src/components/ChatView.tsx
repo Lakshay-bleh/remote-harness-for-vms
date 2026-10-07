@@ -2,7 +2,7 @@ import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ImageAttachment, MessageDto } from '@remote-harness/shared';
 import { useStore } from '../store';
 import { api } from '../api';
-import { groupMessages, latestTodos } from '../groupMessages';
+import { busySince, groupMessages, latestTodos } from '../groupMessages';
 import Message, { PermissionRequest, Spinner, TodoList, CwdContext } from './Message';
 import ChatComposer from '../escanor/composer/ChatComposer';
 import { inlineText, type Attachment } from '../escanor/composer/attachments';
@@ -77,16 +77,6 @@ const FolderIcon = () => (
     <path d="M3 6a1 1 0 011-1h5l2 2h9a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V6z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
   </svg>
 );
-
-// Returns when the in-flight turn started, or null if the session is idle.
-function busySince(rows: MessageDto[]): number | null {
-  for (let i = rows.length - 1; i >= 0; i--) {
-    const m = rows[i].message as any;
-    if (m?.type === 'result') return null;
-    if (m?.type === 'user' && m.local) return new Date(rows[i].createdAt).getTime() || Date.now();
-  }
-  return null;
-}
 
 function lastIsThinking(rows: MessageDto[]): boolean {
   for (let i = rows.length - 1; i >= 0; i--) {

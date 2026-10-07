@@ -29,6 +29,8 @@ export type AssistantItem =
   | { id: number; kind: 'assistant'; text: string; at?: string | null }
   | { id: number; kind: 'activity'; text: string; at?: string | null }
   | { id: number; kind: 'error'; text: string; at?: string | null }
+  /** A quiet line from the server about the turn itself: "Stopped.", or "X wasn't available, so Y is answering". */
+  | { id: number; kind: 'notice'; text: string; at?: string | null }
   | { id: number; kind: 'done'; at?: string | null }
   | {
       id: number;
@@ -42,12 +44,21 @@ export type AssistantItem =
       at?: string | null;
     };
 
+/** What the assistant is doing right now, e.g. "Asking GPT OSS 120b · step 2", and since when (ISO 8601). */
+export interface AssistantProgress {
+  text: string;
+  since: string;
+  step?: number;
+}
+
 export interface AssistantMessages {
   items: AssistantItem[];
   approvals: Array<{ request_id: string; status: AssistantApprovalStatus }>;
   running: boolean;
   pending: number;
   last_id: number;
+  /** Absent from servers older than this field: treat as null. */
+  progress?: AssistantProgress | null;
 }
 
 export interface AssistantUsage {
@@ -96,9 +107,11 @@ export interface ChatState {
   lastId: number;
   running: boolean;
   pending: number;
+  /** What the server last said it is doing; null when it is not working or did not say. */
+  progress: AssistantProgress | null;
 }
 
-export const emptyChat: ChatState = { items: [], lastId: 0, running: false, pending: 0 };
+export const emptyChat: ChatState = { items: [], lastId: 0, running: false, pending: 0, progress: null };
 
 let optimisticCounter = 0;
 
@@ -114,7 +127,7 @@ export function addOptimisticMessage(state: ChatState, text: string): ChatState 
 
 /** Take the optimistic message back, e.g. when sending failed. */
 export function dropOptimisticMessages(state: ChatState): ChatState {
-  return { ...state, items: state.items.filter((i) => !('optimistic' in i)), running: false };
+  return { ...state, items: state.items.filter((i) => !('optimistic' in i)), running: false, progress: null };
 }
 
 /** Merge one poll into the state. Safe to apply the same response twice. */
@@ -133,7 +146,8 @@ export function applyMessages(state: ChatState, res: AssistantMessages): ChatSta
   const answers = new Map<string, AssistantApprovalStatus>(res.approvals.map((a) => [a.request_id, a.status]));
   items = items.map((i) => (i.kind === 'approval' && answers.has(i.request_id) ? { ...i, status: answers.get(i.request_id)! } : i));
 
-  return { items, lastId: Math.max(state.lastId, res.last_id), running: res.running, pending: res.pending };
+  const progress = res.running && res.progress && typeof res.progress.text === 'string' && res.progress.text ? res.progress : null;
+  return { items, lastId: Math.max(state.lastId, res.last_id), running: res.running, pending: res.pending, progress };
 }
 
 /** Reflect the person's answer immediately, before the next poll confirms it. */
@@ -149,6 +163,7 @@ export function markAnswered(state: ChatState, requestId: string, allow: boolean
 export type DisplayBlock =
   | { key: string; type: 'user' | 'assistant' | 'error'; text: string; optimistic?: boolean }
   | { key: string; type: 'activity'; text: string; live: boolean }
+  | { key: string; type: 'notice'; text: string }
   | { key: string; type: 'approval'; item: Extract<AssistantItem, { kind: 'approval' }> };
 
 /**
@@ -168,6 +183,9 @@ export function toDisplay(state: ChatState): DisplayBlock[] {
         break;
       case 'error':
         blocks.push({ key, type: 'error', text: item.text });
+        break;
+      case 'notice':
+        blocks.push({ key, type: 'notice', text: item.text });
         break;
       case 'approval':
         // A question nobody needs to answer any more (the turn ended) is noise.
@@ -195,7 +213,61 @@ export function toDisplay(state: ChatState): DisplayBlock[] {
 export function isThinking(state: ChatState): boolean {
   if (!state.running || state.pending > 0) return false;
   const last = toDisplay(state).at(-1);
-  return !last || last.type === 'user' || last.type === 'activity';
+  // A notice mid-turn ("X wasn't available, so Y is answering") is still waiting on the answer.
+  return !last || last.type === 'user' || last.type === 'activity' || last.type === 'notice';
+}
+
+/** Whole seconds since an ISO time, never negative (a phone clock a little ahead of the server's), or null when unreadable. */
+export function secondsSince(iso: string | null | undefined, now = Date.now()): number | null {
+  const t = iso ? Date.parse(iso) : NaN;
+  return Number.isFinite(t) ? Math.max(0, Math.floor((now - t) / 1000)) : null;
+}
+
+/** The thinking line: what the server says it is doing, with how long it has been at it ("Asking GPT OSS 120b · step 2 · 14s"). */
+export function thinkingLabel(progress: AssistantProgress | null, now = Date.now(), startedAt: number | null = null): string {
+  const secs = progress ? secondsSince(progress.since, now) : startedAt === null ? null : Math.max(0, Math.floor((now - startedAt) / 1000));
+  const what = progress?.text.trim() || 'Thinking…';
+  return secs === null ? what : `${what} · ${secs}s`;
+}
+
+// ---------------------------------------------------------------------------- stopping a turn, and a server that stops answering
+
+/** After a stop the server confirmed, how long it may still say "running" before the person is told and may send again. */
+export const STOP_GRACE_MS = 10_000;
+/** Message polls that fail in a row before the person is told the assistant cannot be reached. */
+export const POLL_FAILURES_TO_REPORT = 4;
+
+export type StopPhase =
+  /** Nothing asked. */
+  | { kind: 'idle' }
+  /** Stop pressed before the server gave the new chat an id: sent the moment it does. */
+  | { kind: 'queued' }
+  /** On its way to the server. */
+  | { kind: 'sending' }
+  /** The server took it at `at` (ms); waiting for the turn to end. */
+  | { kind: 'sent'; at: number };
+
+/**
+ * What pressing Stop does now: queue it until the chat has an id, send it, or nothing (already asked). A stop the server took but
+ * did not act on (`stuck`) can be sent again.
+ */
+export function pressStop(phase: StopPhase, hasId: boolean, stuck = false): { phase: StopPhase; send: boolean } {
+  if (phase.kind !== 'idle' && !(stuck && phase.kind === 'sent')) return { phase, send: false };
+  return hasId ? { phase: { kind: 'sending' }, send: true } : { phase: { kind: 'queued' }, send: false };
+}
+
+/**
+ * Where a stop stands after a poll. The turn ending clears it; a turn still "running" well after the server took the stop is
+ * `stuck`, so the person is told and can send again rather than wait on a spinner that never ends.
+ */
+export function stopStatus(phase: StopPhase, running: boolean, now = Date.now()): { phase: StopPhase; stuck: boolean } {
+  if (!running && phase.kind === 'sent') return { phase: { kind: 'idle' }, stuck: false };
+  return { phase, stuck: phase.kind === 'sent' && running && now - phase.at > STOP_GRACE_MS };
+}
+
+/** Is the send button usable? Not while a turn runs, unless the turn looks lost (a stuck stop, or a server that stopped answering). */
+export function canSendNow(state: Pick<ChatState, 'running'>, o: { stuck: boolean; unreachable: boolean }): boolean {
+  return !state.running || o.stuck || o.unreachable;
 }
 
 /** How long to wait before asking again. Quick while something is happening, patient otherwise. */

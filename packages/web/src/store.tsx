@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import type { ClaudeAccount, ImageAttachment, MessageDto, SessionDto, VmDto } from '@remote-harness/shared';
 import { api, getToken, setToken } from './api';
 import { hubSocket } from './ws';
+import { SESSION_ENDED } from './groupMessages';
 
 type State = {
   authed: boolean;
@@ -85,10 +86,15 @@ function reducer(state: State, action: Action): State {
       return { ...state, messagesBySession, sessionsByVm, selectedSessionId };
     }
     case 'session_ended': {
+      // Marks the end of whatever turn was running (a stopped or crashed run sends no result), so the chat stops spinning.
+      const rows = state.messagesBySession[action.sessionId];
+      const marker: MessageDto = { id: -Date.now(), sessionId: action.sessionId, vmId: action.vmId, message: { type: SESSION_ENDED }, createdAt: new Date().toISOString() };
+      const messagesBySession = rows ? { ...state.messagesBySession, [action.sessionId]: [...rows, marker] } : state.messagesBySession;
       const list = state.sessionsByVm[action.vmId];
-      if (!list) return state;
+      if (!list) return { ...state, messagesBySession };
       return {
         ...state,
+        messagesBySession,
         sessionsByVm: {
           ...state.sessionsByVm,
           [action.vmId]: list.map((s) => (s.id === action.sessionId ? { ...s, status: 'idle' } : s)),

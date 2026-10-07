@@ -148,6 +148,22 @@ export function groupMessages(rows: MessageDto[]): DisplayItem[] {
   return items;
 }
 
+/**
+ * When the in-flight turn started, or null if the session is idle. A turn ends with its result, with an error (the run failed
+ * before it could report one), or with the session itself ending (stopped, crashed, or the machine closed it).
+ */
+export function busySince(rows: MessageDto[]): number | null {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const m = rows[i].message as any;
+    if (m?.type === 'result' || m?.type === 'error' || m?.type === SESSION_ENDED) return null;
+    if (m?.type === 'user' && m.local) return new Date(rows[i].createdAt).getTime() || Date.now();
+  }
+  return null;
+}
+
+/** The row the app adds (never stored) when the machine says a session ended, so a run without a result stops spinning. */
+export const SESSION_ENDED = 'session_ended';
+
 export type Todo = { content: string; status: 'pending' | 'in_progress' | 'completed'; activeForm?: string };
 
 // The latest TodoWrite list issued after the most recent user prompt.

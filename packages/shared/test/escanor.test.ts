@@ -4,12 +4,18 @@ import test from 'node:test';
 import {
   addOptimisticMessage,
   applyMessages,
+  canSendNow,
   describeUsage,
   dropOptimisticMessages,
   emptyChat,
   isThinking,
   markAnswered,
   pollDelayMs,
+  pressStop,
+  secondsSince,
+  STOP_GRACE_MS,
+  stopStatus,
+  thinkingLabel,
   toDisplay,
 } from '../src/escanor.ts';
 
@@ -120,4 +126,61 @@ test('usage is described in messages, not dollars, and warns before the limit', 
   const unlimited = describeUsage({ messages_today: 1, message_limit: null, today: { tokens: 2_000_000 } });
   assert.deepEqual(unlimited, { messages: '1 message today', tokens: '2M tokens', ratio: null, level: 'ok' });
   assert.equal(JSON.stringify(unlimited).includes('$'), false);
+});
+
+// ---------------------------------------------------------------------------- notices, progress, stopping
+
+const notice = (id: number, text: string) => ({ id, kind: 'notice', text });
+
+test('a notice is drawn as its own quiet line, and a stopped turn ends on it', () => {
+  let s = applyMessages(emptyChat, res({ items: [user(1, 'deploy'), activity(2, 'Checking'), notice(3, 'Stopped.')], running: false, last_id: 3 }));
+  assert.deepEqual(toDisplay(s).map((b) => b.type), ['user', 'activity', 'notice']);
+  assert.equal((toDisplay(s)[2] as { text: string }).text, 'Stopped.');
+  assert.equal(isThinking(s), false);
+  s = applyMessages(emptyChat, res({ items: [user(1, 'hi'), notice(2, 'A was not available, so B is answering.')], running: true, last_id: 2 }));
+  assert.equal(isThinking(s), true, 'a notice mid-turn is still waiting on the answer');
+});
+
+test('progress is kept while running, dropped when the turn ends, and absent from older servers', () => {
+  const progress = { text: 'Asking GPT OSS 120b · step 2', since: '2026-10-07T10:00:00Z', step: 2 };
+  let s = applyMessages(emptyChat, res({ items: [user(1, 'hi')], running: true, last_id: 1, progress }));
+  assert.deepEqual(s.progress, progress);
+  s = applyMessages(s, res({ running: false, last_id: 1, progress }));
+  assert.equal(s.progress, null);
+  s = applyMessages(emptyChat, res({ running: true }));
+  assert.equal(s.progress, null);
+  assert.equal(dropOptimisticMessages({ ...s, progress }).progress, null);
+});
+
+test('the thinking line says what it is doing and for how long', () => {
+  const at = Date.parse('2026-10-07T10:00:14Z');
+  assert.equal(thinkingLabel({ text: 'Asking GPT OSS 120b · step 2', since: '2026-10-07T10:00:00Z' }, at), 'Asking GPT OSS 120b · step 2 · 14s');
+  assert.equal(thinkingLabel(null, at, at - 3000), 'Thinking… · 3s');
+  assert.equal(thinkingLabel(null, at), 'Thinking…');
+  assert.equal(thinkingLabel({ text: 'Working', since: 'not a time' }, at), 'Working');
+  assert.equal(secondsSince('2026-10-07T10:00:20Z', at), 0, 'a phone clock behind the server never shows negative time');
+});
+
+test('stop before the chat has an id is queued, not dropped, and pressing again does not send twice', () => {
+  const queued = pressStop({ kind: 'idle' }, false);
+  assert.deepEqual(queued, { phase: { kind: 'queued' }, send: false });
+  assert.deepEqual(pressStop(queued.phase, false), { phase: { kind: 'queued' }, send: false });
+  assert.deepEqual(pressStop({ kind: 'idle' }, true), { phase: { kind: 'sending' }, send: true });
+  assert.equal(pressStop({ kind: 'sent', at: 0 }, true).send, false);
+  assert.equal(pressStop({ kind: 'sent', at: 0 }, true, true).send, true, 'a stop that did not take can be sent again');
+});
+
+test('a stop clears when the turn ends, and is stuck if the server keeps running past the grace time', () => {
+  const sent = { kind: 'sent', at: 1000 } as const;
+  assert.deepEqual(stopStatus(sent, false, 2000), { phase: { kind: 'idle' }, stuck: false });
+  assert.deepEqual(stopStatus(sent, true, 1000 + STOP_GRACE_MS), { phase: sent, stuck: false });
+  assert.deepEqual(stopStatus(sent, true, 1001 + STOP_GRACE_MS), { phase: sent, stuck: true });
+  assert.equal(stopStatus({ kind: 'idle' }, true, 1e12).stuck, false);
+});
+
+test('send is usable while running only when the turn looks lost', () => {
+  assert.equal(canSendNow({ running: false }, { stuck: false, unreachable: false }), true);
+  assert.equal(canSendNow({ running: true }, { stuck: false, unreachable: false }), false);
+  assert.equal(canSendNow({ running: true }, { stuck: true, unreachable: false }), true);
+  assert.equal(canSendNow({ running: true }, { stuck: false, unreachable: true }), true);
 });

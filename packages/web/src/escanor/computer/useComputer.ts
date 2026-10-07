@@ -77,7 +77,8 @@ export function useComputer(computer: PairedComputer, allowCloud = true) {
     const client = clientRef.current;
     if (!client) throw new Error('Not connected.');
     try {
-      const out = await client.request(msg);
+      // A chat can take a while on the computer; give it as long over Wi-Fi as the cloud route allows (a timed-out chat is not resent).
+      const out = await client.request(msg, msg.t === 'chat' ? { timeoutMs: 120_000 } : {});
       failures.current = 0;
       setState('online');
       return out;
