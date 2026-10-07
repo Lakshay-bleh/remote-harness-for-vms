@@ -78,16 +78,16 @@ export const legalDocuments: Record<string, LegalDocument> = {
       ] },
       { heading: 'Your rights', id: 'rights', paragraphs: [
         'You can ask us for a summary of your data and how it is used, to correct or update it, to erase it, to withdraw a consent, or to nominate someone to act for you if you die or cannot act. You can also complain to us about how we handle your data. Withdrawing consent is as easy as giving it, and stops processing that relied on it from then on.',
-        'Make a request on [Privacy requests](/privacy/requests), in Settings → Privacy & data when signed in, or by email to privacy@escanor.in from your account email. We acknowledge within 24 hours and respond within 30 days. If you are not satisfied, you may complain to the Data Protection Board of India once its complaint process applies, or use any other remedy available to you.',
+        'Make a request on [Privacy requests](/privacy/requests), in Settings → Privacy & data when signed in, or by email to support@escanor.in from your account email. We acknowledge within 24 hours and respond within 30 days. If you are not satisfied, you may complain to the Data Protection Board of India once its complaint process applies, or use any other remedy available to you.',
       ] },
       { heading: 'Children', paragraphs: [
-        'Escanor is only for people aged 18 or over. We do not knowingly collect data about children. If you believe a child has an account, write to privacy@escanor.in and we will delete it.',
+        'Escanor is only for people aged 18 or over. We do not knowingly collect data about children. If you believe a child has an account, write to support@escanor.in and we will delete it.',
       ] },
       { heading: 'Booking a call', id: 'book-a-call', paragraphs: [
         'When you book a call we collect your name, work email, company, role, team size and any notes, only to arrange and hold the call. We delete them one year after the call. Product updates are sent only if you tick that separate box.',
       ] },
       { heading: 'Changes and contact', paragraphs: [
-        'If we change this policy in a way that matters, we will tell you by email or in the app before the change applies, and ask for your agreement where the law requires it. Questions go to Lakshay Jain, Grievance Officer and data protection contact, at privacy@escanor.in.',
+        'If we change this policy in a way that matters, we will tell you by email or in the app before the change applies, and ask for your agreement where the law requires it. Questions go to Lakshay Jain, Grievance Officer and data protection contact, at support@escanor.in.',
       ] },
     ],
   },
@@ -100,7 +100,7 @@ export const legalDocuments: Record<string, LegalDocument> = {
         'These terms are a contract between you and Escanor Labs, Greater Noida, Uttar Pradesh ("Escanor", "we") for the Escanor website, web app, desktop app, Android app and API (the "service"). You accept them when you create an account or tick "I agree"; we record the version you accepted. If you use Escanor for an organisation, you confirm you have its authority, and these terms bind it too.',
       ] },
       { heading: 'Who can use Escanor', paragraphs: [
-        'You must be 18 or older and able to enter a contract under Indian law. Keep your password and keys secret, use two-step verification where you can, and tell us at once at security@escanor.in if you suspect someone else is using your account.',
+        'You must be 18 or older and able to enter a contract under Indian law. Keep your password and keys secret, use two-step verification where you can, and tell us at once at support@escanor.in if you suspect someone else is using your account.',
       ] },
       { heading: 'Connecting your systems', paragraphs: [
         'Connect only accounts, repositories, servers and devices that you own or are authorised to manage, and grant only the permissions you need. Escanor acts with the access you give it. You stay responsible for actions you approve, including commands, deployments and changes made by the AI assistant or Autopilot at your request. Keep backups and use the approval settings for production changes.',
@@ -219,7 +219,7 @@ export const legalDocuments: Record<string, LegalDocument> = {
         'Deleting an account signs you out everywhere and revokes every key immediately.',
       ] },
       { heading: 'Report a vulnerability', paragraphs: [
-        'Email security@escanor.in with the affected page or component, steps to reproduce, and the impact. Leave out real tokens and other people\'s data. We acknowledge within 24 hours and keep you updated until it is fixed. We will not take legal action against good-faith research that follows the rules below.',
+        'Email support@escanor.in with the affected page or component, steps to reproduce, and the impact. Leave out real tokens and other people\'s data. We acknowledge within 24 hours and keep you updated until it is fixed. We will not take legal action against good-faith research that follows the rules below.',
       ] },
       { heading: 'Rules for security research', items: [
         'Test only against your own account and data.',
@@ -288,7 +288,7 @@ export const legalDocuments: Record<string, LegalDocument> = {
       ] },
       { heading: 'How to ask', items: [
         '**Signed in:** Settings → Privacy & data. Make a request, download a copy of your account data, and manage your choices there.',
-        '**Not signed in:** use the form on [Grievances](/grievances), or email privacy@escanor.in from your account email.',
+        '**Not signed in:** use the form on [Grievances](/grievances), or email support@escanor.in from your account email.',
         '**Delete your account yourself:** [Delete your account](/delete-account).',
       ], paragraphs: [
         'We acknowledge within 24 hours and respond within 30 days. Before we show or change anything, we confirm the request comes from you; we will never ask for your password, and you do not need to send identity documents unless we ask through a secure channel. Every reply names Lakshay Jain, our data protection contact, and how to take the matter further.',
@@ -309,7 +309,7 @@ export const legalDocuments: Record<string, LegalDocument> = {
         'Type your account email to confirm (and a two-step verification code if you have it on).',
         'You are signed out everywhere and every key stops working at once. Your account is deleted 7 days later; sign in before then if you change your mind.',
       ], paragraphs: [
-        'If you own a workspace that other people are in, remove them or hand it over first. Cancel any paid plan in Settings → Billing first, so you are not charged again. Cannot sign in? Email privacy@escanor.in from your account email and we will delete it for you.',
+        'If you own a workspace that other people are in, remove them or hand it over first. Cancel any paid plan in Settings → Billing first, so you are not charged again. Cannot sign in? Email support@escanor.in from your account email and we will delete it for you.',
       ] },
       { heading: 'What is deleted', paragraphs: [
         'Your profile, workspaces you own, connected services and their stored keys, AI conversations and runs, paired machines and their command history, terminal sessions, notification tokens and sessions.',
@@ -351,7 +351,7 @@ legalDocuments['privacy/us'] = {
       'We do not sell personal information, share it for cross-context behavioural advertising, or use it for targeted advertising, and we have not done so in the past 12 months. We honour Global Privacy Control signals as an opt-out.',
     ] },
     { heading: 'Making a request', paragraphs: [
-      'Use [Privacy requests](/privacy/requests) or email privacy@escanor.in, and tell us your state. An authorised agent may submit a request with proof of authority. We confirm receipt within 10 business days and respond within 45 days. To appeal a decision, reply to our response or use [Grievances](/grievances); if you are not satisfied, you may contact your state attorney general.',
+      'Use [Privacy requests](/privacy/requests) or email support@escanor.in, and tell us your state. An authorised agent may submit a request with proof of authority. We confirm receipt within 10 business days and respond within 45 days. To appeal a decision, reply to our response or use [Grievances](/grievances); if you are not satisfied, you may contact your state attorney general.',
     ] },
     { heading: 'Children', paragraphs: [
       'Escanor is not directed to children under 13 and is only for adults aged 18 or over.',
