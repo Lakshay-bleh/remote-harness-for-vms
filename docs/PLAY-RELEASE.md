@@ -71,7 +71,7 @@ Phone control (in the `-phone-control` and Play builds) switches itself off when
 
 Play blocks the release until these are filled in.
 
-**Privacy policy**: `https://escanor.in/privacy` (has a section on the Android app).
+**Privacy policy**: `https://www.escanor.in/privacy` (has a section on the Android app).
 
 **App access**: the app needs sign-in. Give reviewers a Google test account that can sign in, or explain how to use
 "I run my own Remote Harness hub" with a test hub.
