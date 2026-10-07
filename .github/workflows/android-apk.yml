@@ -57,15 +57,39 @@ jobs:
             echo "::warning::GOOGLE_SERVICES_JSON secret is not set: this APK will not receive push notifications."
           fi
 
-      - name: Build the debug APK
+      # Play Protect distrusts debuggable apps signed with a throwaway debug key, and every machine's debug key differs (so an update
+      # will not install over the last one). With the signing secrets set, the APK is a release build signed with the app's own key.
+      - name: Add the signing key
+        id: sign
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' "$RUNNER_TEMP/release.jks" "$ANDROID_KEYSTORE_PASSWORD" "$ANDROID_KEY_ALIAS" "$ANDROID_KEY_PASSWORD" > "$RUNNER_TEMP/signing.properties"
+            echo "props=$RUNNER_TEMP/signing.properties" >> "$GITHUB_OUTPUT"
+            echo "script=android:apk:release" >> "$GITHUB_OUTPUT"
+            echo "apk=release/app-release.apk" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::ANDROID_KEYSTORE_BASE64 is not set: this is a debug-signed APK, which Play Protect is more likely to block."
+            echo "props=$RUNNER_TEMP/none.properties" >> "$GITHUB_OUTPUT"
+            echo "script=android:apk" >> "$GITHUB_OUTPUT"
+            echo "apk=debug/app-debug.apk" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build the APK
         working-directory: packages/web
         env:
           RH_VERSION_NAME: ${{ steps.v.outputs.version }}
           RH_VERSION_CODE: ${{ steps.v.outputs.code }}
-        run: npm run android:apk
+          RH_SIGNING_PROPERTIES: ${{ steps.sign.outputs.props }}
+        run: npm run ${{ steps.sign.outputs.script }}
 
       - name: Name the file
-        run: cp packages/web/android/app/build/outputs/apk/debug/app-debug.apk "remote-harness-${{ steps.v.outputs.version }}.apk"
+        run: cp packages/web/android/app/build/outputs/apk/${{ steps.sign.outputs.apk }} "remote-harness-${{ steps.v.outputs.version }}.apk"
 
       - uses: actions/upload-artifact@v4
         with:

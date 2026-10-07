@@ -146,6 +146,8 @@ public class EscanorDevicePlugin extends Plugin {
     public void callStatus(PluginCall call) {
         JSObject out = new JSObject();
         out.put("granted", callAllowed());
+        // the normal download leaves the call permission out (Play Protect is wary of it); it then always opens the dialer
+        out.put("available", WakeAction.declares(getContext(), Manifest.permission.CALL_PHONE));
         call.resolve(out);
     }
 
@@ -153,6 +155,10 @@ public class EscanorDevicePlugin extends Plugin {
     public void requestCallPermission(PluginCall call) {
         if (callAllowed()) {
             call.resolve(result(true, null));
+            return;
+        }
+        if (!WakeAction.declares(getContext(), Manifest.permission.CALL_PHONE)) {
+            call.resolve(result(false, "This download of Escanor opens the dialer with the number filled in, and you press call."));
             return;
         }
         requestPermissionForAlias("call", call, "callPermissionResult");
@@ -457,6 +463,14 @@ public class EscanorDevicePlugin extends Plugin {
         call.resolve(opened ? result(true, null) : result(false, "Open Android Settings, then Accessibility, and turn on Escanor."));
     }
 
+    /** Switch phone control off from the app. Switching it back on happens only in Android's Accessibility settings. */
+    @PluginMethod
+    public void controlTurnOff(PluginCall call) {
+        EscanorControlService svc = EscanorControlService.get();
+        if (svc != null) svc.turnOff();
+        call.resolve(result(true, null));
+    }
+
     /** Open Escanor's App info, where the ⋮ menu has "Allow restricted settings" (Android 13+, for apps installed from a file). */
     @PluginMethod
     public void openAppInfo(PluginCall call) {
@@ -544,15 +558,10 @@ public class EscanorDevicePlugin extends Plugin {
         out.put("downloading", downloading);
         out.put("micAllowed", getContext().checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED);
         // what lets "Hey Escanor" open the app when it is not showing (see WakeAction)
-        out.put("overlayAllowed", WakeAction.canOverlay(getContext()));
+        out.put("opensDirectly", WakeAction.opensDirectly());
+        out.put("fullScreenDeclared", Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || WakeAction.declares(getContext(), Manifest.permission.USE_FULL_SCREEN_INTENT));
         out.put("fullScreenAllowed", WakeAction.canFullScreen(getContext()));
         call.resolve(out);
-    }
-
-    /** Android's "Display over other apps" page for Escanor. */
-    @PluginMethod
-    public void wakeOpenOverlaySettings(PluginCall call) {
-        openSettings(call, new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getContext().getPackageName())));
     }
 
     /** Android 14+: "Full-screen notifications" for Escanor (the page that lets a notification take over the screen). */

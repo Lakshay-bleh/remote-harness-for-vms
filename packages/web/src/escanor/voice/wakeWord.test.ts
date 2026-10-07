@@ -18,21 +18,26 @@ describe('wakeStep', () => {
 });
 
 describe('outsideApp', () => {
-  it('opens straight away when the phone allows drawing over other apps', () => {
-    const o = outsideApp(s({ overlayAllowed: true, fullScreenAllowed: true }));
+  it('opens straight away while phone control is on', () => {
+    const o = outsideApp(s({ opensDirectly: true, fullScreenDeclared: true, fullScreenAllowed: false }));
     assert.equal(o.best, true);
-    assert.equal(o.canAllowOverlay, false);
+    assert.equal(o.canAllowFullScreen, false);
   });
-  it('falls back to a notification, and says what to allow to do better', () => {
-    const o = outsideApp(s({ overlayAllowed: false, fullScreenAllowed: false }));
+  it('falls back to a notification, and offers full-screen notifications where the build has them', () => {
+    const o = outsideApp(s({ opensDirectly: false, fullScreenDeclared: true, fullScreenAllowed: false }));
     assert.equal(o.best, false);
-    assert.equal(o.canAllowOverlay, true);
     assert.equal(o.canAllowFullScreen, true);
     assert.match(o.line, /Full-screen notifications/);
   });
-  it('treats an older app that does not report it as needing the overlay, not as broken', () => {
+  it('never offers what the normal download does not have, and never asks to draw over other apps', () => {
+    const o = outsideApp(s({ opensDirectly: false, fullScreenDeclared: false, fullScreenAllowed: false }));
+    assert.equal(o.canAllowFullScreen, false);
+    assert.doesNotMatch(o.line, /over other apps|Full-screen/);
+    assert.match(o.line, /phone control/);
+  });
+  it('treats an older app that does not report these as a plain notification, not as broken', () => {
     const o = outsideApp(s());
-    assert.equal(o.canAllowOverlay, true);
+    assert.equal(o.best, false);
     assert.equal(o.canAllowFullScreen, false);
   });
 });

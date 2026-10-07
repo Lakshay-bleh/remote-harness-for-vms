@@ -50,7 +50,8 @@ export default function PhoneControlSetup({ dev, onStatus, onDismiss }: { dev: D
   if (step === 'on') {
     return (
       <div className="px-3.5 py-3">
-        <p className={`mb-2 ${text}`}>Phone control is on. To switch it off, turn off <b className="text-ink">Escanor</b> in Accessibility settings.</p>
+        <p className={`mb-2 ${text}`}>Phone control is on. Payment and banking apps do not run while it is, so Escanor switches it off when you open one. You can switch it off yourself here, or turn off <b className="text-ink">Escanor</b> in Accessibility settings.</p>
+        {dev.controlTurnOff && <Button kind="quiet" onClick={() => void dev.controlTurnOff?.().then(refresh)} className="mb-2 w-full">Switch phone control off</Button>}
         <Button kind="quiet" onClick={() => void dev.openControlSettings()} className="w-full">Open Accessibility settings</Button>
       </div>
     );

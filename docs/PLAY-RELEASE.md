@@ -42,6 +42,22 @@ the upload is yours.
 
 Upload key SHA-256: `01:37:E1:66:30:41:29:F4:D4:8A:F1:1F:CD:85:45:F0:62:18:0A:95:FD:4F:AA:F2:DB:05:0A:E3:19:FE:D8:BB`
 
+### Downloadable APKs (GitHub releases)
+
+Build them signed with the same key, never as debug builds: Play Protect distrusts a debuggable app signed with the throwaway
+"Android Debug" key, and every machine's debug key differs, so an update would not install over the last download.
+
+```bash
+RH_VERSION_NAME=1.20 RH_VERSION_CODE=1200 npm run android:apk:release      # the normal download
+cd android && ./gradlew assembleRelease -PphoneControl=true                # the "with phone control" download
+```
+
+The normal download is kept free of what makes Play Protect block a downloaded app or makes payment apps refuse to run: no
+accessibility service, no drawing over other apps, no placing calls, no full-screen alerts. Do not add those to `src/main`.
+Phone control (in the `-phone-control` and Play builds) switches itself off when a payment or banking app opens
+(`PaymentApps.java`). For CI, set the secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and
+`ANDROID_KEY_PASSWORD`.
+
 ## 3. Play Console, first time
 
 1. Create a developer account (one-time fee) at https://play.google.com/console and verify your identity.

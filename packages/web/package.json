@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "android:sync": "vite build && cap sync android",
     "android:apk": "npm run android:sync && cd android && ./gradlew assembleDebug",
+    "android:apk:release": "npm run android:sync && cd android && ./gradlew assembleRelease",
     "test": "node --import tsx --test --test-force-exit test/*.test.ts 'src/**/*.test.ts' 'src/**/*.test.tsx' 'src/*/*/*.test.ts'"
   },
   "dependencies": {
