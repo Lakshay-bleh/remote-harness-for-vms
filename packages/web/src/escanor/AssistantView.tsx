@@ -1,7 +1,7 @@
 import { PencilSimpleLine } from '@phosphor-icons/react';
 import { DogSpinner } from './dog/DogState';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { isThinking, toDisplay } from '@remote-harness/shared/escanor';
+import { thinkingLabel, toDisplay } from '@remote-harness/shared/escanor';
 import ApprovalCard from './ApprovalCard';
 import { escanor } from './client';
 import ChatComposer from './composer/ChatComposer';
@@ -25,6 +25,18 @@ export default function AssistantView({ conversationId, title, onConversation, o
   const blocks = useMemo(() => toDisplay(chat.state), [chat.state]);
   const scroller = useRef<HTMLDivElement>(null);
   useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' }); }, [blocks.length, chat.state.running]);
+  // While a turn runs: what it is doing and for how long, ticking every second. Older servers say nothing, so the time is counted
+  // from when this phone first saw it working.
+  const working = chat.state.running && chat.state.pending === 0;
+  const [now, setNow] = useState(() => Date.now());
+  const seenSince = useRef<number | null>(null);
+  if (!working) seenSince.current = null;
+  else seenSince.current ??= Date.now();
+  useEffect(() => {
+    if (!working) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [working]);
 
   if (status.loading && !status.data) return <Centered><Spinner /></Centered>;
   if (!ready) return <Setup message={status.data?.message ?? status.error ?? 'Getting your assistant ready…'} state={status.data?.state} />;
@@ -61,9 +73,10 @@ export default function AssistantView({ conversationId, title, onConversation, o
           if (b.type === 'assistant') return <div key={b.key} className="max-w-[92%]"><Md text={b.text} /></div>;
           if (b.type === 'error') return <Notice key={b.key} tone="error">{b.text}</Notice>;
           if (b.type === 'activity') return <p key={b.key} className={`flex items-center gap-2 text-[13px] text-muted ${b.live ? 'animate-pulse' : ''}`}>{b.live ? <Spinner /> : <span className="text-muted-soft">•</span>}{b.text}</p>;
+          if (b.type === 'notice') return <p key={b.key} className="text-center text-[12px] text-muted-soft">{b.text}</p>;
           return null;
         })}
-        {isThinking(chat.state) && <p className="flex items-center gap-2 text-[13px] text-muted"><DogSpinner />Thinking…</p>}
+        {working && <p role="status" aria-live="polite" className="flex items-center gap-2 text-[13px] text-muted"><DogSpinner />{chat.stopping ? 'Stopping…' : thinkingLabel(chat.state.progress, Math.max(now, seenSince.current ?? 0), seenSince.current)}</p>}
       </div></div>
 
       {chat.error && <div className="px-4 pb-2"><Notice tone="error">{chat.error}</Notice></div>}
@@ -78,7 +91,7 @@ export default function AssistantView({ conversationId, title, onConversation, o
         ) : (
           caps.data && <button onClick={onOpenIntegrations} className="mb-2 text-left text-[12px] text-primary underline underline-offset-2">Connect a service so I can work on it</button>
         )}
-        <ChatComposer placeholder="Message your assistant" running={chat.state.running} onSend={(t, files) => void chat.send(t, files)} onStop={() => void chat.stop()} />
+        <ChatComposer placeholder="Message your assistant" running={chat.state.running} stopping={chat.stopping} sendWhileRunning={chat.canSend} onSend={(t, files) => void chat.send(t, files)} onStop={() => void chat.stop()} />
       </div></div>
 
       {machineOpen && <MachineSheet onClose={() => setMachineOpen(false)} />}

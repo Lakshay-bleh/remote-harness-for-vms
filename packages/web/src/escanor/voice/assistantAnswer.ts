@@ -36,6 +36,9 @@ export async function waitForAnswer(deps: AnswerDeps, sent: string, o: { timeout
       if (after.some((b) => b.type === 'approval')) return { text: '', needsApproval: true, timedOut: false };
       const words = after.filter((b) => b.type === 'assistant' || b.type === 'error').map((b) => (b as { text: string }).text).join('\n\n').trim();
       if (words && !state.running && !isThinking(state)) return { text: words, needsApproval: false, timedOut: false };
+      // Ended with no words, only a note about the turn ("Stopped."): that is the answer, not a reason to wait on.
+      const note = after.filter((b) => b.type === 'notice').at(-1);
+      if (note && note.type === 'notice' && !state.running) return { text: note.text, needsApproval: false, timedOut: false };
     }
     await deps.wait(1200);
   }

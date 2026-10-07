@@ -53,3 +53,27 @@ describe('forSpeech', () => {
   });
   it('leaves a short answer alone', () => assert.equal(forSpeech('All good.'), 'All good.'));
 });
+
+describe('waitForAnswer, a stopped turn', () => {
+  it('answers with the stop notice instead of waiting out the time limit', async () => {
+    const c = clock();
+    const pages = [
+      page([msg(1, 'user', { text: 'deploy' })], true),
+      page([msg(1, 'user', { text: 'deploy' }), msg(2, 'notice', { text: 'Stopped.' })], false),
+    ];
+    let n = 0;
+    const r = await waitForAnswer({ ...c, fetch: async () => pages[Math.min(n++, pages.length - 1)] }, 'deploy');
+    assert.deepEqual(r, { text: 'Stopped.', needsApproval: false, timedOut: false });
+  });
+
+  it('keeps waiting through a notice in the middle of a turn, and returns the words that follow', async () => {
+    const c = clock();
+    const pages = [
+      page([msg(1, 'user', { text: 'hi' }), msg(2, 'notice', { text: 'A was not available, so B is answering.' })], true),
+      page([msg(1, 'user', { text: 'hi' }), msg(2, 'notice', { text: 'A was not available, so B is answering.' }), msg(3, 'assistant', { text: 'Hello.' })], false),
+    ];
+    let n = 0;
+    const r = await waitForAnswer({ ...c, fetch: async () => pages[Math.min(n++, pages.length - 1)] }, 'hi');
+    assert.equal(r.text, 'Hello.');
+  });
+});

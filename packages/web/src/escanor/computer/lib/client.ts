@@ -27,6 +27,9 @@ export interface PairedComputer {
 
 export type Route = 'lan' | 'cloud';
 
+/** Requests that only read, so sending one again over the cloud after the local link failed cannot do anything twice. */
+const RESENDABLE = new Set<ClientMsg['t']>(['list', 'pending', 'groups', 'activity', 'ping', 'subscribe']);
+
 /** Sends one sealed blob to this computer through the Escanor cloud and returns the sealed reply. The app implements it with its signed-in API client. */
 export type RelayTransport = (req: { agentId: string; deviceId: string; sealed: string }) => Promise<string>;
 
@@ -298,8 +301,11 @@ export class ComputerClient {
         return await this.requestLan(msg, opts.timeoutMs ?? 60_000);
       } catch (e) {
         if (!(this.env.relay && this.computer.agentId)) throw e;
-        this.dropSocket(); // the local link failed mid-request: use the cloud for this one
+        this.dropSocket(); // the local link failed mid-request: use the cloud from now on
         this.setRoute('cloud');
+        // A chat or action the computer may already have received is not sent again over the cloud: it could run twice. Only
+        // one that never left the phone, or one that only reads, is safe to repeat.
+        if ((e as { delivered?: boolean }).delivered && !RESENDABLE.has(msg.t)) throw e;
       }
     }
     return this.requestCloud(msg);
@@ -317,18 +323,23 @@ export class ComputerClient {
         match: (m) => (id ? ((m.t === 'result' || m.t === 'reply' || m.t === 'error') && (m as { id?: string }).id === id) : (type === 'list' && m.t === 'capabilities') || (type === 'pending' && m.t === 'pending') || (type === 'ping' && m.t === 'pong')),
         done: () => true,
       };
-      const t = setTimeout(() => (this.pending.delete(p), reject(new Error('The computer did not answer in time.'))), timeoutMs);
+      let delivered = false;
+      const t = setTimeout(() => (this.pending.delete(p), reject(Object.assign(new Error('The computer did not answer in time.'), { delivered }))), timeoutMs);
       const finish = p.resolve;
       p.resolve = (m) => (clearTimeout(t), finish(m));
       const fail = p.reject;
-      p.reject = (e) => (clearTimeout(t), fail(e));
+      // Failing after the message went out (the link dropped while waiting) is marked so the caller does not send it again.
+      p.reject = (e) => (clearTimeout(t), fail(delivered && e instanceof Error ? Object.assign(e, { delivered }) : e));
       if (type === 'approve' || type === 'subscribe') {
         // no reply expected
         void this.sendLan(msg).then(() => p.resolve([]), p.reject);
         return;
       }
       this.pending.add(p);
-      void this.sendLan(msg).catch((e) => (this.pending.delete(p), p.reject(e)));
+      void this.sendLan(msg).then(
+        () => void (delivered = true),
+        (e) => (this.pending.delete(p), p.reject(e)),
+      );
     });
   }
 

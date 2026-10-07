@@ -2,7 +2,8 @@ import { Envelope, SignOut, User } from '@phosphor-icons/react';
 import { useState } from 'react';
 import { describeUsage } from '@remote-harness/shared/escanor';
 import { escanor } from '../client';
-import { useLoad } from '../hooks';
+import { useLoad, useOnPlanChange } from '../hooks';
+import { statusText } from '../account/billing';
 import { useEscanorSession } from '../session';
 import { Button, Notice, Sheet, Spinner } from '../ui';
 import { Avatar, ConfirmSheet, Group, Page, Row } from './parts';
@@ -68,7 +69,9 @@ export function AccountPage({ onBack }: { onBack: () => void }) {
 /** What the plan is and what today's use looks like: the same numbers as the website. */
 export function UsagePage({ onBack, onBilling }: { onBack: () => void; onBilling: () => void }) {
   const usage = useLoad(() => escanor.usage(), 60000);
-  const plan = useLoad(() => escanor.subscription().catch(() => null), 0);
+  const plan = useLoad(() => escanor.billingSubscription(), 0);
+  useOnPlanChange(plan.reload);
+  useOnPlanChange(usage.reload);
   const u = usage.data ? describeUsage(usage.data) : null;
   const month = usage.data?.month;
   const tone = u?.level === 'full' ? 'bg-error' : u?.level === 'warn' ? 'bg-warning' : 'bg-primary';
@@ -76,8 +79,8 @@ export function UsagePage({ onBack, onBilling }: { onBack: () => void; onBilling
   return (
     <Page title="Plan and usage" onBack={onBack}>
       <Group title="Plan" footer="Change or cancel your plan under Plan and billing.">
-        <Row label="Current plan" value={plan.loading && !plan.data ? <Spinner /> : String(plan.data?.plan_name ?? 'Free')} />
-        {plan.data?.status ? <Row label="Status" value={<span className="capitalize">{String(plan.data.status).replace(/_/g, ' ')}</span>} /> : null}
+        <Row label="Current plan" value={plan.loading && !plan.data ? <Spinner /> : plan.data ? plan.data.plan_name : <span className="text-muted">Could not load</span>} />
+        {plan.data ? <Row label="Status" value={statusText(plan.data)} /> : null}
         <Row label="Plan and billing" onClick={onBilling} />
       </Group>
 

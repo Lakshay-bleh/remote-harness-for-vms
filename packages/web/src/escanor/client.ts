@@ -68,13 +68,6 @@ export interface NotificationPrefs {
   team_pings: boolean;
 }
 
-export interface Subscription {
-  plan_name?: string;
-  plan_id?: string;
-  status?: string;
-  [k: string]: unknown;
-}
-
 export interface McpInstall {
   endpoint: string;
   token: string;
@@ -355,7 +348,6 @@ export const escanor = {
   },
   notificationPrefs: () => request<NotificationPrefs>('/users/me/notification-preferences'),
   setNotificationPrefs: (patch: Partial<NotificationPrefs>) => request<NotificationPrefs>('/users/me/notification-preferences', { method: 'PATCH', body: JSON.stringify(patch) }),
-  subscription: () => request<Subscription>('/subscription'),
   // -- push notifications: this phone's address, whether the server can send, a test, and forgetting the phone on sign-out
   registerPushToken: (token: string) => request<{ status: string }>('/users/me/push-token', json({ token, platform: 'android' })),
   unregisterPushToken: (token: string) => request<{ removed: number }>('/users/me/push-token', { method: 'DELETE', body: JSON.stringify({ token }) }),

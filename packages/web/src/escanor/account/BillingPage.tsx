@@ -3,7 +3,7 @@ import { ArrowSquareOut, CheckCircle, WarningCircle } from '@phosphor-icons/reac
 import { useState } from 'react';
 import { isNative } from '../../api';
 import { escanor } from '../client';
-import { useLoad } from '../hooks';
+import { announcePlanChange, useLoad } from '../hooks';
 import { useEscanorSession } from '../session';
 import { ConfirmSheet, Page } from '../settings/parts';
 import { Button, Notice, Spinner } from '../ui';
@@ -37,6 +37,7 @@ export default function BillingPage({ onBack, onContact }: { onBack: () => void;
   const refresh = () => {
     sub.reload();
     invoices.reload();
+    announcePlanChange(); // the usage screens and their limits, wherever they are open
   };
 
   const subscribe = async (plan: BillingPlan) => {
@@ -53,8 +54,13 @@ export default function BillingPage({ onBack, onContact }: { onBack: () => void;
       if (paid.kind === 'closed') return say('Payment cancelled. Nothing was charged.');
       if (paid.kind === 'failed') return say(paid.message, 'error');
       // The payment went through at Razorpay; tell Escanor, which checks the signature before it changes the plan.
-      const done = await escanor.billingVerify(paid.response);
-      say(`You are on the ${done.plan_name} plan. Thank you.`);
+      try {
+        const done = await escanor.billingVerify(paid.response);
+        say(`You are on the ${done.plan_name} plan. Thank you.`);
+      } catch (e) {
+        // Paid, but not yet confirmed here: Razorpay also tells Escanor directly, so the plan follows shortly. Never "nothing was charged".
+        say(`Your payment went through, but Escanor could not confirm it yet (${e instanceof Error ? e.message : 'try again'}). Your plan will update shortly; if it does not, contact us.`, 'error');
+      }
       refresh();
     } catch (e) {
       say(e instanceof Error ? e.message : 'Could not start checkout. Nothing was charged.', 'error');

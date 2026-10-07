@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { trackBusy } from './dog/busy.ts';
-import { addOptimisticMessage, applyMessages, dropOptimisticMessages, emptyChat, markAnswered, pollDelayMs, type ChatState } from '@remote-harness/shared/escanor';
+import { addOptimisticMessage, applyMessages, canSendNow, dropOptimisticMessages, emptyChat, markAnswered, pollDelayMs, POLL_FAILURES_TO_REPORT, pressStop, stopStatus, type ChatState, type StopPhase } from '@remote-harness/shared/escanor';
 import { readCache, writeCache, type CachePolicy } from './cache';
 import { toApi, withAttachmentNote, type Attachment } from './composer/attachments';
 import { escanor, SessionEnded } from './client';
@@ -113,68 +113,155 @@ export function useLoad<T>(load: () => Promise<T>, everyMs = 0, deps: unknown[] 
   };
 }
 
+const PLAN_CHANGED = 'escanor-plan-changed';
+
+/** Tell every screen that shows the plan or its limits that it changed (paid, switched, cancelled), so none shows the old one. */
+export function announcePlanChange(): void {
+  window.dispatchEvent(new Event(PLAN_CHANGED));
+}
+
+/** Run `reload` whenever the plan changes anywhere in the app. Pass a stable function (a `useLoad` reload is one). */
+export function useOnPlanChange(reload: () => void): void {
+  useEffect(() => {
+    window.addEventListener(PLAN_CHANGED, reload);
+    return () => window.removeEventListener(PLAN_CHANGED, reload);
+  }, [reload]);
+}
+
 /** One conversation: what has been said, whether the assistant is working, and how to talk to it. */
 export function useConversation(initialId: string | null, onCreated: (id: string) => void) {
   const { sessionEnded } = useEscanorSession();
   const [id, setId] = useState<string | null>(initialId);
+  const idRef = useRef(id);
+  idRef.current = id;
   const [state, setState] = useState<ChatState>(emptyChat);
+  // What the person did that failed (send, stop, answer), kept until they do something else; polls never clear it.
   const [error, setError] = useState<string | null>(null);
+  // Polls that keep failing: said once, cleared by the next one that works.
+  const [unreachable, setUnreachable] = useState(false);
+  const [stopPhase, setStopPhase] = useState<StopPhase>({ kind: 'idle' });
+  const stopRef = useRef(stopPhase);
+  const [stuck, setStuck] = useState(false);
   const stateRef = useRef(state);
   stateRef.current = state;
+  // The first message of a new chat, while the server has not yet said which conversation it made: a Stop pressed now is kept here.
+  const creating = useRef<{ stop: boolean } | null>(null);
+  // Ask for news now instead of at the next tick (after a stop, so it shows at once).
+  const pollNow = useRef<() => void>(() => undefined);
 
-  // Switching conversations starts from nothing: a cursor from the previous one would hide this one's history.
+  const setStop = (next: StopPhase) => {
+    stopRef.current = next;
+    setStopPhase(next);
+  };
+
+  // Switching conversations starts from nothing: a cursor from the previous one would hide this one's history. The chat this hook
+  // has just created coming back as `initialId` is not a switch: what is on screen (the message, the stop pressed) stays.
   useEffect(() => {
+    if (initialId !== null && initialId === idRef.current) return;
     setId(initialId);
     stateRef.current = emptyChat;
     setState(emptyChat);
     setError(null);
+    setUnreachable(false);
+    setStop({ kind: 'idle' });
+    setStuck(false);
   }, [initialId]);
 
   useEffect(() => {
     if (!id) return;
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let inFlight = false;
+    let again = false;
+    let failures = 0;
     const poll = async () => {
+      if (inFlight) return void (again = true);
+      inFlight = true;
       try {
         const res = await escanor.messages(id, stateRef.current.lastId);
         if (!live) return;
         stateRef.current = applyMessages(stateRef.current, res);
         setState(stateRef.current);
-        setError(null);
+        failures = 0;
+        setUnreachable(false);
+        const s = stopStatus(stopRef.current, stateRef.current.running);
+        if (s.phase !== stopRef.current) setStop(s.phase);
+        setStuck(s.stuck);
       } catch (e) {
         if (e instanceof SessionEnded) return sessionEnded();
-        if (live) setError(e instanceof Error ? e.message : 'Could not refresh the conversation.');
+        failures += 1;
+        if (live && failures >= POLL_FAILURES_TO_REPORT) setUnreachable(true);
+      } finally {
+        inFlight = false;
       }
-      if (live) timer = setTimeout(poll, pollDelayMs(stateRef.current));
+      if (!live) return;
+      // Failing: back off a little each time, but never give up (the server or the network comes back on its own).
+      const delay = again ? 0 : failures > 0 ? Math.min(8000, pollDelayMs(stateRef.current) * 2 ** Math.min(failures, 4)) : pollDelayMs(stateRef.current);
+      again = false;
+      timer = setTimeout(poll, delay);
+    };
+    pollNow.current = () => {
+      if (timer) clearTimeout(timer);
+      void poll();
     };
     void poll();
     return () => {
       live = false;
+      pollNow.current = () => undefined;
       if (timer) clearTimeout(timer);
     };
   }, [id, sessionEnded]);
+
+  const sendStop = useCallback(
+    async (conversationId: string) => {
+      if (idRef.current === conversationId) setStop({ kind: 'sending' });
+      try {
+        await escanor.stop(conversationId);
+        if (idRef.current !== conversationId) return;
+        // `stopped: false` means it had already finished: the poll shows the ending either way.
+        setStop({ kind: 'sent', at: Date.now() });
+        pollNow.current();
+      } catch (e) {
+        if (e instanceof SessionEnded) return sessionEnded();
+        if (idRef.current !== conversationId) return;
+        setStop({ kind: 'idle' });
+        setError(`Could not stop it. ${e instanceof Error ? e.message : 'Try again.'}`);
+      }
+    },
+    [sessionEnded],
+  );
 
   const send = useCallback(
     async (text: string, attachments: Attachment[] = []) => {
       const clean = text.trim();
       if (!clean && attachments.length === 0) return;
       setError(null);
+      setStop({ kind: 'idle' });
+      setStuck(false);
       stateRef.current = addOptimisticMessage(stateRef.current, withAttachmentNote(clean, attachments));
       setState(stateRef.current);
+      const making = id ? null : { stop: false };
+      if (making) creating.current = making;
       try {
         const { conversation_id } = await escanor.send(clean, id ?? undefined, toApi(attachments));
         if (!id) {
+          idRef.current = conversation_id;
           setId(conversation_id);
           onCreated(conversation_id);
         }
+        // Stop was pressed before there was a conversation to stop: stop it now that there is.
+        if (making?.stop) void sendStop(conversation_id);
       } catch (e) {
         if (e instanceof SessionEnded) return sessionEnded();
         stateRef.current = dropOptimisticMessages(stateRef.current);
         setState(stateRef.current);
+        setStop({ kind: 'idle' });
         setError(e instanceof Error ? e.message : 'Could not send that.');
+      } finally {
+        if (making && creating.current === making) creating.current = null;
       }
     },
-    [id, onCreated, sessionEnded],
+    [id, onCreated, sessionEnded, sendStop],
   );
 
   const answer = useCallback(
@@ -193,8 +280,25 @@ export function useConversation(initialId: string | null, onCreated: (id: string
   );
 
   const stop = useCallback(async () => {
-    if (id) await escanor.stop(id).catch(() => undefined);
-  }, [id]);
+    const { phase, send: now } = pressStop(stopRef.current, Boolean(id), stuck);
+    if (phase === stopRef.current) return;
+    setError(null);
+    setStuck(false);
+    if (now && id) return sendStop(id);
+    if (creating.current) creating.current.stop = true;
+    setStop(phase);
+  }, [id, stuck, sendStop]);
 
-  return { id, state, error, send, answer, stop };
+  const problem = error ?? (stuck ? 'It is taking a long time to stop. You can send a new message, or try Stop again.' : unreachable ? 'Can’t reach your assistant. Retrying…' : null);
+  return {
+    id,
+    state,
+    error: problem,
+    stopping: stopPhase.kind !== 'idle' && state.running && !stuck,
+    /** Send stays usable while a turn looks lost (a stop the server did not act on, or a server that stopped answering). */
+    canSend: canSendNow(state, { stuck, unreachable }),
+    send,
+    answer,
+    stop,
+  };
 }
