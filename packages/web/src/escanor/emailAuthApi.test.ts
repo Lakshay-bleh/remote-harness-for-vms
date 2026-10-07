@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { callbackWithCode, createEmailAuthApi, digitsOnly, EmailAuthError, isEmail, passwordProblem, passwordStrength } from './emailAuth';
+import { callbackWithCode, createEmailAuthApi, digitsOnly, EmailAuthError, isEmail, passwordProblem, passwordStrength } from './emailAuthApi';
 
 test('passwords are judged the way the server judges them', () => {
   assert.match(passwordProblem('short') ?? '', /at least 8/);
