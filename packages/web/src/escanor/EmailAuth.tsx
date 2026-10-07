@@ -1,7 +1,7 @@
 import { CaretLeft, Eye, EyeSlash, EnvelopeSimple } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { escanorApiBase, loginRedirect } from './config';
-import { CODE_LENGTH, createEmailAuthApi, digitsOnly, EmailAuthError, isEmail, passwordProblem, passwordStrength, type CodeSent, type Flow } from './emailAuth';
+import { CODE_LENGTH, createEmailAuthApi, digitsOnly, EmailAuthError, isEmail, passwordProblem, passwordStrength, type CodeSent, type Flow } from './emailAuthApi';
 import { Button, Notice } from './ui';
 
 type Step = 'signin' | 'signup' | 'verify' | 'forgot' | 'reset';
