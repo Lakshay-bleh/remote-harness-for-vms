@@ -1,8 +1,13 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <!-- Only in the "with phone control" build (gradlew -PphoneControl=true).
      Android's Play Protect blocks an app downloaded outside the Play Store if it declares an accessibility service, so the normal
-     download leaves this out and says so in Settings > Voice and phone control. -->
+     download leaves this out and says so in Settings > Voice and phone control. Phone control switches itself off whenever a payment
+     or banking app opens, because those refuse to run while an accessibility service is on. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- calling by voice: asked for only when the person turns on "call directly"; without it the dialer opens with the number filled in -->
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <!-- "Hey Escanor" heard while the phone is locked can take over the screen (Android 14+ also asks the person) -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <application>
         <!-- Controlling the phone by voice ("go home", "scroll down", "tap Send"): only if the person switches it on in Accessibility settings -->
         <service

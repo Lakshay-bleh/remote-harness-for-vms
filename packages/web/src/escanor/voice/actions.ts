@@ -36,10 +36,13 @@ export interface DevicePlugin {
   callContact(o: { name: string; direct?: boolean }): Promise<PluginResult>;
   /** Every contact with a number (asks Android for permission the first time). Optional: an older build only has callContact. */
   listContacts?(): Promise<PluginResult & { contacts?: Contact[] }>;
-  callStatus(): Promise<{ granted: boolean }>;
+  /** `available` is false in the normal download, which has no call permission: calls always open the dialer there. */
+  callStatus(): Promise<{ granted: boolean; available?: boolean }>;
   requestCallPermission(): Promise<PluginResult>;
   controlStatus(): Promise<ControlStatus>;
   openControlSettings(): Promise<PluginResult>;
+  /** Switch phone control off from the app. Optional: an older build does not have it. */
+  controlTurnOff?(): Promise<PluginResult>;
   /** Escanor's App info, where Android 13+ offers "Allow restricted settings". */
   openAppInfo(): Promise<PluginResult>;
   control(o: { action: 'global'; name: string } | { action: 'click'; text: string } | { action: 'scroll'; direction: 'up' | 'down' } | { action: 'type'; text: string } | { action: 'read' }): Promise<PluginResult>;

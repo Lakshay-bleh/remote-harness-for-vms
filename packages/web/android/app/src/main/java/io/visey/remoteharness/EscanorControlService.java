@@ -2,13 +2,21 @@ package io.visey.remoteharness;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.GestureDescription;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Path;
 import android.graphics.Rect;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
+
+import androidx.core.app.NotificationCompat;
 
 import java.util.List;
 import java.util.Locale;
@@ -20,6 +28,9 @@ import java.util.Locale;
  *
  * It never reads or stores what is on the screen except when the person asks "what is on my screen", and that text goes only into
  * the spoken answer on this phone.
+ *
+ * Payment and banking apps refuse to run while any accessibility service is on, so when one of them opens this switches itself off
+ * (Android lets a service do that, not switch itself back on) and leaves a notification that leads back to the switch.
  */
 public class EscanorControlService extends AccessibilityService {
 
@@ -39,9 +50,55 @@ public class EscanorControlService extends AccessibilityService {
         instance = this;
     }
 
+    static final String CHANNEL_PAUSED = "escanor_control";
+    static final int ID_PAUSED = 4103;
+
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
-        // Nothing is read as it happens: this service only acts when asked.
+        // Nothing on screen is read as it happens: this service only acts when asked. All it looks at is which app came to the front,
+        // to step aside for payment apps.
+        if (event == null || event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || event.getPackageName() == null) return;
+        String pkg = event.getPackageName().toString();
+        if (PaymentApps.isPaymentApp(pkg)) stepAsideFor(pkg);
+    }
+
+    /** Switch off so `pkg` (a payment app) works, and say so in a notification that opens the switch again. */
+    private void stepAsideFor(String pkg) {
+        notifyPaused(this, appLabel(this, pkg));
+        turnOff();
+    }
+
+    /** The person (or a payment app opening) switched phone control off. Turning it on again happens only in Android's settings. */
+    public void turnOff() {
+        instance = null;
+        disableSelf();
+    }
+
+    private static String appLabel(Context c, String pkg) {
+        try {
+            PackageManager pm = c.getPackageManager();
+            return pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString();
+        } catch (Exception e) {
+            return "your payment app";
+        }
+    }
+
+    private static void notifyPaused(Context c, String app) {
+        NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm == null) return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            nm.createNotificationChannel(new NotificationChannel(CHANNEL_PAUSED, "Phone control switched off", NotificationManager.IMPORTANCE_DEFAULT));
+        }
+        Intent settings = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        PendingIntent pi = PendingIntent.getActivity(c, 5, settings, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        nm.notify(ID_PAUSED, new NotificationCompat.Builder(c, CHANNEL_PAUSED)
+            .setSmallIcon(R.drawable.ic_stat_escanor)
+            .setContentTitle("Phone control is off so " + app + " works")
+            .setContentText("Payment apps do not run while it is on. When you are done, tap to switch it back on.")
+            .setStyle(new NotificationCompat.BigTextStyle().bigText("Payment and banking apps do not run while another app can control the phone. When you are done in " + app + ", tap here and switch Escanor back on."))
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .build());
     }
 
     @Override

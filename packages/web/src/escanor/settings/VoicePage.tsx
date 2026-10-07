@@ -17,7 +17,7 @@ export default function VoicePage({ onBack }: { onBack: () => void }) {
   const dev = deviceOrNull();
   const prefs = useVoicePrefs();
   const [control, setControl] = useState<ControlStatus | null>(null);
-  const [call, setCall] = useState<boolean | null>(null);
+  const [call, setCall] = useState<{ granted: boolean; available?: boolean } | null>(null);
   const [status, setStatus] = useState<WakeStatus | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -25,7 +25,7 @@ export default function VoicePage({ onBack }: { onBack: () => void }) {
 
   const refresh = useCallback(async () => {
     if (!dev) return;
-    setCall((await dev.callStatus().catch(() => ({ granted: false }))).granted);
+    setCall(await dev.callStatus().catch(() => ({ granted: false })));
     setStatus(await wake.status());
   }, [dev]);
 
@@ -92,9 +92,8 @@ export default function VoicePage({ onBack }: { onBack: () => void }) {
       </Group>}
 
       {isAndroid() && (step === 'listening' || step === 'ready') && (
-        <Group title="From other apps and the home screen" footer="Android does not let an app open itself from the background unless you allow it. These two switches are yours to turn on; Escanor only uses them when it hears “Hey Escanor”.">
+        <Group title="From other apps and the home screen" footer="Android does not let an app open itself from the background. Escanor never draws over other apps, so payment and banking apps keep working.">
           <Row icon={<AppWindow size={18} />} label="Open Escanor when it hears you" sub={outside.line} chevron={false} />
-          {outside.canAllowOverlay && <Row label="Display over other apps" value="Not allowed" sub="Tap to open Android’s page, then switch Escanor on." onClick={() => void wake.openOverlaySettings()} />}
           {outside.canAllowFullScreen && <Row label="Full-screen notifications" value="Not allowed" sub="Lets the notification take over a locked or idle screen." onClick={() => void wake.openFullScreenSettings()} />}
           <Row label="Try it" sub="Tap, then press Home or open another app. In six seconds Escanor acts as though you had said it." onClick={() => void wake.test().then(() => setNote('Press Home now. Escanor will open in a few seconds.'))} />
         </Group>
@@ -103,7 +102,7 @@ export default function VoicePage({ onBack }: { onBack: () => void }) {
 
       {!isIOS() && <Group
         title="Control your phone"
-        footer="Escanor asks before each step. Android requires you to switch this on yourself, in its Accessibility settings, and you can switch it off there any time."
+        footer="Escanor asks before each step. Android requires you to switch this on yourself, in its Accessibility settings. Payment and banking apps do not run while it is on, so Escanor switches it off by itself when you open one and leaves a notification to switch it back on."
       >
         <Row
           icon={<HandPointing size={18} />}
@@ -115,14 +114,17 @@ export default function VoicePage({ onBack }: { onBack: () => void }) {
         {dev && <PhoneControlSetup dev={dev} onStatus={setControl} />}
       </Group>}
 
-      {!isIOS() && <Group title="Calling" footer="With this on, “call Mom” rings straight away. Off, Escanor opens the dialer with the number filled in and you press call. Android asks for the Phone permission the first time.">
+      {!isIOS() && call?.available === false && <Group title="Calling" footer="“Call Mom” opens the dialer with the number filled in, and you press call. Escanor does not ask for the Phone permission in this download, so it installs without warnings.">
+        <Row icon={<Phone size={18} />} label="Calls open the dialer" chevron={false} />
+      </Group>}
+      {!isIOS() && call?.available !== false && <Group title="Calling" footer="With this on, “call Mom” rings straight away. Off, Escanor opens the dialer with the number filled in and you press call. Android asks for the Phone permission the first time.">
         <SwitchRow icon={<Phone size={18} />} label="Call directly" on={prefs.directCalls} onChange={(v) => setVoicePrefs({ directCalls: v })} />
         <Row
           icon={<ShieldCheck size={18} />}
           label="Phone permission"
-          value={call === null ? <Spinner /> : call ? 'Allowed' : 'Not allowed'}
-          onClick={!call && dev ? () => void dev.requestCallPermission().then(refresh) : undefined}
-          sub={!call ? 'Tap to allow Escanor to place calls.' : undefined}
+          value={call === null ? <Spinner /> : call.granted ? 'Allowed' : 'Not allowed'}
+          onClick={call && !call.granted && dev ? () => void dev.requestCallPermission().then(refresh) : undefined}
+          sub={call && !call.granted ? 'Tap to allow Escanor to place calls.' : undefined}
           chevron={false}
         />
       </Group>}

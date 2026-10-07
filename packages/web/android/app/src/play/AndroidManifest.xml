@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <!-- The Google Play build (gradlew bundleRelease -Pplay=true). Installed from Play, an accessibility service is not blocked and
      Android does not grey it out, so phone control is included, exactly as in src/phonecontrol (keep the two in step).
-     USE_FULL_SCREEN_INTENT is removed: Play allows it only for calling and alarm apps. Without it, "Hey Escanor" heard while the
+     USE_FULL_SCREEN_INTENT is left out: Play allows it only for calling and alarm apps. Without it, "Hey Escanor" heard while the
      screen is off shows a heads-up notification to tap instead of opening voice mode over the lock screen. -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
-    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" tools:node="remove" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- calling by voice: asked for only when the person turns on "call directly"; without it the dialer opens with the number filled in -->
+    <uses-permission android:name="android.permission.CALL_PHONE" />
     <application>
         <!-- Controlling the phone by voice ("go home", "scroll down", "tap Send"): only if the person switches it on in Accessibility settings -->
         <service

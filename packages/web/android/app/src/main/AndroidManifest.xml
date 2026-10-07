@@ -68,7 +68,9 @@
         <meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/notification_accent" />
     </application>
 
-    <!-- Permissions -->
+    <!-- Permissions. Kept to what the app needs so a downloaded APK installs without Play Protect or payment apps objecting: no
+         accessibility service, no drawing over other apps, no placing calls, no full-screen alerts. Those are only in the
+         "with phone control" and Google Play builds (src/phonecontrol, src/play). -->
 
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Scanning the pairing code shown by Escanor Desktop. The camera is optional: typing the code works without it. -->
@@ -79,16 +81,12 @@
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
-    <!-- calling by voice: asked for only when the person turns on "call directly"; without it the dialer opens with the number filled in -->
-    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <!-- calling by voice opens the dialer with the number filled in (no permission needed) -->
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <!-- haptic feedback (Settings > Appearance and feel) -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- "Hey Escanor" listens in the background through a foreground service that shows a notification -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
-    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
-    <!-- "Hey Escanor" from another app or the home screen: a small logo while the app opens (Android only lets an app open itself from the background with this) -->
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 </manifest>

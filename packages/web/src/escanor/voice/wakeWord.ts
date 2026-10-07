@@ -6,22 +6,28 @@ export interface WakeStatus {
   modelReady: boolean;
   downloading: boolean;
   micAllowed: boolean;
-  /** "Display over other apps": lets the app open itself from another app or the home screen. */
-  overlayAllowed?: boolean;
+  /** Phone control is on, and with it Android lets the app open itself from another app or the home screen. */
+  opensDirectly?: boolean;
+  /** This build can use full-screen notifications at all (the normal download leaves them out). */
+  fullScreenDeclared?: boolean;
   /** "Full-screen notifications" (Android 14+): lets the notification take over a locked or idle screen. */
   fullScreenAllowed?: boolean;
 }
 
-/** How "Hey Escanor" gets the app on screen when it is heard outside the app, in a sentence, and what could be switched on to improve it. */
-export function outsideApp(s: WakeStatus | null): { line: string; best: boolean; canAllowOverlay: boolean; canAllowFullScreen: boolean } {
-  const overlay = s?.overlayAllowed === true;
-  const full = s?.fullScreenAllowed !== false;
-  if (overlay) return { line: 'Escanor opens straight away, from any app or the home screen.', best: true, canAllowOverlay: false, canAllowFullScreen: !full };
+/**
+ * How "Hey Escanor" gets the app on screen when it is heard outside the app, in a sentence, and what could be switched on to improve
+ * it. Escanor never draws over other apps (payment apps refuse to run next to one that can), so outside the app it is a notification
+ * unless phone control is on.
+ */
+export function outsideApp(s: WakeStatus | null): { line: string; best: boolean; canAllowFullScreen: boolean } {
+  const canAllowFullScreen = s?.fullScreenDeclared === true && s.fullScreenAllowed === false;
+  if (s?.opensDirectly) return { line: 'Escanor opens straight away, from any app or the home screen.', best: true, canAllowFullScreen: false };
   return {
-    line: full ? 'Escanor shows a “Hey! I’m listening” notification: tap it. Allow “Display over other apps” to open straight away.' : 'Escanor shows a “Hey! I’m listening” notification: tap it. Allow “Display over other apps” and “Full-screen notifications” to open straight away.',
+    line: canAllowFullScreen
+      ? 'Escanor shows a “Hey! I’m listening” notification: tap it. Allow “Full-screen notifications” so it also shows on a locked screen.'
+      : 'Escanor shows a “Hey! I’m listening” notification: tap it. With phone control on, it opens straight away.',
     best: false,
-    canAllowOverlay: true,
-    canAllowFullScreen: !full,
+    canAllowFullScreen,
   };
 }
 
@@ -47,7 +53,6 @@ export const wake = {
   /** Voice mode has the microphone while it is open. */
   pause: (paused: boolean) => (isAndroid() ? Device.wakePause({ paused }).catch(() => undefined) : Promise.resolve(undefined)),
   deleteModel: () => Device.wakeDeleteModel(),
-  openOverlaySettings: () => Device.wakeOpenOverlaySettings(),
   openFullScreenSettings: () => Device.wakeOpenFullScreenSettings(),
   /** Act as though the phrase was heard in six seconds, so it can be tried from another app. */
   test: () => Device.wakeTest(),
