@@ -7,6 +7,8 @@ import { escanor } from './client';
 import ChatComposer from './composer/ChatComposer';
 import { useConversation, useLoad } from './hooks';
 import MachineSheet, { machineLabel, machineTone } from './MachineSheet';
+import ModelChip from './ModelChip';
+import { modelToSend, rememberModels, useModelPick } from './modelPicker';
 import { MenuButton, Md, Notice, Spinner } from './ui';
 
 const SUGGESTIONS = ['What can you help me with?', 'Check my latest deployments and tell me if anything is wrong', 'Look at the errors from the last day and find the cause', 'Fix the failing build in my repository'];
@@ -19,6 +21,12 @@ export default function AssistantView({ conversationId, title, onConversation, o
   useEffect(() => { if (ready) setWasReady(true); }, [ready]);
   const [machineOpen, setMachineOpen] = useState(false);
   const caps = useLoad(() => (ready ? escanor.capabilities() : Promise.resolve(null)), 30000, [ready]);
+
+  // The models to choose from (the same Auto + available models as the website), and the person's pick, remembered on this phone.
+  const models = useLoad(() => (ready ? escanor.models().catch(() => null) : Promise.resolve(null)), 60000, [ready]);
+  useEffect(() => rememberModels(models.data ?? null), [models.data]);
+  const picked = useModelPick();
+  const model = modelToSend(models.data, picked);
 
   const created = useCallback((id: string) => { onConversation(id); onCreated(); }, [onConversation, onCreated]);
   const chat = useConversation(conversationId, created);
@@ -62,7 +70,7 @@ export default function AssistantView({ conversationId, title, onConversation, o
             <p className="text-sm text-muted">Ask in your own words. I’ll ask before I change anything.</p>
             <div className="flex flex-col gap-2 pt-2">
               {SUGGESTIONS.map((s) => (
-                <button key={s} onClick={() => void chat.send(s)} className="rounded-pill border border-hairline px-4 py-2.5 text-left text-sm text-body transition hover:bg-surface-card hover:text-ink active:scale-[0.99]">{s}</button>
+                <button key={s} onClick={() => void chat.send(s, [], model)} className="rounded-pill border border-hairline px-4 py-2.5 text-left text-sm text-body transition hover:bg-surface-card hover:text-ink active:scale-[0.99]">{s}</button>
               ))}
             </div>
           </div>
@@ -91,7 +99,15 @@ export default function AssistantView({ conversationId, title, onConversation, o
         ) : (
           caps.data && <button onClick={onOpenIntegrations} className="mb-2 text-left text-[12px] text-primary underline underline-offset-2">Connect a service so I can work on it</button>
         )}
-        <ChatComposer placeholder="Message your assistant" running={chat.state.running} stopping={chat.stopping} sendWhileRunning={chat.canSend} onSend={(t, files) => void chat.send(t, files)} onStop={() => void chat.stop()} />
+        <ChatComposer
+          placeholder="Message your assistant"
+          chips={models.data && (models.data.models?.length > 0 || models.data.auto) ? <ModelChip list={models.data} picked={picked} /> : undefined}
+          running={chat.state.running}
+          stopping={chat.stopping}
+          sendWhileRunning={chat.canSend}
+          onSend={(t, files) => void chat.send(t, files, model)}
+          onStop={() => void chat.stop()}
+        />
       </div></div>
 
       {machineOpen && <MachineSheet onClose={() => setMachineOpen(false)} />}

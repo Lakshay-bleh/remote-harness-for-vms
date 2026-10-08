@@ -48,6 +48,43 @@ export interface CatalogProvider {
   help_url: string;
 }
 
+/** Why a model cannot answer right now; null when it can. */
+export type AssistantModelReason = 'no_key' | 'key_rejected' | 'rate_limited' | 'quota' | 'not_found' | null;
+
+/** A model the person can chat with (GET /ai/models). `id` is what /ai/chat takes as `model`. */
+export interface AssistantModel {
+  id: string;
+  provider: string;
+  provider_label?: string;
+  model?: string;
+  label: string;
+  default: boolean;
+  /** False when it cannot answer right now; `reason` and `detail` say why. Older servers omit these. */
+  available?: boolean;
+  reason?: AssistantModelReason;
+  detail?: string;
+  retry_after?: number | null;
+  local?: boolean;
+  /** It answered a test question recently. */
+  verified?: boolean;
+}
+
+/** What "Auto" would use right now: the best model that can answer, and the next when it cannot. */
+export interface AssistantAuto {
+  id: 'auto';
+  label: string;
+  available: boolean;
+  resolves_to: string | null;
+  detail: string;
+}
+
+export interface AssistantModels {
+  models: AssistantModel[];
+  default: string | null;
+  /** Absent on older servers, which have no Auto. */
+  auto?: AssistantAuto;
+}
+
 export interface McpConnection {
   id: string;
   name: string;
@@ -311,7 +348,10 @@ export const escanor = {
   capabilities: (live = false) => request<AssistantCapabilities>(`/ai/capabilities${live ? '?live=true' : ''}`),
   machine: (logs = false) => request<MachineView>(`/ai/machine?logs=${logs}&tail=120`),
   conversations: () => request<{ conversations: AssistantConversation[] }>('/ai/conversations').then((r) => r.conversations),
-  send: (text: string, conversationId?: string, attachments: ApiAttachment[] = []) => request<{ conversation_id: string }>('/ai/chat', json({ text, conversation_id: conversationId ?? null, ...(attachments.length ? { attachments } : {}) })),
+  /** The models the person can choose between, and what Auto would use. */
+  models: () => request<AssistantModels>('/ai/models'),
+  /** `model`: an id from `models()` (or "auto"); left out, the conversation keeps its model (or the server's default for a new one). */
+  send: (text: string, conversationId?: string, attachments: ApiAttachment[] = [], model?: string) => request<{ conversation_id: string }>('/ai/chat', json({ text, conversation_id: conversationId ?? null, ...(attachments.length ? { attachments } : {}), ...(model ? { model } : {}) })),
   messages: (id: string, after: number) => request<AssistantMessages>(`/ai/conversations/${enc(id)}/messages?after=${after}`),
   answer: (id: string, requestId: string, allow: boolean) => request<{ status: string }>(`/ai/conversations/${enc(id)}/permissions/${enc(requestId)}`, json({ allow })),
   stop: (id: string) => request<{ ok: boolean }>(`/ai/conversations/${enc(id)}/stop`, { method: 'POST' }),

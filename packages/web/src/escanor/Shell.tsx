@@ -13,6 +13,7 @@ import IntegrationsView from './IntegrationsView';
 import { listenPush, resumePush, type PushDest } from './push';
 import { useEscanorSession } from './session';
 import SettingsView from './settings/SettingsView';
+import { currentModel } from './modelPicker';
 import { answerByVoice } from './voice/assistantAnswer';
 import type { AssistantTurn } from './voice/assistant';
 import VoiceHost from './voice/VoiceOrb';
@@ -168,12 +169,12 @@ export default function Shell({ machines }: { machines: React.ReactNode }) {
     const open = conversationRef.current;
     let r: { conversation_id: string };
     try {
-      r = await escanor.send(text, open ?? undefined);
+      r = await escanor.send(text, open ?? undefined, [], currentModel());
     } catch (e) {
       // The open chat is still answering something earlier: speaking again means "this instead", so stop that and ask again.
       if (!(e instanceof ApiError && e.status === 409 && open)) throw e;
       if (!(await stopAndSettle(open, signal))) return 'I’m still finishing your last request in this chat. Open it to follow along, or stop it there.';
-      r = await escanor.send(text, open);
+      r = await escanor.send(text, open, [], currentModel());
     }
     chats.reload();
     setConversationId(r.conversation_id);

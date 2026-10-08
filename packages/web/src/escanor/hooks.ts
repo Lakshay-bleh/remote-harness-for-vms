@@ -232,7 +232,7 @@ export function useConversation(initialId: string | null, onCreated: (id: string
   );
 
   const send = useCallback(
-    async (text: string, attachments: Attachment[] = []) => {
+    async (text: string, attachments: Attachment[] = [], model?: string) => {
       const clean = text.trim();
       if (!clean && attachments.length === 0) return;
       setError(null);
@@ -243,7 +243,7 @@ export function useConversation(initialId: string | null, onCreated: (id: string
       const making = id ? null : { stop: false };
       if (making) creating.current = making;
       try {
-        const { conversation_id } = await escanor.send(clean, id ?? undefined, toApi(attachments));
+        const { conversation_id } = await escanor.send(clean, id ?? undefined, toApi(attachments), model);
         if (!id) {
           idRef.current = conversation_id;
           setId(conversation_id);
