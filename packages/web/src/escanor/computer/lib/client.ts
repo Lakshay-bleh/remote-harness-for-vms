@@ -131,6 +131,27 @@ export async function pairWithCode(code: string, deviceName: string, cloud: Clou
   throw new Error('That code is not showing on any of your computers. Check it, and that the computer is signed in to the same account.');
 }
 
+/** Replies to requests without an id, matched by type. */
+function matchesByType(type: ClientMsg['t'], m: ServerMsg): boolean {
+  const idlessError = m.t === 'error' && !(m as { id?: string }).id;
+  switch (type) {
+    case 'list':
+      return m.t === 'capabilities';
+    case 'pending':
+      return m.t === 'pending';
+    case 'ping':
+      return m.t === 'pong';
+    case 'groups':
+      return m.t === 'groups' || idlessError;
+    case 'request_group':
+      return m.t === 'group_request' || idlessError;
+    case 'activity':
+      return m.t === 'activity' || idlessError;
+    default:
+      return false;
+  }
+}
+
 type Pending = { resolve: (m: ServerMsg[]) => void; reject: (e: Error) => void; match: (m: ServerMsg) => boolean; got: ServerMsg[]; done: (got: ServerMsg[]) => boolean };
 
 /** One live link to one paired computer. */
@@ -188,8 +209,19 @@ export class ComputerClient {
     return (await Promise.all(this.computer.lan.filter(isLocalAddress).map(probe))).filter((a): a is string => a !== null);
   }
 
-  /** Connect the best way available. Resolves with the route used; rejects if neither works. */
-  async connect(): Promise<Route> {
+  /**
+   * Connect the best way available. Resolves with the route used; rejects if neither works. Requests that arrive together before
+   * there is a connection share one attempt: each opening its own socket left the client holding one socket's session key while
+   * reading another's frames.
+   */
+  connect(): Promise<Route> {
+    this.connecting ??= this.connectOnce().finally(() => (this.connecting = null));
+    return this.connecting;
+  }
+
+  private connecting: Promise<Route> | null = null;
+
+  private async connectOnce(): Promise<Route> {
     for (const addr of await this.liveAddresses()) {
       try {
         await withTimeout(this.openLan(addr), this.env.lanTimeoutMs, 'The local connection');
@@ -319,8 +351,9 @@ export class ComputerClient {
         resolve,
         reject,
         got: [],
-        // replies carry the request id (call, chat); the rest are matched by their type
-        match: (m) => (id ? ((m.t === 'result' || m.t === 'reply' || m.t === 'error') && (m as { id?: string }).id === id) : (type === 'list' && m.t === 'capabilities') || (type === 'pending' && m.t === 'pending') || (type === 'ping' && m.t === 'pong')),
+        // replies carry the request id (call, chat); the rest are matched by their type. A computer too old for groups, permission
+        // requests or the activity list answers those with an error that has no id: that is their answer too.
+        match: (m) => (id ? ((m.t === 'result' || m.t === 'reply' || m.t === 'error') && (m as { id?: string }).id === id) : matchesByType(type, m)),
         done: () => true,
       };
       let delivered = false;
@@ -343,10 +376,22 @@ export class ComputerClient {
     });
   }
 
-  private async sendLan(msg: ClientMsg): Promise<void> {
-    if (!this.ws || !this.sk) throw new Error('Not connected.');
-    this.ws.send(JSON.stringify({ c: await seal(this.sk, JSON.stringify({ s: ++this.seqOut, m: msg }), `lan:${this.computer.id}:c2s`) }));
+  /**
+   * One frame at a time, in sequence order. Sealing is async: requests sent together could otherwise leave out of order, and the
+   * computer ends the session on a frame whose number is not above the last one (it looks like a replay).
+   */
+  private sendLan(msg: ClientMsg): Promise<void> {
+    const run = this.sending.then(async () => {
+      if (!this.ws || !this.sk) throw new Error('Not connected.');
+      const ws = this.ws;
+      const frame = await seal(this.sk, JSON.stringify({ s: ++this.seqOut, m: msg }), `lan:${this.computer.id}:c2s`);
+      ws.send(JSON.stringify({ c: frame }));
+    });
+    this.sending = run.catch(() => undefined);
+    return run;
   }
+
+  private sending: Promise<void> = Promise.resolve();
 
   private async requestCloud(msg: ClientMsg): Promise<ServerMsg[]> {
     const relay = this.env.relay;
