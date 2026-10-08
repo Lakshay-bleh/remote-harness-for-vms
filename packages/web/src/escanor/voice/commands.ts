@@ -9,6 +9,7 @@
  */
 
 export type VoiceTab = 'assistant' | 'computers' | 'connections' | 'machines' | 'settings';
+export type MediaKey = 'playpause' | 'next' | 'previous';
 export type SettingsScreen = 'wifi' | 'bluetooth' | 'display' | 'sound' | 'battery' | 'apps' | 'location';
 
 /** The buttons and gestures of the phone itself, done through Android's Accessibility permission. */
@@ -28,6 +29,8 @@ export type PhoneAction =
   | { type: 'timer'; seconds: number }
   | { type: 'torch'; on: boolean }
   | { type: 'volume'; change: 'up' | 'down' | 'mute' | 'unmute' }
+  /** Whatever is playing on the phone (music, a video, a podcast): the media keys. */
+  | { type: 'media'; action: MediaKey }
   | { type: 'web_search'; query: string }
   | { type: 'settings'; screen: SettingsScreen };
 
@@ -128,6 +131,19 @@ const CONTROL_WORDS: Array<[RegExp, ControlOp]> = [
   [/^scroll up(?: a bit| more)?$|^page up$/, 'scroll_up'],
 ];
 
+const MEDIA_NOUN = '(?:music|song|track|video|podcast|playback|audio)';
+const MEDIA_WORDS: Array<[RegExp, MediaKey]> = [
+  [new RegExp(`^(?:pause|resume|play|unpause|stop)(?: the| my)? ${MEDIA_NOUN}$|^(?:pause|resume|unpause)(?: it)?$`), 'playpause'],
+  [new RegExp(`^(?:next|skip)(?: this| the)? ${MEDIA_NOUN}$|^(?:play |go to )?(?:the )?next ${MEDIA_NOUN}$`), 'next'],
+  [new RegExp(`^(?:play |go to |go back to )?(?:the )?(?:previous|last) ${MEDIA_NOUN}$|^go back a ${MEDIA_NOUN}$`), 'previous'],
+];
+
+/** "pause the music", "next song", "previous track": the phone's media keys. Only these exact shapes, so "play X on Spotify" is not taken. */
+export function parseMedia(t: string): MediaKey | null {
+  for (const [re, key] of MEDIA_WORDS) if (re.test(t)) return key;
+  return null;
+}
+
 export function parseControl(t: string): PhoneAction | null {
   for (const [re, op] of CONTROL_WORDS) if (re.test(t)) return { type: 'control', op };
   return null;
@@ -162,6 +178,8 @@ export function parseVoiceCommand(raw: string, ctx: VoiceContext): VoiceCommand 
   const volume = /^(?:turn )?(?:the )?volume (up|down)$|^turn (?:it )?(up|down)$/.exec(t);
   if (volume) return { kind: 'phone', action: { type: 'volume', change: (volume[1] ?? volume[2]) as 'up' | 'down' } };
   if (t === 'mute' || t === 'unmute') return { kind: 'phone', action: { type: 'volume', change: t } };
+  const media = parseMedia(t);
+  if (media) return { kind: 'phone', action: { type: 'media', action: media } };
   const call = /^(?:call|dial|phone|ring) (.+)$/.exec(t)?.[1];
   if (call) {
     const digits = call.replace(/[\s-]/g, '');

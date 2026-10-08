@@ -68,7 +68,8 @@ async function viaServer(text: string, d: AssistantDeps): Promise<Reply | null> 
     const answer = await work;
     return { ok: true, say: (typeof answer === 'string' && answer.trim()) || plan.say || 'Asking your Escanor assistant.', kind: 'assistant' };
   }
-  const { actions, skipped } = planToActions(plan);
+  const { actions, skipped, stop } = planToActions(plan);
+  if (stop && actions.length === 0) return { ok: true, say: plan.say || 'Okay.', kind: 'stop' };
   if (actions.length > 0) {
     const results: Array<{ ok: boolean; say: string }> = [];
     for (const a of actions) results.push(await runPhoneAction(a as PhoneAction, d.device));

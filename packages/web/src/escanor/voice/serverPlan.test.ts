@@ -35,12 +35,17 @@ describe('planToActions', () => {
       { type: 'timer', seconds: -5 },
       { type: 'volume', change: 'max' },
       { type: 'call' },
-      { type: 'media', action: 'next' },
+      { type: 'media', action: 'rewind' },
       { type: 'rm -rf' },
       null,
     ] as never;
-    assert.deepEqual(planToActions({ actions: bad }), { actions: [], skipped: 10 });
-    assert.deepEqual(planToActions({ actions: 'nope' as never }), { actions: [], skipped: 0 });
+    assert.deepEqual(planToActions({ actions: bad }), { actions: [], skipped: 10, stop: false });
+    assert.deepEqual(planToActions({ actions: 'nope' as never }), { actions: [], skipped: 0, stop: false });
+  });
+
+  it('passes on music controls, and a stop is a stop, not something this phone cannot do', () => {
+    assert.deepEqual(planToActions({ actions: [{ type: 'media', action: 'next' }, { type: 'media', action: 'playpause' }] }).actions, [{ type: 'media', action: 'next' }, { type: 'media', action: 'playpause' }]);
+    assert.deepEqual(planToActions({ actions: [{ type: 'stop' }] }), { actions: [], skipped: 0, stop: true });
   });
 
   it('does at most three things from one sentence', () => {
@@ -120,6 +125,30 @@ describe('a sentence the phone’s own rules do not settle goes to the server', 
     const r = await handleUtterance('do the odd thing', d);
     assert.equal(r.ok, false);
     assert.match(r.say, /cannot do it yet/);
+    assert.deepEqual(log, []);
+  });
+
+  it('pauses the music through the phone, and names the action when this phone cannot', async () => {
+    const pressed: string[] = [];
+    const { d } = rig(async () => plan({ say: 'Done.', actions: [{ type: 'media', action: 'playpause' }] }));
+    (d.device as unknown as Record<string, unknown>).media = async ({ action }: { action: string }) => (pressed.push(action), { ok: true });
+    const r = await handleUtterance('hold the tunes for a sec', d);
+    assert.deepEqual(pressed, ['playpause']);
+    assert.equal(r.ok, true);
+
+    const old = rig(async () => plan({ say: 'Next track.', actions: [{ type: 'media', action: 'next' }] }));
+    (old.d.device as unknown as Record<string, unknown>).media = async () => { throw new Error('not implemented'); };
+    const r2 = await handleUtterance('skip this one please', old.d);
+    assert.equal(r2.ok, false);
+    assert.match(r2.say, /next track/i);
+    assert.doesNotMatch(r2.say, /cannot do it yet/);
+  });
+
+  it('treats the server’s stop as "stop", leaving voice mode quietly', async () => {
+    const { d, log } = rig(async () => plan({ say: 'Okay.', actions: [{ type: 'stop' }] }));
+    const r = await handleUtterance('alright enough for now thanks', d);
+    assert.equal(r.kind, 'stop');
+    assert.equal(r.ok, true);
     assert.deepEqual(log, []);
   });
 

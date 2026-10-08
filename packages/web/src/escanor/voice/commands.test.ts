@@ -36,6 +36,16 @@ describe('phone actions', () => {
     assert.deepEqual(parseVoiceCommand('volume up', ctx), { kind: 'phone', action: { type: 'volume', change: 'up' } });
     assert.deepEqual(parseVoiceCommand('mute', ctx), { kind: 'phone', action: { type: 'volume', change: 'mute' } });
   });
+  it('presses the media keys for "pause the music", "next song", "previous track", and nothing looser', () => {
+    const media = (t: string) => parseVoiceCommand(t, ctx);
+    assert.deepEqual(media('pause the music'), { kind: 'phone', action: { type: 'media', action: 'playpause' } });
+    assert.deepEqual(media('resume'), { kind: 'phone', action: { type: 'media', action: 'playpause' } });
+    assert.deepEqual(media('next song'), { kind: 'phone', action: { type: 'media', action: 'next' } });
+    assert.deepEqual(media('skip this track'), { kind: 'phone', action: { type: 'media', action: 'next' } });
+    assert.deepEqual(media('previous track'), { kind: 'phone', action: { type: 'media', action: 'previous' } });
+    assert.equal(media('play despacito on spotify').kind, 'assistant');
+    assert.deepEqual(media('stop'), { kind: 'stop' });
+  });
   it('searches the web and opens a settings screen', () => {
     assert.deepEqual(parseVoiceCommand('search for best pizza near me', ctx), { kind: 'phone', action: { type: 'web_search', query: 'best pizza near me' } });
     assert.deepEqual(parseVoiceCommand('open wifi settings', ctx), { kind: 'phone', action: { type: 'settings', screen: 'wifi' } });
