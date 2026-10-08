@@ -52,6 +52,11 @@ describe('forSpeech', () => {
     assert.ok(/point is here\. The rest/.test(out));
   });
   it('leaves a short answer alone', () => assert.equal(forSpeech('All good.'), 'All good.'));
+  it('reads a reply of a few paragraphs whole (speech is spoken in pieces, so length is no reason to cut it)', () => {
+    const reply = Array.from({ length: 14 }, (_, i) => `Check ${i + 1} passed without any trouble at all.`).join(' ');
+    assert.ok(reply.length > 600);
+    assert.equal(forSpeech(reply), reply);
+  });
 });
 
 describe('waitForAnswer, a stopped turn', () => {

@@ -45,8 +45,11 @@ export async function waitForAnswer(deps: AnswerDeps, sent: string, o: { timeout
   return { text: '', needsApproval: false, timedOut: !o.signal?.aborted };
 }
 
-/** Markdown and code are for the eye: leave them out of what is read aloud, and keep it short enough to listen to. */
-export function forSpeech(markdown: string, maxChars = 420): string {
+/**
+ * Markdown and code are for the eye: leave them out of what is read aloud. A long reply is spoken in pieces (speech.ts), so only a
+ * really long one (more than a minute or so of listening) is cut, at a sentence, with a pointer to the chat.
+ */
+export function forSpeech(markdown: string, maxChars = 1500): string {
   const plain = markdown
     .replace(/```[\s\S]*?```/g, ' (some code) ')
     .replace(/`([^`]*)`/g, '$1')
