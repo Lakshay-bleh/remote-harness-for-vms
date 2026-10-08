@@ -13,7 +13,8 @@ import IntegrationsView from './IntegrationsView';
 import { listenPush, resumePush, type PushDest } from './push';
 import { useEscanorSession } from './session';
 import SettingsView from './settings/SettingsView';
-import { waitForAnswer } from './voice/assistantAnswer';
+import { answerByVoice } from './voice/assistantAnswer';
+import type { AssistantTurn } from './voice/assistant';
 import VoiceHost from './voice/VoiceOrb';
 import { getPrefs, haptic } from './settings/prefs';
 import Buddy from './dog/Buddy';
@@ -163,7 +164,7 @@ export default function Shell({ machines }: { machines: React.ReactNode }) {
    */
   const conversationRef = useRef<string | null>(null);
   conversationRef.current = conversationId;
-  const askAssistant = useCallback(async (text: string, signal: AbortSignal) => {
+  const askAssistant = useCallback(async (text: string, signal: AbortSignal): Promise<string | AssistantTurn> => {
     const open = conversationRef.current;
     let r: { conversation_id: string };
     try {
@@ -176,17 +177,20 @@ export default function Shell({ machines }: { machines: React.ReactNode }) {
     }
     chats.reload();
     setConversationId(r.conversation_id);
-    // Cancelling voice mode stops the turn it started, not only the waiting for it.
-    const stop = () => void escanor.stop(r.conversation_id).catch(() => undefined);
-    signal.addEventListener('abort', stop, { once: true });
-    try {
-      const a = await waitForAnswer({ fetch: (after) => escanor.messages(r.conversation_id, after), wait: (ms) => new Promise((res) => setTimeout(res, ms)), now: Date.now }, text, { signal });
-      if (a.needsApproval) return 'I need your OK to go on. Open the chat to approve it.';
-      if (a.timedOut) return 'Still working on it. The answer will be in the chat.';
-      return a.text;
-    } finally {
-      signal.removeEventListener('abort', stop);
-    }
+    const id = r.conversation_id;
+    // Cancelling voice mode stops the turn it started, not only the waiting for it. An OK it asks for is read out and answered by
+    // voice (the same answer as the card in the chat, so the server's rules about who may approve still apply).
+    return answerByVoice(
+      {
+        fetch: (after) => escanor.messages(id, after),
+        wait: (ms) => new Promise((res) => setTimeout(res, ms)),
+        now: Date.now,
+        answer: (requestId, allow) => escanor.answer(id, requestId, allow),
+        stop: () => void escanor.stop(id).catch(() => undefined),
+      },
+      text,
+      { signal },
+    );
   }, [chats]);
   // A chat deleted while it is still working is stopped first (servers that do not stop it themselves on delete would otherwise
   // carry on with a conversation nobody can see). Being open, it gives way to a new chat.

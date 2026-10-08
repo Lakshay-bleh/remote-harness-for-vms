@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { AssistantMessages } from '@remote-harness/shared/escanor';
-import { forSpeech, waitForAnswer } from './assistantAnswer';
+import type { AssistantTurn } from './assistant';
+import { answerByVoice, forSpeech, waitForAnswer } from './assistantAnswer';
 
 const msg = (id: number, kind: string, extra: Record<string, unknown> = {}) => ({ id, kind, ...extra });
 const page = (items: Array<ReturnType<typeof msg>>, running = false) => ({ items, approvals: [], running, pending: 0, last_id: Math.max(0, ...items.map((i) => i.id)) }) as unknown as AssistantMessages;
@@ -82,3 +83,45 @@ describe('waitForAnswer, a stopped turn', () => {
     assert.equal(r.text, 'Hello.');
   });
 });
+
+const approval = (id: number, requestId: string, extra: Record<string, unknown> = {}) => msg(id, 'approval', { request_id: requestId, status: 'pending', title: 'Delete the bucket old-logs', detail: 'Removes 3 GB of logs.', risk: 'high', raw: '{}', ...extra });
+
+describe('an OK asked for by voice', () => {
+  it('hands back what is being asked, so it can be read out and answered', async () => {
+    const c = clock();
+    const r = await waitForAnswer({ ...c, fetch: async () => page([msg(1, 'user', { text: 'clean up' }), approval(2, 'r1')], true) }, 'clean up');
+    assert.equal(r.needsApproval, true);
+    assert.equal(r.approval?.request_id, 'r1');
+  });
+
+  it('answers it, then waits for and returns what was said after it', async () => {
+    const c = clock();
+    const answered: Array<[string, boolean]> = [];
+    let allowed = false;
+    const fetch = async () =>
+      allowed
+        ? ({ ...page([msg(1, 'user', { text: 'clean up' }), msg(2, 'assistant', { text: 'I will delete it.' }), approval(3, 'r1', { status: 'allowed' }), msg(4, 'assistant', { text: 'Deleted old-logs.' })], false), approvals: [{ request_id: 'r1', status: 'allowed' }] } as AssistantMessages)
+        : page([msg(1, 'user', { text: 'clean up' }), msg(2, 'assistant', { text: 'I will delete it.' }), approval(3, 'r1')], true);
+    const first = await answerByVoice({ ...c, fetch, answer: async (id, allow) => void (answered.push([id, allow]), (allowed = allow)) }, 'clean up');
+    assert.equal(first.text, '');
+    assert.equal(first.approval?.title, 'Delete the bucket old-logs');
+    assert.equal(first.approval?.risk, 'high');
+    const next = (await first.approval!.answer(true)) as AssistantTurn;
+    assert.deepEqual(answered, [['r1', true]]);
+    assert.equal(next.text, 'Deleted old-logs.');
+    assert.equal(next.approval, undefined);
+  });
+
+  it('lets the server’s refusal through as it is (someone else has to approve a high-impact step)', async () => {
+    const c = clock();
+    const first = await answerByVoice({ ...c, fetch: async () => page([msg(1, 'user', { text: 'drop it' }), approval(2, 'r9')], true), answer: async () => { throw new Error('Someone else has to approve this high-impact step.'); } }, 'drop it');
+    await assert.rejects(first.approval!.answer(true), /Someone else has to approve/);
+  });
+
+  it('says it is still working when the answer takes too long', async () => {
+    const c = clock();
+    const r = await answerByVoice({ ...c, fetch: async () => page([msg(1, 'user', { text: 'x' })], true), answer: async () => undefined }, 'x', { timeoutMs: 3000 });
+    assert.match(r.text, /Still working on it/);
+  });
+});
+

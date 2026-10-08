@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { isIOS, isNative } from '../../api';
 import { getComputerPrefs } from '../computer/computerPrefs';
 import { loadComputers } from '../computer/storage';
-import { handleUtterance, type Reply } from './assistant';
+import { handleUtterance, type AssistantTurn, type Reply } from './assistant';
 import type { VoiceTab } from './commands';
 import { forSpeech } from './assistantAnswer';
 import { chatWithComputer } from './computerChat';
@@ -37,7 +37,7 @@ export type TurnOutcome = 'spoke' | 'silent' | 'stop' | 'cancelled' | 'error';
  * One conversation turn with Escanor: listen, understand, do it, say what happened. `start` runs a whole turn; `cancel` stops
  * listening or talking at once.
  */
-export function useVoiceSession({ go, onAssistant }: { go: (tab: VoiceTab) => void; onAssistant: (text: string, signal: AbortSignal) => Promise<string | void> }) {
+export function useVoiceSession({ go, onAssistant }: { go: (tab: VoiceTab) => void; onAssistant: (text: string, signal: AbortSignal) => Promise<string | void | AssistantTurn> }) {
   const [phase, setPhase] = useState<VoicePhase>('idle');
   const [heard, setHeard] = useState('');
   const [reply, setReply] = useState<Reply | null>(null);
@@ -104,6 +104,7 @@ export function useVoiceSession({ go, onAssistant }: { go: (tab: VoiceTab) => vo
         return chatWithComputer(target, text);
       },
       toAssistant: (text) => latest.current.onAssistant(text, signal),
+      signal,
       go: (tab) => latest.current.go(tab),
       phone: { directCalls: getVoicePrefs().directCalls },
       ack: (t) => speak(forSpeech(t)),

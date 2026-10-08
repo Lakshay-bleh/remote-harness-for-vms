@@ -160,3 +160,84 @@ describe('talking to a computer that asks something back', () => {
   });
 });
 
+describe('an OK asked for by voice', () => {
+  beforeEach(() => forgetPending());
+
+  function approving(answer: (allow: boolean) => Promise<string>) {
+    const calls: boolean[] = [];
+    const { d, log } = deps({
+      toAssistant: async (t) => (log.push(`assistant:${t}`), { text: '', approval: { title: 'Delete the bucket old-logs.', detail: 'Removes 3 GB of logs', risk: 'high', answer: async (allow: boolean) => (calls.push(allow), answer(allow)) } }),
+    });
+    return { d, log, calls };
+  }
+
+  it('reads out what it wants to do and asks for a yes or no, instead of sending the person to the chat', async () => {
+    const { d } = approving(async () => 'Deleted.');
+    const r = await handleUtterance('clean up my old logs', d);
+    assert.equal(r.ask, true);
+    assert.match(r.say, /Delete the bucket old-logs\./);
+    assert.match(r.say, /Removes 3 GB of logs/);
+    assert.match(r.say, /yes or no/i);
+    assert.doesNotMatch(r.say, /Open the chat/);
+  });
+
+  it('"yes" approves it and speaks what happened next', async () => {
+    const { d, calls, log } = approving(async () => 'Deleted old-logs.');
+    await handleUtterance('clean up my old logs', d);
+    const r = await handleUtterance('yes go ahead', d);
+    assert.deepEqual(calls, [true]);
+    assert.deepEqual(r, { ok: true, say: 'Deleted old-logs.', kind: 'assistant' });
+    assert.deepEqual(log, ['assistant:clean up my old logs']);
+  });
+
+  it('"no" refuses it', async () => {
+    const { d, calls } = approving(async () => '');
+    await handleUtterance('clean up my old logs', d);
+    const r = await handleUtterance('no, don’t', d);
+    assert.deepEqual(calls, [false]);
+    assert.equal(r.ok, true);
+    assert.match(r.say, /won’t/);
+  });
+
+  it('asks again when the answer is neither', async () => {
+    const { d, calls } = approving(async () => 'Deleted.');
+    await handleUtterance('clean up my old logs', d);
+    const again = await handleUtterance('what bucket is that', d);
+    assert.equal(again.ask, true);
+    assert.match(again.say, /yes or no/i);
+    await handleUtterance('yes', d);
+    assert.deepEqual(calls, [true]);
+  });
+
+  it('speaks the server’s refusal when someone else has to approve it', async () => {
+    const { d } = deps({
+      toAssistant: async () => ({ text: '', approval: { title: 'Delete production', risk: 'high', answer: async () => { throw new Error('Someone else has to approve this. Ask a teammate to approve it in the chat.'); } } }),
+    });
+    await handleUtterance('delete production', d);
+    const r = await handleUtterance('yes', d);
+    assert.equal(r.ok, false);
+    assert.equal(r.say, 'Someone else has to approve this. Ask a teammate to approve it in the chat.');
+  });
+
+  it('asks again when what it did next needs another OK', async () => {
+    let n = 0;
+    const second = { text: '', approval: { title: 'Restart the database', risk: 'normal' as const, answer: async () => 'Restarted.' } };
+    const { d } = deps({ toAssistant: async () => ({ text: '', approval: { title: 'Stop the app', risk: 'normal' as const, answer: async () => (n++, second) } }) });
+    await handleUtterance('fix it', d);
+    const r = await handleUtterance('yes', d);
+    assert.equal(r.ask, true);
+    assert.match(r.say, /Restart the database/);
+    assert.equal((await handleUtterance('yes', d)).say, 'Restarted.');
+    assert.equal(n, 1);
+  });
+});
+
+
+describe('yesOrNo', () => {
+  it('hears yes, no, and neither, and a no wins', async () => {
+    const { yesOrNo } = await import('./assistant');
+    for (const t of ['yes', 'Yeah, go ahead.', 'okay do it', 'hey escanor approve it', 'sure']) assert.equal(yesOrNo(t), 'yes', t);
+    for (const t of ['no', 'nope', 'don’t do that', 'cancel', 'yes, wait, no', 'not now']) assert.equal(yesOrNo(t), 'no', t);
+    for (const t of ['what bucket is that', 'tell me more', '']) assert.equal(yesOrNo(t), null, t);
+  });
+});
