@@ -258,6 +258,19 @@ async function request<T>(path: string, init: RequestInit = {}, opts: { auth?: b
   return res.json();
 }
 
+/** `signal`, or a time limit, whichever ends first. */
+export function withTimeout(signal: AbortSignal | undefined, ms: number): AbortSignal {
+  const timeout = AbortSignal.timeout(ms);
+  if (!signal) return timeout;
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any([signal, timeout]);
+  const both = new AbortController();
+  const end = () => both.abort();
+  if (signal.aborted || timeout.aborted) end();
+  signal.addEventListener('abort', end, { once: true });
+  timeout.addEventListener('abort', end, { once: true });
+  return both.signal;
+}
+
 const json = (body: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body) });
 const enc = encodeURIComponent;
 
@@ -407,7 +420,7 @@ export const escanor = {
   revokeMcp: (id: string) => request<{ success: boolean }>(`/tokens/${enc(id)}`, { method: 'DELETE' }),
 
   // -- voice: the server's brain for what the phone's own rules do not understand (semantic match, then the AI model)
-  voiceResolve: (body: { text: string; client: 'mobile'; device: { platform: string; apps: Array<{ id: string; label: string }> } }) => request<ServerPlan>('/ai/voice/resolve', { ...json(body), signal: AbortSignal.timeout(40_000) }),
+  voiceResolve: (body: { text: string; client: 'mobile'; device: { platform: string; apps: Array<{ id: string; label: string }> } }, signal?: AbortSignal) => request<ServerPlan>('/ai/voice/resolve', { ...json(body), signal: withTimeout(signal, 40_000) }),
 
   // -- the website, already signed in: a one-minute link, so billing and settings open without a second sign-in
   webHandoff: (next: string) => request<{ url: string; expires_in: number }>('/auth/handoff', json({ next })).then((r) => r.url),

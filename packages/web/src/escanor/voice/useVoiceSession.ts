@@ -73,16 +73,17 @@ export function useVoiceSession({ go, onAssistant }: { go: (tab: VoiceTab) => vo
     setPhase('thinking');
 
     const computers = loadComputers();
+    const signal = abort.current.signal;
     const r = await handleUtterance(said, {
       device: deviceOrNull(),
       hasComputer: computers.length > 0,
       toComputer: (text) => chatWithComputer(computers[0], text),
-      toAssistant: (text) => latest.current.onAssistant(text, abort.current?.signal ?? new AbortController().signal),
+      toAssistant: (text) => latest.current.onAssistant(text, signal),
       go: (tab) => latest.current.go(tab),
       phone: { directCalls: getVoicePrefs().directCalls },
       ack: (t) => speak(forSpeech(t)),
       interim: (t) => alive() && setReply({ ok: true, say: t }),
-      resolve: (text) => resolveOnServer(text, deviceOrNull()),
+      resolve: (text) => resolveOnServer(text, deviceOrNull(), { signal }),
     });
     if (!alive()) return 'cancelled';
     setReply(r);
