@@ -7,6 +7,7 @@ import type { VoiceTab } from './commands';
 import { loadOrb, movedFar, orbCss, ORB_SIZE, posFromPoint, saveOrb, type OrbPos, type View } from './orbPosition';
 import { App as CapApp } from '@capacitor/app';
 import { isAndroid, isNative } from '../../api';
+import { forgetPending } from './assistant';
 import { deviceOrNull } from './device';
 import PhoneControlSetup from './PhoneControlSetup';
 import { useVoiceSession, type VoicePhase } from './useVoiceSession';
@@ -86,6 +87,7 @@ export default function VoiceHost({ go, onAssistant, children }: { go: (tab: Voi
   const close = useCallback(() => {
     live.current = false;
     v.cancel();
+    forgetPending(); // a question left unanswered is not answered by the next conversation's first "yes"
     setOpen(false);
   }, [v.cancel]);
   closeRef.current = close;

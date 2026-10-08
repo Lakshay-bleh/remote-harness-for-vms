@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { handleUtterance, type AssistantDeps } from './assistant';
+import { beforeEach } from 'node:test';
+import { forgetPending, handleUtterance, type AssistantDeps } from './assistant';
 
 function deps(over: Partial<AssistantDeps> = {}) {
   const log: string[] = [];
@@ -124,3 +125,38 @@ describe('the server\u2019s fast replies', () => {
     assert.equal((await handleUtterance('check my deployments', d)).say, 'All good.');
   });
 });
+
+describe('talking to a computer that asks something back', () => {
+  beforeEach(() => forgetPending());
+
+  it('sends the request to the computer named in the sentence', async () => {
+    const sent: Array<[string, string | undefined]> = [];
+    const { d } = deps({ computerNames: ['Work Laptop'], toComputer: async (text, name) => (sent.push([text, name]), 'Locked.') });
+    await handleUtterance('tell work laptop to lock', d);
+    await handleUtterance('on my computer open youtube', d);
+    assert.deepEqual(sent, [['lock', 'Work Laptop'], ['open youtube', undefined]]);
+  });
+
+  it('speaks the computer\u2019s question, and sends the answer back to the same computer, not to the cloud assistant', async () => {
+    const { d, log } = deps({
+      computerNames: ['Work Laptop'],
+      toComputer: async (text, name) => (log.push(`computer:${text}@${name ?? ''}`), text === 'yes' ? 'Deleted.' : { reply: 'Delete 3 old images? Say yes or no.', listenAgain: true }),
+    });
+    const asked = await handleUtterance('on work laptop clean up docker', d);
+    assert.deepEqual(asked, { ok: true, say: 'Delete 3 old images? Say yes or no.', kind: 'computer', ask: true });
+    const answered = await handleUtterance('yes', d);
+    assert.deepEqual(answered, { ok: true, say: 'Deleted.', kind: 'computer' });
+    assert.deepEqual(log, ['computer:clean up docker@Work Laptop', 'computer:yes@Work Laptop']);
+    // The question has been answered: the next "yes" is an ordinary sentence again.
+    await handleUtterance('yes', d);
+    assert.equal(log.at(-1), 'assistant:yes');
+  });
+
+  it('lets "stop" end it without sending anything', async () => {
+    const { d, log } = deps({ toComputer: async (text) => (log.push(`computer:${text}`), { reply: 'Which folder?', listenAgain: true }) });
+    await handleUtterance('on my computer find my notes', d);
+    assert.deepEqual(await handleUtterance('never mind', d), { ok: true, say: 'Okay.', kind: 'stop' });
+    assert.deepEqual(log, ['computer:find my notes']);
+  });
+});
+

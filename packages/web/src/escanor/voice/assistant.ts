@@ -1,6 +1,6 @@
 import { explainFailure } from '../computer/errors';
 import { runPhoneAction, type DevicePlugin, type PhoneOptions } from './actions';
-import { parseVoiceCommand, type PhoneAction, type VoiceTab } from './commands';
+import { parseVoiceCommand, stripWake, type PhoneAction, type VoiceTab } from './commands';
 import { chooseContact } from './contacts';
 import { planToActions, type ServerPlan } from './serverPlan';
 
@@ -8,8 +8,13 @@ export interface AssistantDeps {
   /** The phone's native tools; null in a browser. */
   device: DevicePlugin | null;
   hasComputer: boolean;
-  /** Run a sentence on the paired computer; resolves with what it said back. */
-  toComputer(text: string): Promise<string>;
+  /** The paired computers' names, so a sentence can name one ("on Work Laptop, …"). */
+  computerNames?: string[];
+  /**
+   * Run a sentence on a paired computer (the one named, else the one used last); resolves with what it said back, and whether it
+   * asked something and is waiting for the answer.
+   */
+  toComputer(text: string, computer?: string): Promise<string | ComputerReply>;
   /** Hand a sentence to the Escanor assistant; resolves with its answer when it has one (empty when it only started working). */
   toAssistant(text: string): Promise<string | void>;
   go(tab: VoiceTab): void;
@@ -24,6 +29,12 @@ export interface AssistantDeps {
   ack?(text: string): Promise<void>;
   /** Show something on screen now, while work continues. */
   interim?(text: string): void;
+}
+
+/** What a computer said back. `listenAgain`: it asked a question, and the next sentence is the answer. */
+export interface ComputerReply {
+  reply: string;
+  listenAgain?: boolean;
 }
 
 export interface Reply {
@@ -82,6 +93,44 @@ async function viaServer(text: string, d: AssistantDeps): Promise<Reply | null> 
   return null;
 }
 
+/**
+ * A question that is waiting for the next sentence: a computer asked something (the answer goes back to it, not to the cloud
+ * assistant). Forgotten after two minutes, or once answered.
+ */
+type FollowUp = { kind: 'computer'; computer?: string; at: number };
+let followUp: FollowUp | null = null;
+const FOLLOW_UP_MS = 120_000;
+
+/** Forget any question waiting for an answer (voice mode closed). */
+export function forgetPending(): void {
+  followUp = null;
+  pendingChoice = null;
+}
+
+function takeFollowUp(): FollowUp | null {
+  const f = followUp;
+  followUp = null;
+  return f && Date.now() - f.at < FOLLOW_UP_MS ? f : null;
+}
+
+/** Say a sentence to a computer and turn what it says back into a reply; a question from it makes the next sentence its answer. */
+async function askComputer(text: string, computer: string | undefined, d: AssistantDeps): Promise<Reply> {
+  let out: string | ComputerReply;
+  try {
+    out = await d.toComputer(text, computer);
+  } catch (e) {
+    return { ok: false, say: spokenProblem(e) };
+  }
+  const said = typeof out === 'string' ? out : out.reply;
+  // A reply that is really "that is switched off" is a problem with a fix, not an answer.
+  if (explainFailure(said).ask) return { ok: false, say: spokenProblem(said), kind: 'computer' };
+  if (typeof out !== 'string' && out.listenAgain && said.trim()) {
+    followUp = { kind: 'computer', computer, at: Date.now() };
+    return { ok: true, say: said, kind: 'computer', ask: true };
+  }
+  return { ok: true, say: said || 'Done.', kind: 'computer' };
+}
+
 /** Names offered by the last "Did you mean … ?", so the next sentence can answer it. Forgotten after 40 seconds. */
 let pendingChoice: { options: string[]; at: number } | null = null;
 const ORDINALS: Array<[RegExp, number]> = [[/\b(?:first|1st|one)\b/, 0], [/\b(?:second|2nd|two)\b/, 1], [/\b(?:third|3rd|three)\b/, 2]];
@@ -98,8 +147,15 @@ function answerToChoice(text: string): string | null {
 }
 
 export async function handleUtterance(text: string, d: AssistantDeps): Promise<Reply> {
+  const ctx = { hasComputer: d.hasComputer, computerNames: d.computerNames };
+  const waiting = takeFollowUp();
+  if (waiting) {
+    const parsed = parseVoiceCommand(text, ctx);
+    // The answer to a computer's question goes back to it as said; "stop" or "never mind" still ends the conversation.
+    if (parsed.kind !== 'stop' && parsed.kind !== 'empty') return askComputer(stripWake(text), waiting.computer, d);
+  }
   const chosen = answerToChoice(text);
-  const cmd = chosen ? ({ kind: 'phone', action: { type: 'call', who: chosen } } as const) : parseVoiceCommand(text, { hasComputer: d.hasComputer });
+  const cmd = chosen ? ({ kind: 'phone', action: { type: 'call', who: chosen } } as const) : parseVoiceCommand(text, ctx);
   try {
     switch (cmd.kind) {
       case 'empty':
@@ -121,17 +177,8 @@ export async function handleUtterance(text: string, d: AssistantDeps): Promise<R
         return { ok: true, say: `Opening ${TAB_NAMES[cmd.tab]}.`, kind: 'go' };
       case 'no_computer':
         return { ok: false, say: 'You have not paired a computer yet. Open Computers in this app, then add one with the code from Escanor Desktop.' };
-      case 'computer': {
-        let said: string;
-        try {
-          said = await d.toComputer(cmd.text);
-        } catch (e) {
-          return { ok: false, say: spokenProblem(e) };
-        }
-        // A reply that is really "that is switched off" is a problem with a fix, not an answer.
-        if (explainFailure(said).ask) return { ok: false, say: spokenProblem(said), kind: 'computer' };
-        return { ok: true, say: said || 'Done.', kind: 'computer' };
-      }
+      case 'computer':
+        return askComputer(cmd.text, cmd.computer, d);
       case 'assistant': {
         const served = await viaServer(text, d);
         if (served) return served;
