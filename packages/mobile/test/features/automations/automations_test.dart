@@ -87,6 +87,7 @@ void main() {
           final body = jsonDecode(req.body) as Map<String, dynamic>;
           if (body.containsKey('enabled')) (data['policy'] as Map)['enabled'] = body['enabled'];
           if (body.containsKey('level')) (data['policy'] as Map)['level'] = body['level'];
+          if (body['budgets'] is Map) (data['policy'] as Map)['budgets'] = {...(data['policy'] as Map)['budgets'] as Map, ...body['budgets'] as Map};
           return http.Response(jsonEncode(data['policy']), 200);
         }
         if (p.startsWith('/autopilot/watchers/') && req.method == 'PATCH') {
@@ -148,6 +149,34 @@ void main() {
     expect(modesUpTo('block'), ['block']);
     expect(modesUpTo('ask'), ['block', 'ask']);
     expect(modesUpTo('auto'), ['block', 'ask', 'auto']);
+  });
+
+  test('a limit is a whole number inside the range the server takes', () {
+    expect([for (final b in budgetLimits) b.key], unorderedEquals([
+      'max_minutes_per_run', 'max_steps_per_run', 'max_auto_approvals_per_run', 'max_auto_approvals_per_day', 'max_runs_per_day',
+      'max_concurrent_runs', 'stall_minutes', 'ask_timeout_minutes', 'max_nudges', 'max_retries',
+    ]));
+    final minutes = budgetLimits.firstWhere((b) => b.key == 'max_minutes_per_run');
+    expect(budgetRangeText(minutes), 'From 1 to 240 min');
+    expect(budgetProblem(minutes, '30'), isNull);
+    expect(budgetProblem(minutes, ' 240 '), isNull);
+    expect(budgetProblem(minutes, '1'), isNull);
+    for (final bad in ['0', '241', '', '1.5', '-3', 'ten', '1e2']) {
+      expect(budgetProblem(minutes, bad), 'Use a whole number from 1 to 240.', reason: bad);
+    }
+    final retries = budgetLimits.firstWhere((b) => b.key == 'max_retries');
+    expect(budgetRangeText(retries), 'From 0 to 3');
+    expect(budgetProblem(retries, '0'), isNull);
+    expect(budgetProblem(retries, '4'), isNotNull);
+  });
+
+  test('a capped kind says why it cannot go further', () {
+    AutopilotCategory cat(String id, String max) => AutopilotCategory(id: id, label: id, mode: 'ask', maxMode: max, locked: max != 'auto');
+    expect(ceilingNote(cat('deploy', 'auto')), isNull);
+    expect(ceilingNote(cat('billing', 'block')), contains('never spends money'));
+    expect(ceilingNote(cat('team', 'block')), contains('who has access'));
+    expect(ceilingNote(cat('secrets', 'ask')), contains('can only ask'));
+    expect(ceilingNote(cat('destructive', 'ask')), contains('Allow things that cannot be undone'));
   });
 
   test('the old Computers tab is the second half of Machines', () {
@@ -249,6 +278,61 @@ void main() {
     expect(find.textContaining('Only the owner or an admin'), findsOneWidget);
     await tester.tap(find.text('Autonomous'));
     await tester.pumpAndSettle();
+    expect(sent.any((r) => r.url.path == '/autopilot/policy'), isFalse);
+  });
+
+  testWidgets('a limit can be changed, and nothing is sent until it fits the range', (tester) async {
+    tall(tester);
+    await tester.pumpWidget(app(const AutomationsScreen()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rules'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Runs a day'));
+    await tester.tap(find.text('Runs a day'));
+    await tester.pumpAndSettle();
+    expect(find.text('From 0 to 200'), findsOneWidget);
+    expect(find.widgetWithText(TextField, '20'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '500');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(find.text('Use a whole number from 0 to 200.'), findsOneWidget);
+    expect(sent.any((r) => r.url.path == '/autopilot/policy'), isFalse);
+
+    await tester.enterText(find.byType(TextField), '30');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    final put = sent.lastWhere((r) => r.url.path == '/autopilot/policy');
+    expect(put.method, 'PUT');
+    expect(jsonDecode(put.body), {'budgets': {'max_runs_per_day': 30}});
+    expect(find.text('Save'), findsNothing);
+    expect(find.text('30'), findsOneWidget);
+  });
+
+  testWidgets('a kind that cannot change says why when tapped', (tester) async {
+    tall(tester);
+    await tester.pumpWidget(app(const AutomationsScreen()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rules'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Money'));
+    await tester.tap(find.text('Money'));
+    await tester.pump();
+    expect(find.textContaining('never spends money'), findsOneWidget);
+    expect(sent.any((r) => r.url.path == '/autopilot/policy'), isFalse);
+  });
+
+  testWidgets('someone who cannot manage cannot open a limit', (tester) async {
+    tall(tester);
+    data = overview(canManage: false);
+    await tester.pumpWidget(app(const AutomationsScreen()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rules'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Runs a day'));
+    await tester.tap(find.text('Runs a day'));
+    await tester.pumpAndSettle();
+    expect(find.text('Save'), findsNothing);
     expect(sent.any((r) => r.url.path == '/autopilot/policy'), isFalse);
   });
 }
