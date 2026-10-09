@@ -1,0 +1,18 @@
+# The hosted, multi-tenant hub behind hub.escanor.in (one Durable Object per tenant; Escanor creates tenants with the
+# admin token). Deploy: `npm run deploy -w @remote-harness/hosted-hub` with a wrangler logged in to the escanorlabs
+# Cloudflare account. Secrets (already set on the Worker, kept across deploys):
+#   HUB_ADMIN_TOKEN     what Escanor's backend uses to create tenants and mint their tokens
+#   HUB_SIGNING_SECRET  signs the per-tenant agent and app tokens
+name = "escanor-hub"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+workers_dev = false
+routes = [{ pattern = "hub.escanor.in", custom_domain = true }]
+
+[[durable_objects.bindings]]
+name = "HUB"
+class_name = "Hub"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Hub"]

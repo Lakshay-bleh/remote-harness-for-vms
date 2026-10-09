@@ -1,0 +1,13 @@
+{
+  "name": "@remote-harness/hosted-hub",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
