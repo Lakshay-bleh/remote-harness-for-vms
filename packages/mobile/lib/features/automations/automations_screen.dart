@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/api.dart';
 import '../../core/load.dart';
@@ -320,7 +321,10 @@ class _AutomationsScreenState extends State<AutomationsScreen> {
             label: cat.label,
             value: modeLabels[cat.mode] ?? cat.mode,
             icon: cat.locked ? Icons.lock_outline_rounded : null,
-            onTap: canEdit && modesUpTo(cat.maxMode).length > 1 ? () => _pickMode(cat) : null,
+            // A kind that has only one possible mode says why when tapped, instead of doing nothing.
+            onTap: !canEdit ? null : (modesUpTo(cat.maxMode).length > 1 ? () => _pickMode(cat) : () => toast(context, ceilingNote(cat) ?? 'This one cannot be changed.')),
+            chevron: modesUpTo(cat.maxMode).length > 1,
+            disabled: _working && modesUpTo(cat.maxMode).length > 1,
           ),
       ]),
       const SizedBox(height: 16),
@@ -338,27 +342,26 @@ class _AutomationsScreenState extends State<AutomationsScreen> {
       ]),
       const SizedBox(height: 16),
       Group(title: 'Limits', footer: 'Escanor stops a run that goes past these.', children: [
-        for (final e in _budgetRows(p)) SRow(label: e.$1, value: e.$2),
+        for (final b in budgetLimits)
+          SRow(
+            label: b.label,
+            value: p.budgets[b.key] == null ? '—' : '${p.budgets[b.key]}${b.unit.isEmpty ? '' : ' ${b.unit}'}',
+            onTap: canEdit ? () => _editBudget(p, b) : null,
+            disabled: _working,
+          ),
       ]),
     ];
   }
 
-  List<(String, String)> _budgetRows(AutopilotPolicy p) {
-    String v(String k, [String unit = '']) => p.budgets[k] == null ? '—' : '${p.budgets[k]}$unit';
-    return [
-      ('Longest run', v('max_minutes_per_run', ' min')),
-      ('Most steps in a run', v('max_steps_per_run')),
-      ('Runs a day', v('max_runs_per_day')),
-      ('Runs at once', v('max_concurrent_runs')),
-      ('Actions on its own, per run', v('max_auto_approvals_per_run')),
-      ('Actions on its own, per day', v('max_auto_approvals_per_day')),
-      ('Waits for an answer', v('ask_timeout_minutes', ' min')),
-    ];
+  Future<void> _editBudget(AutopilotPolicy p, BudgetLimit b) async {
+    final n = await showESheet<int>(context, title: b.label, builder: (_) => _BudgetSheet(limit: b, current: p.budgets[b.key]));
+    if (n == null || n == p.budgets[b.key]) return;
+    await _do(() => api.setAutopilotPolicy({'budgets': {b.key: n}}), done: 'Saved.');
   }
 
   Future<void> _pickMode(AutopilotCategory cat) async {
     final v = await showChoiceSheet<String>(context,
-        title: cat.label, value: cat.mode, options: [for (final m in modesUpTo(cat.maxMode)) Choice(m, modeLabels[m] ?? m)]);
+        title: cat.label, value: cat.mode, options: [for (final m in modesUpTo(cat.maxMode)) Choice(m, modeLabels[m] ?? m, m == cat.maxMode ? ceilingNote(cat) : null)]);
     if (v == null || v == cat.mode) return;
     final overrides = {for (final x in _data.data?.policy.categories ?? const <AutopilotCategory>[]) x.id: x.mode, cat.id: v};
     await _do(() => api.setAutopilotPolicy({'overrides': overrides}), done: 'Saved.');
@@ -366,6 +369,58 @@ class _AutomationsScreenState extends State<AutomationsScreen> {
 }
 
 // ------------------------------------------------------------------------------------------------ pieces
+
+/// Change one limit: a number, the range it may be, and nothing is sent until it fits. Returns the number, or null when closed.
+class _BudgetSheet extends StatefulWidget {
+  const _BudgetSheet({required this.limit, required this.current});
+  final BudgetLimit limit;
+  final int? current;
+  @override
+  State<_BudgetSheet> createState() => _BudgetSheetState();
+}
+
+class _BudgetSheetState extends State<_BudgetSheet> {
+  late final _value = TextEditingController(text: widget.current?.toString() ?? '');
+  String? _error;
+
+  @override
+  void dispose() {
+    _value.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final problem = budgetProblem(widget.limit, _value.text);
+    if (problem != null) {
+      setState(() => _error = problem);
+      return;
+    }
+    Navigator.of(context).pop(int.parse(_value.text.trim()));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.c;
+    final b = widget.limit;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+      TextField(
+        controller: _value,
+        autofocus: true,
+        keyboardType: TextInputType.number,
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        textInputAction: TextInputAction.done,
+        onSubmitted: (_) => _save(),
+        onChanged: (_) {
+          if (_error != null) setState(() => _error = null);
+        },
+        decoration: InputDecoration(helperText: budgetRangeText(b), errorText: _error, suffixText: b.unit.isEmpty ? null : b.unit),
+        style: TextStyle(fontSize: 16, color: c.ink),
+      ),
+      const SizedBox(height: 14),
+      EButton(label: 'Save', expand: true, onPressed: _save),
+    ]);
+  }
+}
 
 class _SectionBar extends StatelessWidget {
   const _SectionBar({required this.value, required this.onChanged, required this.badges});

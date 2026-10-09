@@ -351,3 +351,42 @@ const notifyChoices = [
   (id: 'failed', label: 'When a run fails'),
   (id: 'acted', label: 'Every time it acts on its own'),
 ];
+
+/// One limit a run works inside, with the range the server accepts (autopilot/policy.py BUDGET_LIMITS). In the order Rules shows them.
+typedef BudgetLimit = ({String key, String label, String unit, int min, int max});
+
+const budgetLimits = <BudgetLimit>[
+  (key: 'max_minutes_per_run', label: 'Longest run', unit: 'min', min: 1, max: 240),
+  (key: 'max_steps_per_run', label: 'Most steps in a run', unit: '', min: 5, max: 300),
+  (key: 'max_runs_per_day', label: 'Runs a day', unit: '', min: 0, max: 200),
+  (key: 'max_concurrent_runs', label: 'Runs at once', unit: '', min: 1, max: 10),
+  (key: 'max_auto_approvals_per_run', label: 'Actions on its own, per run', unit: '', min: 0, max: 100),
+  (key: 'max_auto_approvals_per_day', label: 'Actions on its own, per day', unit: '', min: 0, max: 1000),
+  (key: 'ask_timeout_minutes', label: 'Waits for an answer', unit: 'min', min: 1, max: 1440),
+  (key: 'stall_minutes', label: 'Quiet time before nudging', unit: 'min', min: 2, max: 60),
+  (key: 'max_nudges', label: 'Nudges when it goes quiet', unit: '', min: 0, max: 5),
+  (key: 'max_retries', label: 'Tries again after a failed check', unit: '', min: 0, max: 3),
+];
+
+/// "From 1 to 240 min".
+String budgetRangeText(BudgetLimit b) => 'From ${b.min} to ${b.max}${b.unit.isEmpty ? '' : ' ${b.unit}'}';
+
+/// What is wrong with [text] as a value for [b], in words; null when it is a whole number inside the range.
+String? budgetProblem(BudgetLimit b, String text) {
+  final t = text.trim();
+  final n = RegExp(r'^\d+$').hasMatch(t) ? int.tryParse(t) : null;
+  if (n == null || n < b.min || n > b.max) return 'Use a whole number from ${b.min} to ${b.max}.';
+  return null;
+}
+
+/// Why a kind cannot go further than it is, for the rows that are capped. Null when it can be set to anything.
+String? ceilingNote(AutopilotCategory cat) {
+  if (cat.maxMode == 'auto') return null;
+  return switch (cat.id) {
+    'billing' => 'Escanor never spends money by itself. That is always refused, and needs a person.',
+    'team' => 'Escanor never changes who has access. That is always refused, and needs a person.',
+    'secrets' => 'Keys and tokens always wait for you. Escanor can only ask.',
+    'destructive' => 'Turn on “Allow things that cannot be undone” first if this should happen on its own.',
+    _ => cat.maxMode == 'block' ? 'This is always refused.' : 'This always waits for you.',
+  };
+}
