@@ -6,6 +6,7 @@ import '../../core/nav.dart';
 import '../../core/prefs.dart';
 import '../../core/theme.dart';
 import '../../ui/widgets.dart';
+import 'assistant_api.dart';
 import 'chat_list.dart';
 import 'conversations.dart';
 
@@ -88,6 +89,7 @@ class ChatDrawer extends ConsumerWidget {
             _close(context);
           },
           onDelete: (id, name) => _delete(context, ref, id, name),
+          search: (q) async => [for (final h in (await api.assistantSearch(q)).hits) (id: h.id, snippet: h.snippet)],
         ),
       ),
     ]);

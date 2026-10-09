@@ -15,6 +15,7 @@ import 'hub_store.dart';
 import 'machines_home.dart';
 import 'message_format.dart';
 import 'protocol.dart';
+import 'session_search.dart';
 import 'settings_sheets.dart';
 
 /// How many chats a machine (or account) lists before "Show more".
@@ -38,11 +39,19 @@ class _HubSidebarState extends State<HubSidebar> {
   final Map<String, int> _more = {};
   String? _error;
 
+  // Content search: the hub's hits per machine, for the query in [_hitsQuery]. Each new query bumps [_searchSeq], so an
+  // answer to an older one is dropped when it arrives.
+  Timer? _searchTimer;
+  int _searchSeq = 0;
+  String _lastQuery = '';
+  String _hitsQuery = '';
+  Map<String, List<SessionSearchHit>> _hits = const {};
+
   @override
   void initState() {
     super.initState();
     store.addListener(_changed);
-    _query.addListener(() => setState(() {}));
+    _query.addListener(_queryChanged);
     _refresh();
     _changed();
   }
@@ -50,6 +59,7 @@ class _HubSidebarState extends State<HubSidebar> {
   @override
   void dispose() {
     store.removeListener(_changed);
+    _searchTimer?.cancel();
     _query.dispose();
     super.dispose();
   }
@@ -61,6 +71,27 @@ class _HubSidebarState extends State<HubSidebar> {
     } catch (e) {
       if (mounted) setState(() => _error = errorText(e));
     }
+  }
+
+  // Titles filter as the person types; once typing pauses, each machine's hub is asked what was said in its chats.
+  void _queryChanged() {
+    final q = _query.text.trim();
+    if (q == _lastQuery) return; // only the cursor moved
+    _lastQuery = q;
+    _searchTimer?.cancel();
+    final seq = ++_searchSeq;
+    if (q.length >= contentSearchMinLength) _searchTimer = Timer(contentSearchDelay, () => _searchContent(q, seq));
+    setState(() {});
+  }
+
+  Future<void> _searchContent(String q, int seq) async {
+    final vmIds = [for (final v in store.state.vms) if (!store.isVmHidden(v.id)) v.id];
+    final found = await Future.wait([for (final id in vmIds) store.searchSessions(id, q)]);
+    if (!mounted || seq != _searchSeq) return;
+    setState(() {
+      _hitsQuery = q;
+      _hits = {for (var i = 0; i < vmIds.length; i++) vmIds[i]: found[i]};
+    });
   }
 
   void _changed() {
@@ -111,7 +142,8 @@ class _HubSidebarState extends State<HubSidebar> {
     final embedded = HubScope.embeddedOf(context);
     final s = store.state;
     final q = _query.text.trim().toLowerCase();
-    bool matches(SessionDto x) => !store.isSessionHidden(x.vmId.isEmpty ? (s.selectedVmId ?? '') : x.vmId, x.id) && (q.isEmpty || store.titleOf(x).toLowerCase().contains(q));
+    // Hits for an older query are never shown: until the hub answers this one, only titles match.
+    final hits = _hitsQuery.isNotEmpty && _hitsQuery == _query.text.trim() ? _hits : const <String, List<SessionSearchHit>>{};
     void connect() => showConnectMachineSheet(context, managed!);
     // The Servers half of the Machines tab: its header (and Add) is the tab's.
     final half = MachinesHalf.offerAdd(context, managed != null ? connect : null);
@@ -179,7 +211,7 @@ class _HubSidebarState extends State<HubSidebar> {
                           ]),
                         )
                       : const DogState(scene: 'sleep', title: 'No machines yet', text: 'Install the agent on a server to see it here.'),
-                for (final vm in s.vms.where((v) => !store.isVmHidden(v.id))) _vmCard(context, vm, q, matches),
+                for (final vm in s.vms.where((v) => !store.isVmHidden(v.id))) _vmCard(context, vm, q, hits[vm.id]),
                 if (s.vms.isNotEmpty && q.isEmpty)
                   DogState(
                     scene: 'sit',
@@ -206,7 +238,7 @@ class _HubSidebarState extends State<HubSidebar> {
     );
   }
 
-  Widget _vmCard(BuildContext context, VmDto vm, String q, bool Function(SessionDto) matches) {
+  Widget _vmCard(BuildContext context, VmDto vm, String q, List<SessionSearchHit>? hits) {
     final c = context.c;
     final state = store.state;
     final sessions = [for (final x in state.sessionsByVm[vm.id] ?? const <SessionDto>[]) if (!store.isSessionHidden(vm.id, x.id)) x];
@@ -215,18 +247,19 @@ class _HubSidebarState extends State<HubSidebar> {
     final multi = accounts.length > 1;
 
     List<Widget> list(List<SessionDto> all, String moreKey, String accountId, {required String emptyText}) {
-      final filtered = all.where(matches).toList();
+      final filtered = mergeSessionSearch(sessions: all, query: q, titleOf: store.titleOf, hits: hits);
       final limit = _more[moreKey] ?? sessionsFirst;
       final shown = q.isEmpty ? filtered.take(limit).toList() : filtered;
       return [
         if (q.isEmpty) _NewChatRow(onTap: () => _newChat(vm.id, accountId)),
-        for (final x in shown)
+        for (final r in shown)
           _SessionRow(
-              session: x,
-              title: store.titleOf(x),
-              active: state.selectedSessionId == x.id,
-              onTap: () => _pickSession(vm.id, x),
-              onSettings: () => showChatSettings(context, vm.id, x)),
+              session: r.session,
+              title: store.titleOf(r.session),
+              snippet: r.snippet,
+              active: state.selectedSessionId == r.session.id,
+              onTap: () => _pickSession(vm.id, r.session),
+              onSettings: () => showChatSettings(context, vm.id, r.session)),
         if (q.isEmpty && filtered.length > limit)
           _TextRow(text: 'Show more', color: c.primary, onTap: () => setState(() => _more[moreKey] = limit + 20)),
         // One account: "no chats" whenever the machine has none. Several: per account, when not searching.
@@ -343,9 +376,12 @@ class _HubSidebarState extends State<HubSidebar> {
 }
 
 class _SessionRow extends StatelessWidget {
-  const _SessionRow({required this.session, required this.title, required this.active, required this.onTap, required this.onSettings});
+  const _SessionRow({required this.session, required this.title, this.snippet, required this.active, required this.onTap, required this.onSettings});
   final SessionDto session;
   final String title;
+
+  /// What was said in the chat that matched the search, when its title did not.
+  final String? snippet;
   final bool active;
   final VoidCallback onTap;
   final VoidCallback onSettings;
@@ -374,6 +410,10 @@ class _SessionRow extends StatelessWidget {
                     style: TextStyle(fontSize: 13, color: active ? c.ink : c.body, fontWeight: active ? FontWeight.w500 : FontWeight.w400)),
               ),
             ]),
+            if (snippet != null) ...[
+              const SizedBox(height: 2),
+              Text(snippet!, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: c.muted)),
+            ],
             const SizedBox(height: 2),
             Text('${relativeTime(session.lastMessageAt)} ago · ${session.cwd}',
                 maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: c.mutedSoft)),

@@ -82,4 +82,27 @@ void main() {
     final m = rename(togglePinned(toggleArchived(emptyMeta, 'x'), 'y'), 'y', 'Mine');
     expect(parseMeta(jsonEncode(m.toJson())), m);
   });
+
+  group('search', () {
+    test('names first, then chats found inside by the server, each with what matched', () {
+      final m = rename(emptyMeta, 'c', 'Vercel bill');
+      final hits = [(id: 'd', snippet: '…we moved the site off Vercel…'), (id: 'b', snippet: 'deploy it to Vercel'), (id: 'zz', snippet: 'gone')];
+      final r = searchResults(chats, m, 'vercel', hits, now: now);
+      expect([for (final x in r) x.row.id], ['b', 'c', 'd'], reason: 'b and c match by name (b ranked by the server); d only inside; an unknown id is skipped');
+      expect(r[0].snippet, 'deploy it to Vercel');
+      expect(r[1].snippet, '', reason: 'a name only this phone knows: the server did not find it');
+      expect(r[2].snippet, '…we moved the site off Vercel…');
+    });
+
+    test('without the server (not back yet, offline) the names still match; archived chats are included', () {
+      final m = toggleArchived(emptyMeta, 'a');
+      expect([for (final x in searchResults(chats, m, 'build', null, now: now)) x.row.id], ['a']);
+      expect(searchResults(chats, m, '  ', [(id: 'a', snippet: 'x')], now: now), isEmpty);
+    });
+
+    test('a chat found only by meaning shows even when no word matches its name', () {
+      final r = searchResults(chats, emptyMeta, 'money spent', [(id: 'c', snippet: 'Your AWS spend was \$41 this month')], now: now);
+      expect([for (final x in r) (x.row.id, x.row.name)], [('c', 'Cost report')]);
+    });
+  });
 }

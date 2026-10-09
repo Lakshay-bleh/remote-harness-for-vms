@@ -47,6 +47,76 @@ typedef ApprovalStatus = String;
 
 /// One thing said or done in a conversation. [kind]: user | assistant | activity | error | notice | done | approval.
 /// A `notice` is a quiet line from the server about the turn itself: "Stopped.", or "X wasn't available, so Y is answering".
+/// "Let Escanor pick the model for each message."
+const autoModel = 'auto';
+
+/// One model the assistant can answer with.
+class AssistantModel {
+  const AssistantModel({required this.id, required this.label, this.available = true, this.provider = ''});
+  final String id;
+  final String label;
+  final bool available;
+  final String provider;
+}
+
+/// What `/ai/models` says: every model, and Auto.
+class AssistantModels {
+  const AssistantModels({this.models = const [], this.autoAvailable = true});
+  final List<AssistantModel> models;
+  final bool autoAvailable;
+
+  /// The ones that can answer now: what the picker offers after Auto.
+  List<AssistantModel> get usable => [for (final m in models) if (m.available) m];
+
+  factory AssistantModels.fromJson(Object? json) {
+    final j = _map(json);
+    final list = j['models'];
+    final auto = _map(j['auto']);
+    return AssistantModels(
+      models: [
+        if (list is List)
+          for (final m in list.map(_map))
+            if (_str(m['id']).isNotEmpty)
+              AssistantModel(id: _str(m['id']), label: _str(m['label'], _str(m['model'])), available: m['available'] != false, provider: _str(m['provider_label'])),
+      ],
+      autoAvailable: auto.isEmpty || auto['available'] != false,
+    );
+  }
+}
+
+/// A chat the server found for a search, with the words that matched.
+class ChatHit {
+  const ChatHit({required this.id, this.snippet = '', this.match = ''});
+  final String id;
+
+  /// The sentence from the chat that matched best ("" when only the title did).
+  final String snippet;
+
+  /// title | words | semantic
+  final String match;
+}
+
+class ChatSearch {
+  const ChatSearch({this.hits = const [], this.semantic = false});
+  final List<ChatHit> hits;
+
+  /// Found by meaning as well as by words.
+  final bool semantic;
+
+  factory ChatSearch.fromJson(Object? json) {
+    final j = _map(json);
+    final list = j['results'];
+    return ChatSearch(
+      hits: [
+        if (list is List)
+          for (final r in list.map(_map))
+            if (_str(r['id']).isNotEmpty) ChatHit(id: _str(r['id']), snippet: _str(r['snippet']), match: _str(r['match'])),
+      ],
+      semantic: _bool(j['semantic']),
+    );
+  }
+}
+
 class AssistantItem {
   const AssistantItem({
     required this.id,

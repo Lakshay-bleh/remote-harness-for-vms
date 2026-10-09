@@ -13,7 +13,7 @@ import 'chat_state.dart';
 /// What [Conversation] needs from the server, so tests can stand in for it.
 abstract class ConversationBackend {
   Future<AssistantMessages> messages(String id, int after);
-  Future<String> send(String text, String? conversationId, List<ApiAttachment> attachments);
+  Future<String> send(String text, String? conversationId, List<ApiAttachment> attachments, {String? model});
   Future<void> answer(String id, String requestId, bool allow);
 
   /// Stop the turn. False when it had already finished (the poll shows the ending either way).
@@ -25,8 +25,8 @@ class ApiConversationBackend implements ConversationBackend {
   @override
   Future<AssistantMessages> messages(String id, int after) => api.assistantMessages(id, after);
   @override
-  Future<String> send(String text, String? conversationId, List<ApiAttachment> attachments) =>
-      api.assistantSend(text, conversationId: conversationId, attachments: attachments);
+  Future<String> send(String text, String? conversationId, List<ApiAttachment> attachments, {String? model}) =>
+      api.assistantSend(text, conversationId: conversationId, attachments: attachments, model: model);
   @override
   Future<void> answer(String id, String requestId, bool allow) => api.assistantAnswer(id, requestId, allow);
   @override
@@ -197,6 +197,9 @@ class Conversation extends ChangeNotifier {
     }
   }
 
+  /// The model to answer with (null or Auto: Escanor picks for each message).
+  String? model;
+
   Future<void> send(String text, [List<Attachment> attachments = const []]) async {
     final clean = text.trim();
     if (clean.isEmpty && attachments.isEmpty) return;
@@ -209,7 +212,7 @@ class Conversation extends ChangeNotifier {
     final making = _id == null ? _Creating() : null;
     if (making != null) _creating = making;
     try {
-      final cid = await _backend.send(clean, _id, toApi(attachments));
+      final cid = await _backend.send(clean, _id, toApi(attachments), model: model);
       if (_disposed || gen != _generation) return;
       if (_id == null) {
         _id = cid;

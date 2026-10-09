@@ -6,8 +6,8 @@ import 'package:intl/intl.dart';
 
 import '../../core/prefs.dart';
 import '../../core/theme.dart';
+import '../../ui/chat_parts.dart';
 import '../../ui/widgets.dart';
-import '../companion/dog_state.dart';
 import '../composer/attachments.dart';
 import '../companion/companion_floor.dart';
 import '../composer/chat_composer.dart';
@@ -89,9 +89,6 @@ class _ComputerChatState extends State<ComputerChat> {
 
   /// The request each chat is waiting on. Stop (or deleting the chat) forgets it, so a late reply is dropped instead of landing.
   final Map<String, String> _asked = {};
-  int _waited = 0;
-  Timer? _tick;
-  final _scroll = ScrollController();
 
   @override
   void initState() {
@@ -107,8 +104,6 @@ class _ComputerChatState extends State<ComputerChat> {
 
   @override
   void dispose() {
-    _tick?.cancel();
-    _scroll.dispose();
     widget.actions?._set(null, null, false);
     super.dispose();
   }
@@ -128,26 +123,6 @@ class _ComputerChatState extends State<ComputerChat> {
     if (mounted) widget.actions?._set(_openHistory, _startNew, _chat.turns.isNotEmpty);
   });
 
-  void _scrollToEnd() => WidgetsBinding.instance.addPostFrameCallback((_) {
-    if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
-  });
-
-  /// How long the computer has been working on the open chat, so a slow answer never looks like a frozen app.
-  void _syncTimer() {
-    _tick?.cancel();
-    if (!_busy) {
-      _waited = 0;
-      return;
-    }
-    final started = _working[_chat.id] ?? DateTime.now().millisecondsSinceEpoch;
-    void tick() {
-      if (mounted) setState(() => _waited = ((DateTime.now().millisecondsSinceEpoch - started) / 1000).floor());
-    }
-
-    tick();
-    _tick = Timer.periodic(const Duration(seconds: 1), (_) => tick());
-  }
-
   /// Change one chat by id, wherever it is (the list, or the draft that has not been saved yet), and save the list.
   void _change(String id, Chat Function(Chat c) edit) {
     Chat? listed;
@@ -161,7 +136,6 @@ class _ComputerChatState extends State<ComputerChat> {
     saveChats(widget.computerId, next);
     if (mounted) setState(() {});
     _publishActions();
-    _scrollToEnd();
   }
 
   Future<void> _send(String message, List<Attachment> files) async {
@@ -191,7 +165,6 @@ class _ComputerChatState extends State<ComputerChat> {
       return;
     }
     setState(() => _working[id] = now);
-    _syncTimer();
     final fresh = _served[widget.computerId] != id; // the assistant on the computer is holding a different conversation in mind
     final ask = _uid();
     _asked[id] = ask;
@@ -217,10 +190,7 @@ class _ComputerChatState extends State<ComputerChat> {
     _asked.remove(id);
     if (_chats.any((c) => c.id == id)) _change(id, (c) => addTurn(c, turn)); // into the chat it was asked in, even if another is open now
     _working.remove(id);
-    if (mounted) {
-      setState(() {});
-      _syncTimer();
-    }
+    if (mounted) setState(() {});
   }
 
   /// Stop waiting on the computer for this chat. The computer may still finish the job; its answer is not shown.
@@ -228,7 +198,7 @@ class _ComputerChatState extends State<ComputerChat> {
     if (_asked.remove(id) == null) return;
     _working.remove(id);
     _change(id, (c) => addTurn(c, Turn(who: Who.computer, text: 'Stopped waiting. The computer may still finish what it was doing.', at: DateTime.now().millisecondsSinceEpoch)));
-    if (mounted) _syncTimer();
+    if (mounted) setState(() {});
   }
 
   void _deleteChat(Chat c) {
@@ -237,18 +207,12 @@ class _ComputerChatState extends State<ComputerChat> {
     final next = removeChat(_chats, c.id);
     setState(() => _chats = next);
     saveChats(widget.computerId, next);
-    if (c.id == _activeId) {
-      _startNew();
-    } else {
-      _syncTimer();
-    }
+    if (c.id == _activeId) _startNew();
   }
 
   void _open(Chat c) {
     setState(() => _activeId = c.id);
-    _syncTimer();
     _publishActions();
-    _scrollToEnd();
   }
 
   void _startNew() {
@@ -257,7 +221,6 @@ class _ComputerChatState extends State<ComputerChat> {
       _draft = fresh;
       _activeId = fresh.id;
     });
-    _syncTimer();
     _publishActions();
   }
 
@@ -284,64 +247,44 @@ class _ComputerChatState extends State<ComputerChat> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.c;
     final chat = _chat;
     final busy = _busy;
     return Column(
       children: [
         Expanded(
-          child: ListView(
-            controller: _scroll,
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: ChatMessageList(
+            empty: ChatEmptyState(
+              scene: 'lick',
+              title: 'Say something, I’m listening',
+              text: 'Ask your computer to do anything. It runs on its own hardware; you just see the result.',
+              suggestions: _suggestions,
+              onPick: !widget.online || busy ? null : (s) => _send(s, const []),
+            ),
             children: [
-              if (chat.turns.isEmpty) ...[
-                const DogState(
-                  scene: 'lick',
-                  title: 'Say something, I’m listening',
-                  text: 'Ask your computer to do anything. It runs on its own hardware; you just see the result.',
-                ),
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final s in _suggestions)
-                      ActionChip(
-                        label: Text(s, style: TextStyle(fontSize: 14, color: c.body)),
-                        shape: StadiumBorder(side: BorderSide(color: c.hairline)),
-                        backgroundColor: Colors.transparent,
-                        onPressed: !widget.online || busy ? null : () => _send(s, const []),
-                      ),
-                  ],
-                ),
-              ],
               for (final t in chat.turns)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.only(top: chatGap),
                   child: t.problem
-                      ? FractionallySizedBox(
-                          alignment: Alignment.centerLeft,
-                          widthFactor: 0.94,
-                          child: ErrorCard(error: t.text, onAsk: widget.onAsk),
-                        )
-                      : _Bubble(turn: t),
+                      ? FractionallySizedBox(alignment: Alignment.centerLeft, widthFactor: 0.94, child: ErrorCard(error: t.text, onAsk: widget.onAsk))
+                      : t.who == Who.you
+                          ? UserBubble(text: t.text, note: t.files == null || t.files!.isEmpty ? null : 'Attached: ${t.files!.join(', ')}')
+                          : AnswerText(t.text),
                 ),
-              if (busy) ...[
-                DogRunner(label: 'Working on your computer… ${_waited}s'),
-                if (_waited >= 20)
-                  Text(
-                    'Still going. Bigger jobs take a while, and the cloud route adds a moment each way.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12, color: c.muted),
+              if (busy)
+                Padding(
+                  padding: const EdgeInsets.only(top: chatGap),
+                  child: WorkingLine(
+                    text: 'Working on your computer',
+                    startedAtMs: _working[chat.id],
+                    slowHint: 'Still going. Bigger jobs take a while, and the cloud route adds a moment each way.',
                   ),
-              ],
+                ),
             ],
           ),
         ),
         CompanionFloor(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
-            child: ChatComposer(
+          child: ChatBottom(
+            composer: ChatComposer(
               key: ValueKey(chat.id),
               placeholder: widget.online ? 'Message your computer' : 'Computer offline',
               disabled: !widget.online,
@@ -353,45 +296,6 @@ class _ComputerChatState extends State<ComputerChat> {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _Bubble extends StatelessWidget {
-  const _Bubble({required this.turn});
-  final Turn turn;
-  @override
-  Widget build(BuildContext context) {
-    final c = context.c;
-    final mine = turn.who == Who.you;
-    return Align(
-      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: mine ? c.primary : c.surfaceCard,
-            border: mine ? null : Border.all(color: c.hairline),
-            borderRadius: BorderRadius.circular(Radii.lg),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SelectableText(turn.text, style: TextStyle(fontSize: 15, height: 1.5, color: mine ? c.onPrimary : c.ink)),
-              if (turn.files != null && turn.files!.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    'Attached: ${turn.files!.join(', ')}',
-                    style: TextStyle(fontSize: 12, color: mine ? c.onPrimary.withValues(alpha: 0.7) : c.muted),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

@@ -225,3 +225,37 @@ List<ChatSection> organise(List<ChatItem> chats, ChatMeta meta, {String query = 
   }
   return sections;
 }
+
+/// One search result: the chat, and the words inside it that matched ("" when its name did).
+class SearchRow {
+  const SearchRow({required this.row, this.snippet = ''});
+  final ChatRow row;
+  final String snippet;
+}
+
+/// What a search shows. Chats whose name matches come first (the name the person sees, which may be one they gave it on this
+/// phone and the server has never heard of), in the server's order when it found them too, else by recency. Then the chats the
+/// server found by what was said in them, by words or by meaning, in its order, each with the words that matched. Without the
+/// server's answer ([hits] null: not back yet, offline, an older server) it is the names alone. Archived chats are included.
+List<SearchRow> searchResults(List<ChatItem> chats, ChatMeta meta, String query, List<({String id, String snippet})>? hits, {DateTime? now}) {
+  final q = query.trim();
+  if (q.isEmpty) return const [];
+  final byName = organise(chats, meta, query: q, now: now);
+  final named = byName.isEmpty ? <ChatRow>[] : byName.first.rows;
+  final rank = <String, int>{};
+  final snippets = <String, String>{};
+  for (final (i, h) in (hits ?? const <({String id, String snippet})>[]).indexed) {
+    rank.putIfAbsent(h.id, () => i);
+    snippets.putIfAbsent(h.id, () => h.snippet);
+  }
+  final namedIds = {for (final r in named) r.id};
+  final ordered = [...named]..sort((a, b) => (rank[a.id] ?? 1 << 30).compareTo(rank[b.id] ?? 1 << 30));
+  // Every chat the server named, as the drawer would draw it (pinned/archived/own name), so a hit looks like any other row.
+  final all = organise(chats, meta, showArchived: true, now: now).expand((s) => s.rows);
+  final rows = {for (final r in all) r.id: r};
+  return [
+    for (final r in ordered) SearchRow(row: r, snippet: snippets[r.id] ?? ''),
+    for (final h in hits ?? const <({String id, String snippet})>[])
+      if (!namedIds.contains(h.id) && rows[h.id] != null) SearchRow(row: rows[h.id]!, snippet: h.snippet),
+  ];
+}

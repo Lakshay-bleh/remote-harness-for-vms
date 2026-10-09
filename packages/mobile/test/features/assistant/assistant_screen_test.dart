@@ -130,9 +130,8 @@ void main() {
       for (var i = 0; i < 25; i++) {'provider_id': 'p$i', 'name': 'Service $i', 'connected': true, 'available_to_assistant': null},
     ];
     final container = await pumpScreen(tester);
-    expect(find.text('Connected:'), findsOneWidget);
-    expect(find.text('+20'), findsOneWidget);
-    expect(find.text('Connect a service so I can work on it'), findsNothing);
+    expect(find.text('Service 0 +24'), findsOneWidget, reason: 'the connected-services chip');
+    expect(find.text('Connect a service'), findsNothing);
     await finish(tester, container);
   });
 
@@ -142,15 +141,16 @@ void main() {
       {'provider_id': 'vercel', 'name': 'Vercel', 'connected': true, 'available_to_assistant': null, 'needs_reconnect': true},
     ];
     final container = await pumpScreen(tester);
-    expect(find.text('Connected:'), findsNothing);
-    expect(find.text('Connect a service so I can work on it'), findsNothing);
+    expect(find.text('Airtable'), findsNothing, reason: 'nothing the assistant can use, so no chip');
+    expect(find.text('Connect a service'), findsNothing);
     await finish(tester, container);
   });
 
   testWidgets('with nothing connected, invites connecting a service', (tester) async {
     connected = [];
     final container = await pumpScreen(tester);
-    expect(find.text('Connect a service so I can work on it'), findsOneWidget);
+    expect(find.text('Connect a service'), findsOneWidget);
+    expect(find.byTooltip('Connect a service so I can work on it'), findsOneWidget);
     await finish(tester, container);
   });
 
@@ -158,10 +158,11 @@ void main() {
     final container = await pumpScreen(tester);
     expect(find.text('New chat'), findsOneWidget);
     expect(find.text('What should we work on?'), findsOneWidget);
-    expect(find.text('Asleep'), findsOneWidget, reason: 'the machine chip');
-    expect(find.text('Connected:'), findsOneWidget);
-    expect(find.text('GitHub'), findsOneWidget);
+    expect(find.text('Escanor · Asleep'), findsOneWidget, reason: 'where it runs, under the title');
+    expect(find.text('Auto'), findsOneWidget, reason: 'the model chip');
+    expect(find.text('GitHub'), findsOneWidget, reason: 'what it can work on, as a chip');
 
+    await tester.ensureVisible(find.text('Fix the failing build in my repository'));
     await tester.tap(find.text('Fix the failing build in my repository'));
     await tester.pump();
     expect(find.text('Fix the failing build in my repository'), findsOneWidget, reason: 'shown at once');
@@ -171,11 +172,13 @@ void main() {
 
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump(const Duration(milliseconds: 50));
-    expect(find.text('Read the build log'), findsOneWidget);
+    expect(find.text('Read the build log'), findsOneWidget, reason: 'the question, pinned above the message box');
+    expect(find.text('NEEDS YOUR OK'), findsOneWidget);
     await tester.tap(find.text('Continue'));
     await tester.pump(const Duration(milliseconds: 50));
     expect(answers.single, {'allow': true});
-    expect(find.text('You said continue.'), findsOneWidget);
+    expect(find.text('NEEDS YOUR OK'), findsNothing, reason: 'answered: no longer pinned');
+    expect(find.text('Read the build log · you said continue.'), findsOneWidget, reason: 'what was said stays in the chat');
 
     // a new chat from the header starts empty again
     await tester.tap(find.byTooltip('New chat'));
@@ -191,7 +194,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
     expect(find.text('Model A wasn’t available, so Model B is answering.'), findsOneWidget);
-    expect(find.textContaining(RegExp(r'^Asking GPT OSS 120b · step 2 · 1[45]s$')), findsOneWidget);
+    expect(find.textContaining(RegExp(r'^Asking GPT OSS 120b · step 2…  1[45]s$')), findsOneWidget);
 
     await tester.tap(find.byTooltip('Stop'));
     await tester.pump();

@@ -40,6 +40,18 @@ void main() {
         final p = req.url.path;
         if (p == '/auth/session') return http.Response(jsonEncode({'user': {'id': 'u1', 'email': 'a@b.co', 'name': 'Ada'}}), 200);
         if (p == '/ai/conversations' && req.method == 'GET') return http.Response(jsonEncode({'conversations': server}), 200);
+        if (p == '/ai/conversations/search') {
+          calls.add('search ${req.url.queryParameters['q']}');
+          final q = req.url.queryParameters['q'] ?? '';
+          return http.Response(
+              jsonEncode({
+                'results': [
+                  if (q.contains('timeout')) {'id': 'c2', 'title': 'Deploy to Vercel', 'snippet': 'the build hit a timeout on Vercel', 'score': 0.8, 'match': 'semantic'},
+                ],
+                'semantic': true,
+              }),
+              200);
+        }
         if (p.endsWith('/stop') && req.method == 'POST') {
           calls.add('stop ${p.split('/')[3]}');
           return http.Response(jsonEncode({'ok': true, 'stopped': true}), 200);
@@ -85,6 +97,37 @@ void main() {
     await tester.tap(find.text('New chat'));
     await tester.pump();
     expect(container.read(navProvider).conversationId, isNull);
+    await finish(tester, container);
+  });
+
+  testWidgets('search finds chats by what was said in them, not only by name', (tester) async {
+    final soon = DateTime.now().toUtc().toIso8601String();
+    server = [
+      ...server,
+      {'id': 'c3', 'title': 'Cost report', 'created_at': soon, 'updated_at': soon},
+      {'id': 'c4', 'title': 'Rotate the keys', 'created_at': soon, 'updated_at': soon},
+    ];
+    final container = await pumpDrawer(tester);
+    await tester.enterText(find.byType(TextField), 'build');
+    await tester.pump();
+    expect(find.text('Fix the failing build'), findsOneWidget, reason: 'names match at once');
+    expect(find.text('Looking inside your chats…'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+    expect(calls, ['search build']);
+
+    await tester.enterText(find.byType(TextField), 'timeout');
+    await tester.pump();
+    expect(find.text('Deploy to Vercel'), findsNothing, reason: 'its name does not say timeout');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+    expect(find.text('Deploy to Vercel'), findsOneWidget, reason: 'found inside the chat');
+    expect(find.text('the build hit a timeout on Vercel'), findsOneWidget, reason: 'with the words that matched');
+    expect(find.text('1 result'), findsOneWidget);
+
+    await tester.tap(find.text('Deploy to Vercel'));
+    await tester.pump();
+    expect(container.read(navProvider).conversationId, 'c2');
     await finish(tester, container);
   });
 

@@ -12,6 +12,7 @@ import 'hub_state.dart';
 import 'local_overlay.dart';
 import 'message_format.dart' show busySince, livePermissions;
 import 'protocol.dart';
+import 'session_search.dart';
 
 /// What a new chat should switch to once the machine has named it.
 class ChatChoices {
@@ -257,6 +258,16 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void selectSession(String vmId, String? sessionId, [String? accountId]) => dispatch(Select(vmId: vmId, sessionId: sessionId, accountId: accountId));
+
+  /// Chats on [vmId] that match [query] by title or by what was said in them, best first. Empty when the hub cannot
+  /// search (one from before search answers 404) or cannot be reached: the list then matches titles only.
+  Future<List<SessionSearchHit>> searchSessions(String vmId, String query) async {
+    try {
+      return await api.searchSessions(vmId, query);
+    } catch (_) {
+      return const [];
+    }
+  }
 
   Future<void> loadMessages(String vmId, String sessionId) => refreshSession(vmId, sessionId);
 
