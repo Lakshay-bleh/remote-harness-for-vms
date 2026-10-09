@@ -192,9 +192,23 @@ Future<PushState> enablePush() async {
   }
 }
 
-/// At app start: if they already said yes, register again (the address may have changed). Never asks.
+/// At app start: if they already said yes, register again (the address may have changed). Otherwise, the first time only, ask
+/// (Android 13+ and iPhone never show notifications without that yes, and few people find the switch in Settings by themselves).
 Future<void> resumePush() async {
-  if (await pushState() == PushState.on) await enablePush();
+  final state = await pushState();
+  if (state == PushState.on) {
+    await enablePush();
+    return;
+  }
+  bool asked;
+  try {
+    asked = Storage.instance.getString(askedKey) != null;
+  } catch (_) {
+    return;
+  }
+  if (!shouldAskOnce(state, askedBefore: asked)) return;
+  await Storage.instance.setString(askedKey, DateTime.now().toUtc().toIso8601String());
+  await enablePush();
 }
 
 /// On sign-out: tell Escanor to stop sending this phone anything, so the next person to use it does not get these alerts.

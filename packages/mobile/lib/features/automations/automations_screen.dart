@@ -228,9 +228,27 @@ class _AutomationsScreenState extends State<AutomationsScreen> {
   List<Widget> _automations(BuildContext context, AutopilotOverview d) {
     final c = context.c;
     return [
-      Text('Automations start Escanor when nobody is saying anything: at a time you pick, or when something goes wrong.',
+      Text('Two kinds: automatic checks that are always on, and automations you set yourself.',
           style: TextStyle(fontSize: 13, height: 1.45, color: c.muted)),
-      const SizedBox(height: 12),
+      if (d.watchers.isNotEmpty) ...[
+        const SizedBox(height: 16),
+        _Title('Always checking'),
+        Text('Built in, nothing to set up. Escanor checks everything you connected every couple of minutes and notifies you when something breaks.',
+            style: TextStyle(fontSize: 12.5, height: 1.4, color: c.muted)),
+        const SizedBox(height: 10),
+        for (final w in d.watchers)
+          _WatcherTile(
+            watcher: w,
+            canManage: d.canManage,
+            busy: _working,
+            onToggle: (v) => _do(() => api.editWatcher(w.id, enabled: v), done: v ? 'Checking again.' : 'Turned off.'),
+            onFix: (v) => _do(() => api.editWatcher(w.id, fix: v), done: v ? 'It will look into what it finds.' : 'It will only notify you.'),
+          ),
+      ],
+      const SizedBox(height: 16),
+      _Title('Set by you'),
+      Text('These start Escanor at a time you pick, or when something you choose happens.', style: TextStyle(fontSize: 12.5, height: 1.4, color: c.muted)),
+      const SizedBox(height: 10),
       if (d.canManage) EButton(label: 'Add an automation', icon: Icons.add_rounded, expand: true, onPressed: () => _addTrigger(d)),
       const SizedBox(height: 12),
       if (d.triggers.isEmpty)
@@ -534,6 +552,55 @@ class _NeedsYouCard extends StatelessWidget {
         ] else
           Padding(padding: const EdgeInsets.only(top: 8), child: Text('An owner or admin answers this.', style: TextStyle(fontSize: 12, color: c.muted))),
       ]),
+    );
+  }
+}
+
+/// One automatic check: on or off, what it last found, and whether it also starts a run to fix it.
+class _WatcherTile extends StatelessWidget {
+  const _WatcherTile({required this.watcher, required this.canManage, required this.busy, required this.onToggle, required this.onFix});
+  final Watcher watcher;
+  final bool canManage;
+  final bool busy;
+  final ValueChanged<bool> onToggle;
+  final ValueChanged<bool> onFix;
+  @override
+  Widget build(BuildContext context) {
+    final c = context.c;
+    final w = watcher;
+    final last = w.lastFoundAt == null
+        ? (w.lastCheckedAt == null ? 'Starts within a few minutes' : 'All clear · checked ${relativeTime(w.lastCheckedAt!)} ago')
+        : 'Found something ${relativeTime(w.lastFoundAt!)} ago';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        decoration: BoxDecoration(color: c.surfaceCard, border: Border.all(color: c.hairline), borderRadius: BorderRadius.circular(Radii.lg)),
+        padding: const EdgeInsets.fromLTRB(14, 12, 8, 10),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(w.name, style: TextStyle(fontSize: 15, color: c.ink)),
+                const SizedBox(height: 2),
+                Text(w.about, style: TextStyle(fontSize: 12.5, height: 1.35, color: c.body)),
+                if (w.enabled) Text(last, style: TextStyle(fontSize: 12, color: c.muted)),
+                if (w.enabled && w.lastFinding != null)
+                  Padding(padding: const EdgeInsets.only(top: 2), child: Text(w.lastFinding!, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: c.body))),
+                if (w.enabled && w.lastError != null)
+                  Padding(padding: const EdgeInsets.only(top: 2), child: Text(w.lastError!, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: c.error))),
+              ]),
+            ),
+            if (canManage) ESwitch(on: w.enabled, disabled: busy, onChanged: onToggle) else Text(w.enabled ? 'On' : 'Off', style: TextStyle(fontSize: 12, color: c.muted)),
+          ]),
+          if (w.enabled && canManage) ...[
+            const SizedBox(height: 6),
+            Row(children: [
+              Expanded(child: Text('Also look into it and fix what is safe', style: TextStyle(fontSize: 13, color: c.body))),
+              ESwitch(on: w.fix, disabled: busy, onChanged: onFix),
+            ]),
+          ],
+        ]),
+      ),
     );
   }
 }

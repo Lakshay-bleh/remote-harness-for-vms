@@ -289,6 +289,7 @@ class AutopilotOverview {
     required this.runs,
     required this.needsYou,
     required this.triggers,
+    this.watchers = const [],
     required this.templates,
     required this.assistantReady,
     required this.assistantMessage,
@@ -301,6 +302,9 @@ class AutopilotOverview {
   final List<AutopilotRun> runs;
   final List<AutopilotRun> needsYou;
   final List<Trigger> triggers;
+
+  /// The automatic checks: built in and always looking (nothing to set up). Empty from a server that predates them.
+  final List<Watcher> watchers;
   final List<TriggerTemplate> templates;
   final bool assistantReady;
   final String assistantMessage;
@@ -318,12 +322,56 @@ class AutopilotOverview {
       runs: [for (final r in _list(m['runs'])) AutopilotRun.fromJson(r)],
       needsYou: [for (final r in _list(m['needs_you'])) AutopilotRun.fromJson(r)],
       triggers: [for (final t in _list(m['triggers'])) Trigger.fromJson(t)],
+      watchers: [for (final w in _list(m['watchers'])) Watcher.fromJson(w)],
       templates: [for (final t in _list(m['templates'])) TriggerTemplate.fromJson(t)],
       assistantReady: _bool(assistant['ready']),
       assistantMessage: _str(assistant['message']),
     );
   }
 
+}
+
+/// An automatic check (autopilot/watchers.py): always on for a workspace with something connected, it tells the owner and admins
+/// when it finds something and, with [fix] on, also starts a run to deal with it.
+class Watcher {
+  const Watcher({
+    required this.id,
+    required this.name,
+    required this.about,
+    this.enabled = true,
+    this.fix = false,
+    this.lastCheckedAt,
+    this.lastFoundAt,
+    this.lastFinding,
+    this.foundCount = 0,
+    this.lastError,
+  });
+  final String id;
+  final String name;
+  final String about;
+  final bool enabled;
+  final bool fix;
+  final String? lastCheckedAt;
+  final String? lastFoundAt;
+  final String? lastFinding;
+  final int foundCount;
+  final String? lastError;
+
+  factory Watcher.fromJson(Object? j) {
+    final m = _map(j);
+    return Watcher(
+      id: _str(m['id']),
+      name: _str(m['name']),
+      about: _str(m['about']),
+      enabled: _bool(m['enabled'], true),
+      fix: _bool(m['fix']),
+      lastCheckedAt: _strOrNull(m['last_checked_at']),
+      lastFoundAt: _strOrNull(m['last_found_at']),
+      lastFinding: _strOrNull(m['last_finding']),
+      foundCount: _int(m['found_count']),
+      lastError: _strOrNull(m['last_error']),
+    );
+  }
 }
 
 /// The headline over the overview: what Escanor is doing on its own right now, in a sentence.
@@ -335,7 +383,7 @@ String autopilotHeadline(AutopilotPolicy p, int active, int waiting) {
   return 'On (${p.levelLabel}). Nothing running right now.';
 }
 
-const originLabels = {'manual': 'You', 'trigger': 'A trigger', 'schedule': 'A schedule'};
+const originLabels = {'manual': 'You', 'trigger': 'Your automation', 'schedule': 'A schedule', 'check': 'An automatic check'};
 
 const runStatusLabels = {
   'running': 'Running',

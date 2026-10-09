@@ -65,10 +65,10 @@ void main() {
       final p = const NotificationPrefs().merge({'team_pings': false});
       expect(p.teamPings, false);
       expect(p.emergencyAlerts, true);
-      expect(p.toJson().length, 5);
+      expect(p.toJson().length, 6);
     });
-    test('lists the four kinds in the website order', () {
-      expect(notificationKinds.map((k) => k.key), ['emergency_alerts', 'server_down', 'deployment_approvals', 'team_pings']);
+    test('lists the five kinds in the website order', () {
+      expect(notificationKinds.map((k) => k.key), ['emergency_alerts', 'server_down', 'deployment_approvals', 'team_pings', 'checks']);
     });
   });
 

@@ -18,15 +18,24 @@ const tokenKey = 'escanor.push.token';
 /// Set once the person has turned push on, so the next start registers again without asking.
 const allowedKey = 'escanor.push.allowed';
 
+/// Set once the app has asked "may Escanor notify you?" by itself, so it asks only that one time (after that, Settings > Notifications).
+const askedKey = 'escanor.push.asked';
+
+/// Whether to ask by itself now: only when the phone has not been asked yet, and never twice.
+bool shouldAskOnce(PushState state, {required bool askedBefore}) => state == PushState.off && !askedBefore;
+
 const _routes = <String, PushDest>{
   'deployment_approvals': PushDest.assistant,
   'emergency_alerts': PushDest.assistant,
   'team_pings': PushDest.assistant,
   'server_down': PushDest.machines,
+  'checks': PushDest.automations,
 };
 
-/// Where tapping a notification should land. Anything unexpected opens the main screen.
+/// Where tapping a notification should land. Anything unexpected opens the main screen. Whatever an automation or an automatic
+/// check sent (it names a run or a check) opens Automations, where the run and the finding are.
 PushDest routeFor(Object? data) {
+  if (data is Map && (data['check'] is String || data['run_id'] is String)) return PushDest.automations;
   final kind = data is Map ? data['kind'] : null;
   return kind is String && _routes.containsKey(kind) ? _routes[kind]! : PushDest.assistant;
 }
