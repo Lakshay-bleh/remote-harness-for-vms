@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 
 import '../../core/api.dart';
+import '../../core/prefs.dart' show currentPrefs;
+import '../machines/autonomy.dart';
 import '../composer/attachments.dart';
 import 'assistant_api.dart';
 import 'chat_state.dart';
@@ -125,6 +127,7 @@ class Conversation extends ChangeNotifier {
       final res = await _backend.messages(id, state.lastId);
       if (_disposed || gen != _generation) return;
       state = applyMessages(state, res);
+      _answerOwnApprovals();
       _failures = 0;
       _unreachable = false;
       final s = stopStatus(_stopPhase, state.running, _now());
@@ -228,6 +231,27 @@ class Conversation extends ChangeNotifier {
       _notify();
     } finally {
       if (making != null && identical(_creating, making)) _creating = null;
+    }
+  }
+
+  final Set<String> _autoAnswered = {};
+
+  /// Escanor works on its own: when the person has not asked to be consulted, it says yes to what the assistant asks to go ahead with,
+  /// except what the server marks high risk or what cannot be taken back. Those wait for the person, as they always did.
+  void _answerOwnApprovals() {
+    bool autonomous;
+    try {
+      autonomous = isAutonomousMode(currentPrefs().defaultMode);
+    } catch (_) {
+      autonomous = false; // storage not ready (tests): ask the person
+    }
+    if (!autonomous) return;
+    for (final item in state.items) {
+      if (item.kind != 'approval' || item.status != 'pending' || item.requestId.isEmpty || _autoAnswered.contains(item.requestId)) continue;
+      final v = decideApprovalText('${item.title}\n${item.detail}\n${item.raw}', risk: item.risk);
+      if (!v.allow) continue;
+      _autoAnswered.add(item.requestId);
+      unawaited(answer(item.requestId, true));
     }
   }
 

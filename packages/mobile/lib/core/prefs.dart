@@ -15,7 +15,7 @@ class Prefs {
     this.accent = AccentName.gold,
     this.reduceMotion = false,
     this.startTab = 'assistant',
-    this.defaultMode = 'default',
+    this.defaultMode = 'auto',
     this.defaultModel = '',
     this.defaultEffort = '',
   });
@@ -80,14 +80,14 @@ const textSizePercent = {'small': 93.75, 'default': 100.0, 'large': 112.5};
 
 const startTabs = [
   (value: 'assistant', label: 'Chat'),
-  (value: 'computers', label: 'Computers'),
-  (value: 'connections', label: 'Connections'),
   (value: 'machines', label: 'Machines'),
+  (value: 'automations', label: 'Automations'),
+  (value: 'connections', label: 'Connections'),
 ];
 
 const permissionModes = [
-  (value: 'default', label: 'Default', hint: 'Asks before anything that changes things'),
-  (value: 'auto', label: 'Auto', hint: 'Decides for itself what is safe'),
+  (value: 'auto', label: 'Autonomous', hint: 'Does the work on its own: answers its own prompts, checks its work, fixes and tries again until done'),
+  (value: 'default', label: 'Ask first', hint: 'Asks before anything that changes things'),
   (value: 'acceptEdits', label: 'Accept edits', hint: 'Edits files without asking'),
   (value: 'plan', label: 'Plan mode', hint: 'Plans first, changes nothing'),
   (value: 'dontAsk', label: "Don't ask", hint: 'Never stops to ask'),
@@ -112,6 +112,7 @@ const efforts = [
 ];
 
 const _key = 'escanor.prefs.v1';
+const _autonomyMigrated = 'escanor.migrated.autonomy.v1';
 
 T _oneOf<T>(Object? v, List<T> allowed, T fallback) => allowed.contains(v) ? v as T : fallback;
 
@@ -138,7 +139,7 @@ Prefs parsePrefs(String? raw) {
     theme: theme,
     accent: accent,
     reduceMotion: o['reduceMotion'] is bool ? o['reduceMotion'] as bool : defaultPrefs.reduceMotion,
-    startTab: _oneOf(o['startTab'], startTabs.map((s) => s.value).toList(), defaultPrefs.startTab),
+    startTab: _oneOf(o['startTab'] == 'computers' ? 'machines' : o['startTab'], startTabs.map((s) => s.value).toList(), defaultPrefs.startTab),
     defaultMode: _oneOf(o['defaultMode'], permissionModes.map((m) => m.value).toList(), defaultPrefs.defaultMode),
     defaultModel: _oneOf(o['defaultModel'], models.map((m) => m.value).toList(), defaultPrefs.defaultModel),
     defaultEffort: _oneOf(o['defaultEffort'], efforts.map((m) => m.value).toList(), defaultPrefs.defaultEffort),
@@ -147,7 +148,19 @@ Prefs parsePrefs(String? raw) {
 
 class PrefsNotifier extends Notifier<Prefs> {
   @override
-  Prefs build() => parsePrefs(Storage.instance.getString(_key));
+  Prefs build() {
+    var p = parsePrefs(Storage.instance.getString(_key));
+    // Escanor works on its own now. A phone that still asks before everything (the old default) moves over once; after that the
+    // choice is theirs, and "Ask first" stays if they pick it.
+    if (Storage.instance.getString(_autonomyMigrated) == null) {
+      Storage.instance.setString(_autonomyMigrated, '1');
+      if (p.defaultMode == 'default') {
+        p = p.copyWith(defaultMode: 'auto');
+        Storage.instance.setString(_key, jsonEncode(p.toJson()));
+      }
+    }
+    return p;
+  }
 
   void update(Prefs Function(Prefs) change) {
     state = change(state);

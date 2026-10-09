@@ -80,6 +80,7 @@ const _tabNames = <VoiceTab, String>{
   VoiceTab.computers: 'Computers',
   VoiceTab.connections: 'Connections',
   VoiceTab.machines: 'Machines',
+  VoiceTab.automations: 'Automations',
   VoiceTab.settings: 'Settings',
 };
 

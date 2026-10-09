@@ -41,7 +41,7 @@ void main() {
 
   test('theme, accent, motion and start tab are validated field by field', () {
     final got = parsePrefs(jsonEncode({'theme': 'light', 'accent': 'violet', 'reduceMotion': true, 'startTab': 'computers'}));
-    expect([got.theme, got.accent, got.reduceMotion, got.startTab], [ThemeChoice.light, AccentName.violet, true, 'computers']);
+    expect([got.theme, got.accent, got.reduceMotion, got.startTab], [ThemeChoice.light, AccentName.violet, true, 'machines']);
     final bad = parsePrefs(jsonEncode({'theme': 'neon', 'accent': 'plaid', 'reduceMotion': 'yes', 'startTab': 'settings'}));
     expect([bad.theme, bad.accent, bad.reduceMotion, bad.startTab], [defaultPrefs.theme, defaultPrefs.accent, defaultPrefs.reduceMotion, defaultPrefs.startTab]);
   });

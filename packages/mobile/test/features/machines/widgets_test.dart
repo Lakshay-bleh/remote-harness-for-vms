@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:escanor/core/storage.dart';
 import 'package:escanor/core/theme.dart';
+import 'package:escanor/features/machines/chat_choices.dart';
 import 'package:escanor/features/machines/hub_api.dart';
 import 'package:escanor/features/machines/hub_app.dart';
 import 'package:escanor/features/machines/hub_markdown.dart';
@@ -51,6 +52,8 @@ void main() {
     creds.token = 'tok';
     sent.clear();
     sockets.clear();
+    // These tests are about the prompt itself, so the chat asks first (an autonomous chat answers its own prompts).
+    const ChatChoicesStore().write('v1', 's1', const SavedChoices(mode: 'default'));
     HubStore.instance = HubStore(
       api: HubApi(
         credentials: creds,
@@ -158,7 +161,7 @@ void main() {
     expect(find.text('Delete chat'), findsOneWidget);
     await tester.tap(find.text('Permissions'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Auto'));
+    await tester.tap(find.text('Autonomous'));
     await tester.pumpAndSettle();
     expect(sent.any((r) => r.url.path == '/api/vms/v1/sessions/s1/permission-mode' && r.body == '{"mode":"auto"}'), isTrue);
     expect(HubStore.instance.savedChoices('v1', 's1')!.mode, 'auto');

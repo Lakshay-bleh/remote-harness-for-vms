@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
-import '../../core/config.dart';
 import '../../core/theme.dart';
+import '../../ui/parts.dart' show pushPage;
 import '../../ui/widgets.dart';
+import '../settings/info_pages.dart' show LegalDocPage;
 import 'hub_scope.dart';
 import 'hub_store.dart';
 
@@ -146,7 +146,7 @@ class _LegalLinks extends StatelessWidget {
   void _open(BuildContext context, String doc) {
     final hook = openLegalDoc;
     if (hook != null) return hook(context, doc);
-    launchUrl(Uri.parse('$websiteBase/$doc'), mode: LaunchMode.externalApplication);
+    pushPage(context, LegalDocPage(docKey: doc));
   }
 
   @override

@@ -2,12 +2,15 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
+import '../../core/prefs.dart' show currentPrefs;
+import 'autonomy.dart';
 import 'chat_choices.dart';
+import 'group_messages.dart' show groupMessages;
 import 'hub_api.dart';
 import 'hub_socket.dart';
 import 'hub_state.dart';
 import 'local_overlay.dart';
-import 'message_format.dart' show busySince;
+import 'message_format.dart' show busySince, livePermissions;
 import 'protocol.dart';
 
 /// What a new chat should switch to once the machine has named it.
@@ -52,6 +55,12 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _poll;
   final Set<String> _loading = {};
   bool _catchingUp = false;
+
+  // Autonomous chats: prompts already answered, results already looked at, how many times it went round again, and chats the person stopped.
+  final Set<String> _autoAnswered = {};
+  final Map<String, int> _resultsHandled = {};
+  final Map<String, int> _rounds = {};
+  final Set<String> _halted = {};
   final _managedUnauthorized = StreamController<void>.broadcast();
 
   /// The hosted hub refused its token: whoever shows it asks Escanor for the current one.
@@ -88,6 +97,7 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
     final was = _state.authed;
     _state = reduceHub(_state, action);
     if (action is SessionCreated) _onSessionCreated(action);
+    if (action is AppendMessage) _noticeTurnEnd(action);
     if (!was && _state.authed) _start();
     if (was && !_state.authed) _stop();
     notifyListeners();
@@ -99,6 +109,7 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
     _unsubscribe = socket.subscribe((msg) {
       final a = actionForEvent(msg, _nextLocalId);
       if (a != null) dispatch(a);
+      if (msg is PermissionRequestEvent) _autoAnswer(msg.vmId, msg.sessionId, msg.requestId, msg.toolName, msg.input);
     });
     if (!_observing) {
       try {
@@ -139,6 +150,10 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
     socket.stop();
     choicesStore.clear();
     overlay.clear();
+    _autoAnswered.clear();
+    _resultsHandled.clear();
+    _rounds.clear();
+    _halted.clear();
     _pendingChoices.clear();
     _named.clear();
     if (_observing) {
@@ -257,6 +272,7 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
     try {
       final rows = await api.listMessages(vmId, sessionId);
       dispatch(SetMessages(sessionId, rows, seenLocalUpTo: horizon));
+      _afterRefresh(vmId, sessionId);
     } finally {
       if (_loading.remove(sessionId)) notifyListeners();
     }
@@ -266,8 +282,13 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
   /// model and effort chosen for it.
   Future<void> openSession(String vmId, SessionDto s) async {
     dispatch(Select(vmId: vmId, sessionId: s.id, accountId: s.accountId));
-    final saved = choicesStore.read(vmId, s.id);
-    if (saved != null) unawaited(_pushChoices(vmId, s.id, saved).catchError((_) {}));
+    // A chat that was never given its own choices runs as new chats do on this machine, and keeps that from now on.
+    var saved = choicesStore.read(vmId, s.id);
+    if (saved == null) {
+      saved = defaultChoicesFor(vmId);
+      choicesStore.write(vmId, s.id, saved);
+    }
+    unawaited(_pushChoices(vmId, s.id, saved).catchError((_) {}));
     await refreshSession(vmId, s.id);
   }
 
@@ -285,13 +306,17 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   /// Send a message: it shows at once, then the hub's echo takes its place. If it does not reach the hub it is taken back.
-  Future<void> sendMessage(String vmId, String sessionId, UserInput input) async {
+  Future<void> sendMessage(String vmId, String sessionId, UserInput input, {bool auto = false}) async {
+    if (!auto) {
+      _rounds[sessionId] = 0; // a new request from the person starts the count again
+      _halted.remove(sessionId);
+    }
     final rows = _state.messagesBySession[sessionId] ?? const <MessageDto>[];
     final shown = optimisticPrompt(_nextOptimisticId(), sessionId, vmId, input.text, rows);
     dispatch(AppendMessage(sessionId, shown));
     // The mode chosen for the chat goes with it, so a run that started fresh since the last message still obeys it.
-    final saved = choicesStore.read(vmId, sessionId);
-    if (saved != null && saved.mode != 'default' && isPermissionMode(saved.mode)) {
+    final saved = choicesStore.read(vmId, sessionId) ?? defaultChoicesFor(vmId);
+    if (saved.mode != 'default' && isPermissionMode(saved.mode)) {
       try {
         // A few seconds at most: the message matters more than the reminder.
         await api.setPermissionMode(vmId, sessionId, saved.mode).timeout(const Duration(seconds: 3));
@@ -309,6 +334,7 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Stop the run. The chat stops spinning at once; if the hub could not be told, the chat shows what is really going on.
   Future<void> interrupt(String vmId, String sessionId) async {
+    _halted.add(sessionId); // the person said stop: it does not go round again by itself
     dispatch(ResolveAllPermissions(sessionId));
     dispatch(SessionWentIdle(vmId, sessionId));
     try {
@@ -367,6 +393,73 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
 
   /// The real id a new chat's temporary id became, once the machine named it.
   String? namedAs(String tempId) => _named[tempId];
+
+  // ---------- autonomous chats ----------
+
+  /// What a chat on this machine starts with when nothing was chosen for it: the machine's own choice, else the app-wide one.
+  SavedChoices defaultChoicesFor(String vmId) {
+    final own = overlay.machine(vmId).defaults;
+    if (own != null) return own;
+    final p = currentPrefs();
+    return SavedChoices(mode: p.defaultMode, model: p.defaultModel, effort: p.defaultEffort);
+  }
+
+  /// Does this chat work on its own (answer its own prompts, check its work, go round again)?
+  bool isAutonomous(String vmId, String sessionId) => isAutonomousMode((choicesStore.read(vmId, sessionId) ?? defaultChoicesFor(vmId)).mode);
+
+  /// How many times it has gone round again on its own since the person's last message.
+  int roundsFor(String sessionId) => _rounds[sessionId] ?? 0;
+
+  void _autoAnswer(String vmId, String sessionId, String requestId, String tool, Map<String, dynamic> input) {
+    if (!isAutonomous(vmId, sessionId) || _autoAnswered.contains(requestId)) return;
+    _autoAnswered.add(requestId);
+    final v = decideAutonomously(tool, input);
+    unawaited(resolvePermission(vmId, sessionId, requestId, v.allow ? 'allow' : 'deny').catchError((Object _) {
+      _autoAnswered.remove(requestId); // it did not reach the machine: the next look tries again
+    }));
+  }
+
+  /// After a fresh list from the hub: answer prompts that came while the app was not listening, and look at turns that ended.
+  void _afterRefresh(String vmId, String sessionId) {
+    final rows = _state.messagesBySession[sessionId];
+    if (rows == null || !isAutonomous(vmId, sessionId)) {
+      if (rows != null) _resultsHandled[sessionId] = rows.where(_isResult).length;
+      return;
+    }
+    if (rows.any((r) => r.message is Map && (r.message as Map)['type'] == 'permission_request')) {
+      for (final p in livePermissions(groupMessages(rows), _state.resolvedPermissionIds)) {
+        _autoAnswer(vmId, sessionId, p.requestId, p.toolName, p.input);
+      }
+    }
+    final n = rows.where(_isResult).length;
+    final seen = _resultsHandled[sessionId];
+    _resultsHandled[sessionId] = n;
+    // The first look at a chat is not a turn that just ended: only a result newer than the last look is.
+    if (seen != null && n > seen) _scheduleNudge(vmId, sessionId);
+  }
+
+  static bool _isResult(MessageDto r) => r.message is Map && (r.message as Map)['type'] == 'result';
+
+  void _noticeTurnEnd(AppendMessage a) {
+    if (!_isResult(a.message) || !isAutonomous(a.message.vmId, a.sessionId)) return;
+    final n = (_state.messagesBySession[a.sessionId] ?? const <MessageDto>[]).where(_isResult).length;
+    final seen = _resultsHandled[a.sessionId] ?? n - 1;
+    _resultsHandled[a.sessionId] = n;
+    if (n > seen) _scheduleNudge(a.message.vmId, a.sessionId);
+  }
+
+  void _scheduleNudge(String vmId, String sessionId) {
+    _later(const Duration(milliseconds: 1200), () async {
+      final rows = _state.messagesBySession[sessionId];
+      if (rows == null || !isAutonomous(vmId, sessionId)) return;
+      final rounds = _rounds[sessionId] ?? 0;
+      final nudge = nextNudge(rows, rounds: rounds, halted: _halted.contains(sessionId));
+      if (nudge == null) return;
+      _rounds[sessionId] = rounds + 1;
+      notifyListeners();
+      await sendMessage(vmId, sessionId, UserInput(text: nudge.text), auto: true);
+    });
+  }
 
   // ---------- per-chat and per-machine settings ----------
 

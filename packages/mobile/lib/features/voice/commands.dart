@@ -8,7 +8,7 @@
 library;
 
 /// The app's tabs, by the names voice uses for them.
-enum VoiceTab { assistant, computers, connections, machines, settings }
+enum VoiceTab { assistant, computers, connections, machines, automations, settings }
 
 enum SettingsScreen { wifi, bluetooth, display, sound, battery, apps, location }
 
@@ -340,6 +340,7 @@ final _tabWords = <(RegExp, VoiceTab)>[
   (RegExp(r'^computers?$'), VoiceTab.computers),
   (RegExp(r'^connections?$'), VoiceTab.connections),
   (RegExp(r'^machines?$'), VoiceTab.machines),
+  (RegExp(r'^(?:automations?|autopilot)$'), VoiceTab.automations),
   (RegExp(r'^settings?$'), VoiceTab.settings),
 ];
 const _computerNoun = '(?:computer|laptop|pc|desktop|mac|machine)';

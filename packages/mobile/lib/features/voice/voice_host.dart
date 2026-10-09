@@ -88,7 +88,7 @@ class _VoiceHostState extends ConsumerState<VoiceHost> {
   }
 
   void _go(VoiceTab tab) {
-    ref.read(navProvider.notifier).go(AppTab.values.firstWhere((t) => t.name == tab.name, orElse: () => AppTab.assistant));
+    ref.read(navProvider.notifier).go(tabFromName(tab.name));
     _conversation.close();
   }
 

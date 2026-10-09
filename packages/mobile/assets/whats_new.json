@@ -1,0 +1,27 @@
+[
+  {
+    "version": "1.25",
+    "date": "2026-10-09",
+    "title": "Escanor works on its own",
+    "items": [
+      "Chats on your machines now work on their own by default. Escanor answers its own permission prompts, checks the logs and results itself, fixes what failed and goes round again until the work is done. It only stops for the few things that cannot be undone, such as wiping a disk or force-pushing over a main branch.",
+      "New Automations tab: give Escanor a goal, or set an automation that starts it with nobody asking (every morning, when a deployment fails, when an incident opens, when health drops). See every run, what it decided and why, answer the rare question it needs from you, and stop everything with one tap.",
+      "Machines and Computers are now one tab with a Servers and Computers switch, instead of two tabs that looked alike.",
+      "Each chat on a machine now keeps its mode, model and effort, so Autonomous no longer resets when you leave and come back.",
+      "Your messages show the moment you send them, Stop stops right away, and an answer to a permission prompt no longer waits 30 seconds when the connection is stuck.",
+      "Chats refresh every time you open them, and a connection that silently died is replaced, so nothing sits frozen until you go back and in again.",
+      "Settings for every chat and every machine: details, rename, defaults for new chats, delete or remove.",
+      "Everything now reads inside the app. The links that opened the website are gone: the setup guide, About, the legal documents and their cross-links all open here. This What's new page appears after every update."
+    ]
+  },
+  {
+    "version": "1.24",
+    "date": "2026-10-09",
+    "title": "The new Escanor app",
+    "items": [
+      "The Escanor app is now built with Flutter and replaces the earlier web-based app. It installs next to the old one, so you sign in again and can then remove the old app.",
+      "Machines: chats keep their mode and settings, messages and Stop respond at once, and chats refresh when you open them.",
+      "Settings sheets for each chat and each machine."
+    ]
+  }
+]

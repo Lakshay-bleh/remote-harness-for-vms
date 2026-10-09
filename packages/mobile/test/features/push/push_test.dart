@@ -21,7 +21,8 @@ void main() {
 
     test('every destination is a tab of the app', () {
       for (final d in PushDest.values) {
-        expect(tabForDest(d).name, d.name);
+        // Computers became the second half of the Machines tab.
+        expect(tabForDest(d).name, d == PushDest.computers ? 'machines' : d.name);
       }
       expect(tabForDest(PushDest.machines), AppTab.machines);
     });

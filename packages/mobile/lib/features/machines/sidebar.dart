@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api.dart' show errorText;
 import '../../core/prefs.dart';
@@ -117,7 +116,7 @@ class _HubSidebarState extends State<HubSidebar> {
       color: c.surfaceSoft,
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         if (managed != null || embedded)
-          ScreenHeader(title: 'Machines', actions: [
+          ScreenHeader(title: 'Servers', actions: [
             if (managed != null)
               Padding(padding: const EdgeInsets.only(right: 4), child: EButton(label: 'Add', icon: Icons.add_rounded, onPressed: connect)),
           ])
@@ -170,12 +169,6 @@ class _HubSidebarState extends State<HubSidebar> {
                           text: 'Put the agent on a server and it shows up here, ready to chat with. Your hub and secret are already set up.',
                           action: Column(mainAxisSize: MainAxisSize.min, children: [
                             EButton(label: 'Connect a machine', expand: true, onPressed: connect),
-                            if (managed.guideUrl != null && RegExp(r'^https://', caseSensitive: false).hasMatch(managed.guideUrl!))
-                              TextButton(
-                                onPressed: () => launchUrl(Uri.parse(managed.guideUrl!), mode: LaunchMode.externalApplication),
-                                child: Text('Read the setup guide',
-                                    style: TextStyle(fontSize: 13, color: c.primary, decoration: TextDecoration.underline, decorationColor: c.primary)),
-                              ),
                           ]),
                         )
                       : const DogState(scene: 'sleep', title: 'No machines yet', text: 'Install the agent on a server to see it here.'),

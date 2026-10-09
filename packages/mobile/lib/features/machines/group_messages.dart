@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'autonomy.dart' show shownUserText;
 import 'protocol.dart';
 
 /// Turns a session's raw rows (SDK messages, the hub's own permission requests) into what the chat draws, the
@@ -157,7 +158,26 @@ List<DisplayItem> groupMessages(List<MessageDto> rows) {
 
     if (type == 'user' && _truthy(m['local'])) {
       flush();
-      items.add(UserItem(key, row.createdAt, normalizeBlocks(_content(m))));
+      // What Escanor added to a message (its standing instructions) is not shown; a message that is only its own nudge is a quiet line.
+      final blocks = <Block>[];
+      var nudge = false;
+      for (final b in normalizeBlocks(_content(m))) {
+        if (b['type'] == 'text' && b['text'] is String) {
+          final text = shownUserText(b['text'] as String);
+          if (text == null) {
+            nudge = true;
+          } else {
+            blocks.add({...b, 'text': text});
+          }
+        } else {
+          blocks.add(b);
+        }
+      }
+      if (nudge && blocks.isEmpty) {
+        items.add(SystemItem(key, 'Checking its work and fixing what is left…'));
+      } else {
+        items.add(UserItem(key, row.createdAt, blocks));
+      }
       continue;
     }
     if (type == 'assistant') {

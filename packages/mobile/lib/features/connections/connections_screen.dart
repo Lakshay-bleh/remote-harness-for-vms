@@ -417,18 +417,6 @@ class _ConnectSheetState extends State<ConnectSheet> with WidgetsBindingObserver
             label: fieldLabel(f),
             child: TextField(controller: _fields[f], autocorrect: false, enableSuggestions: false),
           ),
-        if (p.helpUrl.isNotEmpty && isSafeExternalUrl(p.helpUrl))
-          Align(
-            alignment: Alignment.centerLeft,
-            child: InkWell(
-              onTap: () => launchUrl(Uri.parse(p.helpUrl), mode: LaunchMode.externalApplication),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Text('Where do I find this?',
-                    style: TextStyle(fontSize: 12, color: c.primary, decoration: TextDecoration.underline, decorationColor: c.primary)),
-              ),
-            ),
-          ),
         EButton(
           label: _busy ? 'Connecting…' : 'Connect',
           expand: true,

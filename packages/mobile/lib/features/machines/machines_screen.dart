@@ -94,7 +94,7 @@ class _MachinesScreenState extends ConsumerState<MachinesScreen> {
       return Material(
         color: c.canvas,
         child: Column(children: [
-          const ScreenHeader(title: 'Machines'),
+          const ScreenHeader(title: 'Servers'),
           Expanded(
             child: Center(
               child: Padding(
@@ -121,7 +121,7 @@ class _MachinesScreenState extends ConsumerState<MachinesScreen> {
     if (!_ready || hub == null) {
       return Material(
         color: c.canvas,
-        child: const Column(children: [ScreenHeader(title: 'Machines'), Expanded(child: Center(child: Spinner()))]),
+        child: const Column(children: [ScreenHeader(title: 'Servers'), Expanded(child: Center(child: Spinner()))]),
       );
     }
     return HubApp(embedded: true, managed: hub);

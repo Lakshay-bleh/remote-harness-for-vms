@@ -89,17 +89,6 @@ Future<DeletionStatus> cancelDeletion() async => DeletionStatus.fromJson(_map(aw
 
 // -- links
 
-/// The website, already signed in: a one-minute link, so a page there opens without a second sign-in.
-Future<String> webHandoff(String next) async => '${_map(await api.post('/auth/handoff', {'next': next}))['url']}';
-
-/// Open a page of the website signed in (e.g. `/dashboard/settings/billing`).
-Future<void> openWebHandoff(String next) async {
-  final url = await webHandoff(next);
-  if (!await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)) {
-    throw StateError('Could not open the website.');
-  }
-}
-
 /// A link from the server (an invoice, a payment page): opened in a browser view inside the app.
 Future<void> openLink(String url) async {
   final uri = Uri.tryParse(url);
