@@ -19,8 +19,12 @@ void main() {
   late List<Map<String, dynamic>> items;
   late List<String> stops;
   late bool n2Running;
+  late List<Map<String, dynamic>> connected;
 
   setUp(() async {
+    connected = [
+      {'provider_id': 'github', 'name': 'GitHub', 'connected': true, 'available_to_assistant': true},
+    ];
     status = {'state': 'ready', 'ready': true, 'message': 'Ready'};
     chatBodies = [];
     answers = [];
@@ -43,9 +47,7 @@ void main() {
         if (p == '/ai/capabilities') {
           return ok({
             'machine': {'state': 'sleeping', 'detail': '', 'source': ''},
-            'integrations': [
-              {'provider_id': 'github', 'name': 'GitHub', 'connected': true, 'available_to_assistant': true},
-            ],
+            'integrations': connected,
           });
         }
         if (p == '/ai/conversations') return ok({'conversations': []});
@@ -120,6 +122,35 @@ void main() {
     status = {'state': 'not_configured', 'ready': false, 'message': 'Escanor AI is not configured.'};
     final container = await pumpScreen(tester);
     expect(find.text('Your assistant isn’t available yet'), findsOneWidget);
+    await finish(tester, container);
+  });
+
+  testWidgets('connected services whose reach could not be checked count as connected, not as nothing', (tester) async {
+    connected = [
+      for (var i = 0; i < 25; i++) {'provider_id': 'p$i', 'name': 'Service $i', 'connected': true, 'available_to_assistant': null},
+    ];
+    final container = await pumpScreen(tester);
+    expect(find.text('Connected:'), findsOneWidget);
+    expect(find.text('+20'), findsOneWidget);
+    expect(find.text('Connect a service so I can work on it'), findsNothing);
+    await finish(tester, container);
+  });
+
+  testWidgets('services connected without assistant tools are not called nothing connected', (tester) async {
+    connected = [
+      {'provider_id': 'airtable', 'name': 'Airtable', 'connected': true, 'available_to_assistant': false},
+      {'provider_id': 'vercel', 'name': 'Vercel', 'connected': true, 'available_to_assistant': null, 'needs_reconnect': true},
+    ];
+    final container = await pumpScreen(tester);
+    expect(find.text('Connected:'), findsNothing);
+    expect(find.text('Connect a service so I can work on it'), findsNothing);
+    await finish(tester, container);
+  });
+
+  testWidgets('with nothing connected, invites connecting a service', (tester) async {
+    connected = [];
+    final container = await pumpScreen(tester);
+    expect(find.text('Connect a service so I can work on it'), findsOneWidget);
     await finish(tester, container);
   });
 
