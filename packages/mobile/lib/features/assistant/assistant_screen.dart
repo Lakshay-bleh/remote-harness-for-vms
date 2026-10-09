@@ -10,6 +10,7 @@ import '../../core/prefs.dart';
 import '../../core/theme.dart';
 import '../../ui/chat_parts.dart';
 import '../../ui/widgets.dart';
+import '../companion/companion_floor.dart';
 import '../composer/chat_composer.dart';
 import 'approval_card.dart';
 import 'assistant_api.dart';
@@ -193,38 +194,40 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
           ],
         ),
       ),
-      ChatBottom(
-        above: [
-          if (_chat.error != null) Notice(_chat.error!, tone: NoticeTone.error),
-          if (asking != null) ApprovalCard(key: ValueKey(asking.requestId), item: asking, onAnswer: (allow) => _chat.answer(asking!.requestId, allow)),
-        ],
-        composer: ChatComposer(
-          placeholder: 'Message Escanor',
-          running: _chat.state.running,
-          stopping: _chat.stopping,
-          sendWhileRunning: _chat.canSend,
-          onSend: (t, files) => _chat.send(t, files),
-          onStop: _chat.stop,
-          chips: ChatChips(children: [
-            ChatDropdownChip(
-              icon: Icons.auto_awesome_outlined,
-              title: 'Model',
-              value: model,
-              options: modelOptions(_models.data, model),
-              onChanged: (v) => ref.read(assistantModelProvider.notifier).choose(v),
-            ),
-            if (caps != null)
-              ChatChip(
-                icon: Icons.hub_outlined,
-                label: usable.isEmpty
-                    ? 'Connect a service'
-                    : usable.length == 1
-                        ? usable.first.name
-                        : '${usable.first.name} +${usable.length - 1}',
-                tooltip: usable.isEmpty ? 'Connect a service so I can work on it' : 'What I can work on: ${usable.map((i) => i.name).join(', ')}',
-                onTap: () => ref.read(navProvider.notifier).go(AppTab.connections),
+      CompanionFloor(
+        child: ChatBottom(
+          above: [
+            if (_chat.error != null) Notice(_chat.error!, tone: NoticeTone.error),
+            if (asking != null) ApprovalCard(key: ValueKey(asking.requestId), item: asking, onAnswer: (allow) => _chat.answer(asking!.requestId, allow)),
+          ],
+          composer: ChatComposer(
+            placeholder: 'Message Escanor',
+            running: _chat.state.running,
+            stopping: _chat.stopping,
+            sendWhileRunning: _chat.canSend,
+            onSend: (t, files) => _chat.send(t, files),
+            onStop: _chat.stop,
+            chips: ChatChips(children: [
+              ChatDropdownChip(
+                icon: Icons.auto_awesome_outlined,
+                title: 'Model',
+                value: model,
+                options: modelOptions(_models.data, model),
+                onChanged: (v) => ref.read(assistantModelProvider.notifier).choose(v),
               ),
-          ]),
+              if (caps != null)
+                ChatChip(
+                  icon: Icons.hub_outlined,
+                  label: usable.isEmpty
+                      ? 'Connect a service'
+                      : usable.length == 1
+                          ? usable.first.name
+                          : '${usable.first.name} +${usable.length - 1}',
+                  tooltip: usable.isEmpty ? 'Connect a service so I can work on it' : 'What I can work on: ${usable.map((i) => i.name).join(', ')}',
+                  onTap: () => ref.read(navProvider.notifier).go(AppTab.connections),
+                ),
+            ]),
+          ),
         ),
       ),
     ]);
