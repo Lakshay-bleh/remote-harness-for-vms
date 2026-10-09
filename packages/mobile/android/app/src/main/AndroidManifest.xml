@@ -1,0 +1,121 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- What the app may see of other apps (Android 11+ package visibility). Nothing here is the whole package list. -->
+    <queries>
+        <!-- The voice assistant opens apps by name, so it must see which apps have a launcher icon. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <!-- Speaking to Escanor (speech_to_text) and hearing it answer (flutter_tts) -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+        <!-- Two-step verification: hand the otpauth:// link to an authenticator app -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="otpauth" />
+        </intent>
+        <!-- Links, calls and the dialer (url_launcher) -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
+        </intent>
+        <!-- Used by the Flutter engine's text processing (copied from the Flutter template) -->
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT" />
+            <data android:mimeType="text/plain" />
+        </intent>
+    </queries>
+
+    <application
+        android:label="@string/app_name"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:supportsRtl="true">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <!-- Specifies an Android theme to apply to this Activity as soon as
+                 the Android process has started. This theme is visible to the user
+                 while the Flutter UI initializes. After that, this theme continues
+                 to determine the Window background behind the Flutter UI. -->
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <!-- Google sign-in returns here: escanor://auth/login?code=... (from escanor.in/auth/mobile/login) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="escanor" android:host="auth" />
+            </intent-filter>
+            <!-- the "Hey Escanor" notification opens voice mode: escanor://voice -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="escanor" android:host="voice" />
+            </intent-filter>
+        </activity>
+
+        <!-- "Hey Escanor": runs only while the person has switched it on, with a notification saying so -->
+        <service
+            android:name=".WakeWordService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <!-- Push: where Firebase puts notifications that arrive while the app is closed (the app creates this channel at start) -->
+        <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="escanor_alerts" />
+        <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/ic_stat_escanor" />
+        <meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/notification_accent" />
+
+        <!-- Don't delete the meta-data below.
+             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+
+    <!-- Permissions. Kept to what the app needs so a downloaded APK installs without Play Protect or payment apps objecting: no
+         accessibility service, no SMS or notification listener, no drawing over other apps, no placing calls, no full-screen
+         alerts. Phone control, CALL_PHONE and full-screen alerts are only in the "with phone control" and Google Play builds
+         (src/phonecontrol, src/play; see app/build.gradle.kts). -->
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Scanning the pairing code shown by Escanor Desktop, a photo for a message, the torch. Optional: typing the code works without it. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- push notifications (Android 13+ asks the person at runtime) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- voice: the microphone for speaking to Escanor; set alarms and timers; contacts are asked for only when you call someone by name -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- calling by voice opens the dialer with the number filled in (no permission needed) -->
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
+    <!-- haptic feedback (Settings > Appearance and feel), and the buzz when "Hey Escanor" is heard -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- "Hey Escanor" listens in the background through a foreground service that shows a notification -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+</manifest>

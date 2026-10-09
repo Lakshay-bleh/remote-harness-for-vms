@@ -1,0 +1,9 @@
+{
+  "name": "escanor-mobile-interop",
+  "private": true,
+  "description": "Node tools for the desktop interop test and the crypto vectors (npm install here once).",
+  "devDependencies": {
+    "tsx": "^4.20.0",
+    "ws": "^8.18.0"
+  }
+}

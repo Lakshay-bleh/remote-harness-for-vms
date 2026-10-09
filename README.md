@@ -12,6 +12,7 @@ packages/
   agent/    installed on each VM — runs Claude Code sessions, talks to the hub
   hub/      the server you run once — auth, persistence, realtime relay
   web/      the chat UI (React + Vite), installable as a PWA on desktop or mobile
+  mobile/   the Escanor phone app (Flutter, Android and iOS): the APK is built from here by .github/workflows/android-apk.yml
 ```
 
 ## How it fits together

@@ -10,3 +10,6 @@ packages/agent/data/
 
 # Firebase app config: supplied at build time (CI secret or a local file), never committed
 packages/web/android/app/google-services.json
+
+# Flutter phone app: Firebase config is supplied at build time (CI secret or a local file), never committed
+packages/mobile/android/app/google-services.json

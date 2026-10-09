@@ -1,0 +1,12 @@
+# The launch screen (dart run flutter_native_splash:create): the mark on the app's near-black canvas, in light and dark mode.
+flutter_native_splash:
+  color: "#050505"
+  image: assets/images/icon-only.png
+  android_12:
+    color: "#050505"
+    image: assets/images/icon-foreground.png
+    icon_background_color: "#050505"
+  android: true
+  ios: true
+  web: false
+  fullscreen: false
