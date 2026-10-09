@@ -1,0 +1,4 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="accessibility_description">Lets Escanor use your phone when you ask it to by voice or in the app: go home or back, open notifications, scroll, tap what is on screen and type. It does nothing on its own and reads the screen only when you ask what is on it.</string>
+</resources>

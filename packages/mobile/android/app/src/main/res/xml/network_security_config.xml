@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Plain http/ws is needed for ONE thing: talking to your own computer on your own Wi-Fi (the desktop app's local gateway, whose
+     messages are sealed with a key only the two of you hold). Android cannot list "private addresses only" here, so plain
+     traffic is allowed in general and the app itself refuses it for anything that is not a local-network address
+     (isLocalAddress in the computers feature). Escanor's own servers are always https. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">escanor.in</domain>
+    </domain-config>
+</network-security-config>

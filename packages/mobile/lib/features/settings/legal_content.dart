@@ -1,0 +1,504 @@
+// GENERATED from packages/web/src/legal/content.ts (itself generated from the website). Do not edit by hand.
+// The legal documents, stored in the app so they read without a connection.
+// Plain text with two inline marks (see legal_rich.dart): [label](/path or https://…) for links and **bold**.
+
+const policyVersion = '2026-10-07';
+const policyDate = '7 October 2026';
+
+class LegalSection {
+  const LegalSection(this.heading, {this.id, this.paragraphs = const [], this.items = const []});
+  final String heading;
+  final String? id;
+  final List<String> paragraphs;
+  final List<String> items;
+}
+
+class LegalDocument {
+  const LegalDocument({required this.title, required this.description, required this.sections});
+  final String title;
+  final String description;
+  final List<LegalSection> sections;
+}
+
+const legalDocuments = <String, LegalDocument>{
+  'privacy': LegalDocument(
+    title: 'Privacy policy',
+    description: 'What we collect, why, who we share it with, how long we keep it, and your rights.',
+    sections: [
+      LegalSection('Who we are',
+        paragraphs: [
+          'Escanor is provided by Escanor Labs, ATF-39, Gaur World Smart Street, Sector-16B, Greater Noida West, Uttar Pradesh 201308, India ("Escanor", "we"). We decide why and how your personal data is processed for the service, and we are responsible for it under the Information Technology Act, 2000, the rules made under it, and the Digital Personal Data Protection Act, 2023.',
+          'Where your organisation adds you to its workspace, it decides what its workspace is used for; we process that workspace content on its behalf. Questions about it can go to your workspace administrator or to us.',
+        ],
+      ),
+      LegalSection('What we collect and why', id: 'data',
+        items: [
+          '**Account:** name, email, profile picture, sign-in identifiers from Google or GitHub, and a hash of your password if you use email sign-in. Used to create your account, sign you in and keep it secure.',
+          '**Sessions and security:** sign-in times, IP address, browser or device type, and two-step verification settings. Used to keep your account secure, detect misuse and investigate incidents.',
+          '**Connected services:** the access tokens and keys you give us for services such as GitHub, AWS, Google Cloud, Kubernetes or Cloudflare (always stored encrypted), and the data we read from them to show dashboards and carry out the actions you ask for: repositories, deployments, resources, logs and metrics. We only read and act within the permissions you grant.',
+          '**Your machines:** if you pair a computer, the commands you run through Escanor, their output and basic system details. Used to run those commands and show you their results.',
+          '**AI assistant:** your messages, the files or code you choose to include, and the assistant\'s replies and actions. Used to answer you and carry out the tasks you give it.',
+          '**Billing:** your plan, billing cycle, payment status and Razorpay payment references. Card and UPI details are entered on Razorpay\'s page and never reach us.',
+          '**Support, complaints and calls:** what you write to us or enter when booking a call, and our replies. Used to help you and keep a record of the request.',
+          '**Diagnostics:** errors and performance timings from the web app, sent to your own workspace\'s monitoring so problems can be found and fixed.',
+        ],
+      ),
+      LegalSection('Sensitive information',
+        paragraphs: [
+          'Passwords and the access keys you connect are sensitive personal data under the SPDI Rules, 2011. We collect them only with your consent, given when you connect a service or set a password, only for the purpose you connect them for, and store them encrypted. You can disconnect a service at any time, which deletes its stored keys.',
+        ],
+      ),
+      LegalSection('The Escanor Android app', id: 'android',
+        paragraphs: [
+          'Each permission is requested only when you first use the feature that needs it. Refusing one switches off only that feature.',
+        ],
+        items: [
+          '**Microphone:** what you say to the assistant is turned into text by Android\'s speech recognition and the text is sent to Escanor. "Hey Escanor" listens on the phone only after you switch it on, shows a notification while listening, and sends nothing until it hears those words.',
+          '**Contacts and calls:** contacts are read on the phone only when you ask to call someone by name; they are not uploaded. The Phone permission is used only to place the call you asked for.',
+          '**Camera:** used only to scan the pairing code shown by Escanor Desktop.',
+          '**Notifications:** a device token is stored to deliver the alerts you choose, and removed when you sign out.',
+          '**Phone control (Accessibility):** available only in the "with phone control" build, and only after you agree in the app and switch it on yourself in Android settings. It reads what is on screen at that moment to find a button or answer you; that text stays on the phone and is not stored or sent to us.',
+        ],
+      ),
+      LegalSection('What we never do',
+        items: [
+          'We do not sell or rent your personal data.',
+          'We do not use your code, prompts or workspace content to train AI models.',
+          'We do not use advertising or cross-site tracking cookies.',
+          'We do not send you marketing email unless you opt in, and you can opt out at any time.',
+        ],
+      ),
+      LegalSection('Who we share it with', id: 'recipients',
+        paragraphs: [
+          'We share personal data only with the service providers that run Escanor for us, under contracts that require them to protect it and use it only for us, and where the law requires it:',
+        ],
+        items: [
+          '**Hosting and storage:** Vercel (website), Render (API servers, Singapore), our managed database host, and Google Cloud (Mumbai, India) for Escanor\'s own AI models.',
+          '**AI models:** Google (Gemini) and Escanor\'s own models on Google Cloud. If you add your own key for another provider (for example Anthropic or OpenAI), your requests go to that provider under its terms.',
+          '**Payments:** Razorpay Software Private Limited, India.',
+          '**Sign-in:** Google and GitHub, when you choose to sign in with them.',
+          '**Email and notifications:** our email delivery provider, and Google Firebase Cloud Messaging for app notifications.',
+          '**Services you connect:** when you ask Escanor to act on GitHub, AWS or another connected service, we send that service what the action needs, under your own account with it.',
+          '**Authorities:** a government agency or court, when a valid legal order requires it. We check every request and disclose only what it requires.',
+        ],
+      ),
+      LegalSection('Where it is processed',
+        paragraphs: [
+          'Your data is processed in India, Singapore and the United States, and, if you use your own key for an AI provider, wherever that provider operates. We transfer data outside India only to providers bound to protect it to the same standard, and never to a country the Government of India has restricted.',
+        ],
+      ),
+      LegalSection('How long we keep it', id: 'retention',
+        items: [
+          '**Account and workspace data:** while your account is open. When you delete your account, it is erased after a 7-day window in which you can change your mind.',
+          '**After deletion:** your name, email and sign-up date are kept for 180 days, as the IT (Intermediary) Rules, 2021 require, then erased.',
+          '**Terminal sessions:** 90 days after they close. **Commands run on your machines:** 180 days after they finish.',
+          '**AI task runs and Autopilot runs:** one year. **AI conversations:** until you delete them or your account.',
+          '**Security and access logs:** one year (at least 180 days, as CERT-In requires).',
+          '**Payment records:** as long as tax and accounting law requires (up to 8 years).',
+          '**Complaints, privacy requests and consent records:** kept as evidence of what was asked and done; contact details are removed when your account is deleted.',
+          '**Call bookings:** one year after the call.',
+        ],
+      ),
+      LegalSection('How we protect it',
+        paragraphs: [
+          'Connected-service keys are encrypted at rest and decrypted only to carry out an action you asked for. All traffic is encrypted in transit. Access is limited to the people who need it, sign-ins and changes are logged, and you can turn on two-step verification. Deleting your account signs you out everywhere and revokes every key at once. If a breach affects your data, we will tell you without delay, along with what happened, what we are doing and what you can do, and report it to CERT-In and, from when that duty applies, the Data Protection Board of India.',
+        ],
+      ),
+      LegalSection('Your rights', id: 'rights',
+        paragraphs: [
+          'You can ask us for a summary of your data and how it is used, to correct or update it, to erase it, to withdraw a consent, or to nominate someone to act for you if you die or cannot act. You can also complain to us about how we handle your data. Withdrawing consent is as easy as giving it, and stops processing that relied on it from then on.',
+          'Make a request on [Privacy requests](/privacy/requests), in Settings → Privacy & data when signed in, or by email to privacy@escanor.in from your account email. We acknowledge within 24 hours and respond within 30 days. If you are not satisfied, you may complain to the Data Protection Board of India once its complaint process applies, or use any other remedy available to you.',
+        ],
+      ),
+      LegalSection('Children',
+        paragraphs: [
+          'Escanor is only for people aged 18 or over. We do not knowingly collect data about children. If you believe a child has an account, write to privacy@escanor.in and we will delete it.',
+        ],
+      ),
+      LegalSection('Booking a call', id: 'book-a-call',
+        paragraphs: [
+          'When you book a call we collect your name, work email, company, role, team size and any notes, only to arrange and hold the call. We delete them one year after the call. Product updates are sent only if you tick that separate box.',
+        ],
+      ),
+      LegalSection('Changes and contact',
+        paragraphs: [
+          'If we change this policy in a way that matters, we will tell you by email or in the app before the change applies, and ask for your agreement where the law requires it. Questions go to Lakshay Jain, Grievance Officer and data protection contact, at privacy@escanor.in.',
+        ],
+      ),
+    ],
+  ),
+  'terms': LegalDocument(
+    title: 'Terms of service',
+    description: 'The agreement between you and Escanor Labs for using Escanor.',
+    sections: [
+      LegalSection('This agreement',
+        paragraphs: [
+          'These terms are a contract between you and Escanor Labs, Greater Noida, Uttar Pradesh ("Escanor", "we") for the Escanor website, web app, desktop app, Android app and API (the "service"). You accept them when you create an account or tick "I agree"; we record the version you accepted. If you use Escanor for an organisation, you confirm you have its authority, and these terms bind it too.',
+        ],
+      ),
+      LegalSection('Who can use Escanor',
+        paragraphs: [
+          'You must be 18 or older and able to enter a contract under Indian law. Keep your password and keys secret, use two-step verification where you can, and tell us at once at security@escanor.in if you suspect someone else is using your account.',
+        ],
+      ),
+      LegalSection('Connecting your systems',
+        paragraphs: [
+          'Connect only accounts, repositories, servers and devices that you own or are authorised to manage, and grant only the permissions you need. Escanor acts with the access you give it. You stay responsible for actions you approve, including commands, deployments and changes made by the AI assistant or Autopilot at your request. Keep backups and use the approval settings for production changes.',
+        ],
+      ),
+      LegalSection('AI features',
+        paragraphs: [
+          'Replies, code, plans and actions from the AI assistant are generated by AI models. They can be wrong, incomplete or out of date. Review them before you rely on them or let them change a production system. They are not legal, financial or professional advice.',
+          'Escanor\'s voice assistant speaks with a computer-generated voice. Do not use Escanor to create or share synthetic audio, images or video that impersonate a real person or event, or that is unlawful. Misusing AI features can lead to removal of the content, suspension of your account, disclosure of your identity to a victim where the law allows, and penalties under the IT Act, 2000, the Bharatiya Nyaya Sanhita, 2023 and other laws.',
+        ],
+      ),
+      LegalSection('Rules for content and conduct',
+        paragraphs: [
+          'You must not use Escanor to host, create, share or store anything that is listed in our [Acceptable use policy](/acceptable-use), including content that infringes someone\'s rights, is obscene or harmful to children, invades privacy, impersonates someone, threatens India\'s security or public order, or contains malware. You are responsible under law for the content you put on Escanor.',
+        ],
+      ),
+      LegalSection('Your content',
+        paragraphs: [
+          'You own the content you bring to Escanor. You give us permission to store and process it only to provide the service to you, as described in the [Privacy policy](/privacy). We do not use it to train AI models.',
+        ],
+      ),
+      LegalSection('Plans, payment and renewal',
+        paragraphs: [
+          'Prices are in Indian rupees and the price shown before you pay is the full amount charged. Paid plans renew automatically every month or year until you cancel. Before you pay you see the plan, the amount and the renewal interval, and you confirm them. We email you a reminder before each renewal, and your bank or UPI app sends a notice at least 24 hours before each charge.',
+          'Cancel any time in Settings → Billing. Cancelling stops the next renewal; your plan stays until the end of the period you have paid for. There is no cancellation fee. Refunds are covered by the [Refunds and cancellation policy](/refunds).',
+          'If we change a price, we will tell you at least 30 days before it applies to your next renewal, and you may cancel before then.',
+        ],
+      ),
+      LegalSection('Suspension and ending the agreement',
+        paragraphs: [
+          'We may remove content or suspend an account that breaks these terms or the law, or to stop a security threat, and we will tell you why and how to contest it unless the law forbids it. You can contest it through [Grievances](/grievances). You may stop using Escanor and [delete your account](/delete-account) at any time. If we end the service for you without cause, we refund the unused part of a prepaid period.',
+          'We may report offences to the authorities where the law requires it.',
+        ],
+      ),
+      LegalSection('Availability and liability',
+        paragraphs: [
+          'We work to keep Escanor available and secure but cannot promise it will be uninterrupted or error-free, and services you connect are run by their own providers. To the extent the law allows, our total liability to you for any claim is limited to the fees you paid us in the 12 months before the claim. This limit does not apply to fraud, gross negligence, or anything the law does not allow us to limit, and nothing in these terms affects your rights under the Consumer Protection Act, 2019.',
+        ],
+      ),
+      LegalSection('Changes, law and disputes',
+        paragraphs: [
+          'We will tell you about material changes to these terms before they apply and ask you to accept them in the app. These terms are governed by the laws of India. Please raise any problem with us first through [Support](/support) or [Grievances](/grievances); we aim to resolve it quickly. Subject to that, the courts at Gautam Buddh Nagar, Uttar Pradesh have jurisdiction, and you may also use a consumer commission or the National Consumer Helpline (1915) where the law allows.',
+        ],
+      ),
+    ],
+  ),
+  'acceptable-use': LegalDocument(
+    title: 'Acceptable use policy',
+    description: 'What you must not do with Escanor.',
+    sections: [
+      LegalSection('You must not host, create, share or store content that',
+        items: [
+          'belongs to another person and you have no right to;',
+          'is obscene, pornographic, paedophilic, invades another person\'s privacy (including bodily privacy), insults or harasses on the basis of gender, is racially or ethnically objectionable, relates to money laundering or gambling, or promotes enmity between groups on grounds of religion or caste with intent to incite violence;',
+          'is harmful to children;',
+          'infringes a patent, trademark, copyright or other proprietary right;',
+          'deceives people about its origin, or knowingly communicates misinformation or information that is patently false;',
+          'impersonates another person, including through AI-generated voice, images or video;',
+          'threatens the unity, integrity, defence, security or sovereignty of India, friendly relations with foreign states, or public order, or incites an offence or prevents its investigation;',
+          'contains a virus, malware or any code designed to interrupt, destroy or limit the functionality of a computer resource;',
+          'is an online game that is not permitted under Indian law, or advertises one;',
+          'breaks any law in force.',
+        ],
+      ),
+      LegalSection('You must not use Escanor to',
+        items: [
+          'access, scan or test systems you are not authorised to use, or bypass access controls;',
+          'steal credentials, run phishing, send spam, or commit fraud;',
+          'attack, overload or disrupt Escanor, another user, or anyone\'s infrastructure;',
+          'create synthetic media that passes itself off as a real person or event, or remove the AI labels Escanor adds;',
+          'store government identifiers, health records or financial account data without a lawful need.',
+        ],
+      ),
+      LegalSection('What happens if you do',
+        paragraphs: [
+          'We may remove the content, disable an integration, or suspend or close the account, and we keep removed content and records for 180 days where the law requires it for an investigation. We may report offences to the authorities as the law requires. You will be told why and can contest the decision through [Grievances](/grievances).',
+        ],
+      ),
+      LegalSection('Reporting misuse',
+        paragraphs: [
+          'Report content or behaviour that breaks these rules on [Grievances](/grievances). Content showing someone\'s private areas or nudity, or impersonating them, is dealt with within 2 hours of a report. Report security vulnerabilities on [Security](/security).',
+        ],
+      ),
+    ],
+  ),
+  'cookies': LegalDocument(
+    title: 'Cookies and browser storage',
+    description: 'What Escanor stores in your browser, and why.',
+    sections: [
+      LegalSection('What we store',
+        paragraphs: [
+          'All of these are needed for the app to work, so they do not need consent. We do not use advertising, analytics or cross-site tracking cookies. Google, GitHub and Razorpay may set their own cookies when you use their sign-in or payment pages.',
+        ],
+        items: [
+          '**Sign-in:** your session tokens, so you stay signed in.',
+          '**Workspace:** which organisation and workspace you have open.',
+          '**Preferences:** theme and interface settings.',
+        ],
+      ),
+      LegalSection('Clearing it',
+        paragraphs: [
+          'You can clear Escanor\'s storage in your browser\'s site settings at any time. This signs you out and resets your preferences; it does not delete your account. To delete your data, see [Delete your account](/delete-account). Sign out when you use a shared computer.',
+        ],
+      ),
+    ],
+  ),
+  'refunds': LegalDocument(
+    title: 'Refunds and cancellation',
+    description: 'How to cancel a plan, and when you get money back.',
+    sections: [
+      LegalSection('Cancelling',
+        paragraphs: [
+          'An organisation owner can cancel in Settings → Billing → Cancel subscription, in two clicks. Cancelling stops the next renewal; your plan stays until the end of the period you have paid for, then the workspace moves to the Free plan. There is no cancellation fee. You can also stop the autopay mandate in your bank or UPI app.',
+        ],
+      ),
+      LegalSection('Refunds',
+        items: [
+          '**Charged twice, or charged without authorising it:** refunded in full.',
+          '**Paid but the plan did not activate:** we activate it, or refund in full if you prefer.',
+          '**Renewal you did not want:** if you write to us within 7 days of the renewal and have not used the paid features since, we refund it in full.',
+          '**Service not working:** if a paid feature does not work as described and we cannot fix it, we refund the affected period.',
+          '**If we end the service for you without cause:** we refund the unused part of the period.',
+        ],
+      ),
+      LegalSection('How to ask',
+        paragraphs: [
+          'Write to support@escanor.in from your account email with the payment date, amount and Razorpay payment ID (from your receipt). Never send card numbers, CVV, UPI PIN or OTPs. We acknowledge within 24 hours and decide within 7 days. Approved refunds go back to the original payment method within 5 to 7 working days through Razorpay; your bank may take a little longer to show it.',
+        ],
+      ),
+      LegalSection('Payments and receipts',
+        paragraphs: [
+          'Payments are processed by Razorpay Software Private Limited (cards, UPI, net banking and wallets), which is PCI DSS compliant; card details are entered on Razorpay\'s page and never reach Escanor. A receipt is emailed for every charge, and invoices are listed in Settings → Billing. For a payment dispute you may also contact your bank for a chargeback, or Razorpay support at razorpay.com/support.',
+          'Escanor is an online service; nothing is shipped. Prices are in Indian rupees and the price shown before you pay is the full amount charged.',
+        ],
+      ),
+    ],
+  ),
+  'security': LegalDocument(
+    title: 'Security',
+    description: 'How we protect Escanor, and how to report a vulnerability.',
+    sections: [
+      LegalSection('How we protect your data',
+        items: [
+          'Keys and tokens for the services you connect are encrypted at rest and used only to carry out actions you request.',
+          'All connections are encrypted in transit (HTTPS/TLS).',
+          'Two-step verification with an authenticator app and backup codes.',
+          'Sign-ins and changes are logged and kept for one year; you can export your workspace audit log.',
+          'Production actions can require your approval before Escanor or an AI agent carries them out.',
+          'Deleting an account signs you out everywhere and revokes every key immediately.',
+        ],
+      ),
+      LegalSection('Report a vulnerability',
+        paragraphs: [
+          'Email security@escanor.in with the affected page or component, steps to reproduce, and the impact. Leave out real tokens and other people\'s data. We acknowledge within 24 hours and keep you updated until it is fixed. We will not take legal action against good-faith research that follows the rules below.',
+        ],
+      ),
+      LegalSection('Rules for security research',
+        items: [
+          'Test only against your own account and data.',
+          'Do not access, change or keep other people\'s data; stop and report as soon as you find any.',
+          'Do not degrade the service (no denial-of-service, spam or social engineering).',
+          'Give us reasonable time to fix an issue before you disclose it.',
+        ],
+      ),
+      LegalSection('Incidents',
+        paragraphs: [
+          'We report cyber security incidents to CERT-In within 6 hours as Indian law requires, and tell affected users without delay with what happened and what they should do.',
+        ],
+      ),
+    ],
+  ),
+  'support': LegalDocument(
+    title: 'Support and contact',
+    description: 'How to get help with Escanor.',
+    sections: [
+      LegalSection('Get help',
+        paragraphs: [
+          'Email support@escanor.in from your account email. Tell us what you were doing, what happened, and roughly when; a screenshot of the error helps. Never send passwords, keys or card details. We reply within one working day, Monday to Friday, 10 am to 6 pm IST.',
+          'Most answers are in the [documentation](/docs). Teams evaluating Escanor can [book a call](/book-a-call).',
+        ],
+      ),
+      LegalSection('Other requests',
+        paragraphs: [
+          'Help is available in English and Hindi. If you need information in another format because of a disability, tell us and we will provide it.',
+        ],
+        items: [
+          '**Complaints:** [Grievances](/grievances).',
+          '**Your data:** [Privacy requests](/privacy/requests).',
+          '**Delete your account:** [Delete your account](/delete-account).',
+          '**Billing and refunds:** [Refunds and cancellation](/refunds).',
+          '**Security vulnerabilities:** [Security](/security).',
+        ],
+      ),
+    ],
+  ),
+  'grievances': LegalDocument(
+    title: 'Grievances',
+    description: 'Make a complaint, report content, or appeal a decision.',
+    sections: [
+      LegalSection('Grievance Officer',
+        paragraphs: [
+          '**Lakshay Jain**, Grievance Officer, Escanor Labs, ATF-39, Gaur World Smart Street, Sector-16B, Greater Noida West, Uttar Pradesh 201308, India. Email: support@escanor.in.',
+          'Use the form below, or email the Grievance Officer. You do not need an account. You get a reference number and an emailed receipt straight away.',
+        ],
+      ),
+      LegalSection('How fast we act',
+        items: [
+          '**Acknowledgement:** within 24 hours.',
+          '**Complaints about the service, billing, your account or your data:** resolved within 7 days.',
+          '**Requests to remove content that breaks our rules:** within 36 hours.',
+          '**Content showing a person\'s private areas, nudity or a sexual act, or impersonating them (including morphed images):** removed within 2 hours.',
+          '**Copyright takedown notices:** access disabled within 36 hours of a valid notice.',
+        ],
+      ),
+      LegalSection('If you are not satisfied',
+        paragraphs: [
+          'You can appeal our decision to the Grievance Appellate Committee of the Government of India at [gac.gov.in](https://gac.gov.in) within 30 days of receiving it. As a consumer you can also call the National Consumer Helpline on 1915, file a complaint at [consumerhelpline.gov.in](https://consumerhelpline.gov.in) or [e-jagriti.gov.in](https://e-jagriti.gov.in), or use any other legal remedy.',
+        ],
+      ),
+    ],
+  ),
+  'privacy/requests': LegalDocument(
+    title: 'Privacy requests',
+    description: 'Get a copy of your data, correct or delete it, withdraw consent, or nominate someone.',
+    sections: [
+      LegalSection('What you can ask for',
+        items: [
+          '**A summary of your data:** what we hold, how we use it and who we share it with.',
+          '**Correction:** fix or complete information that is wrong or out of date.',
+          '**Erasure:** delete your data, or your whole account.',
+          '**Withdraw a consent:** for example product emails. It takes effect from then on.',
+          '**Nomination:** name someone to exercise these rights for you if you die or cannot act.',
+          '**A complaint** about how we handle your data.',
+        ],
+      ),
+      LegalSection('How to ask',
+        paragraphs: [
+          'We acknowledge within 24 hours and respond within 30 days. Before we show or change anything, we confirm the request comes from you; we will never ask for your password, and you do not need to send identity documents unless we ask through a secure channel. Every reply names Lakshay Jain, our data protection contact, and how to take the matter further.',
+        ],
+        items: [
+          '**Signed in:** Settings → Privacy & data. Make a request, download a copy of your account data, and manage your choices there.',
+          '**Not signed in:** use the form on [Grievances](/grievances), or email privacy@escanor.in from your account email.',
+          '**Delete your account yourself:** [Delete your account](/delete-account).',
+        ],
+      ),
+      LegalSection('What we may keep',
+        paragraphs: [
+          'Some records must be kept even after erasure: payment records for tax law, and your name, email and sign-up date for 180 days under the IT Rules. We tell you what was kept, why and for how long.',
+        ],
+      ),
+    ],
+  ),
+  'delete-account': LegalDocument(
+    title: 'Delete your account',
+    description: 'How to delete your Escanor account and data, from the web, desktop or Android app.',
+    sections: [
+      LegalSection('Steps',
+        paragraphs: [
+          'If you own a workspace that other people are in, remove them or hand it over first. Cancel any paid plan in Settings → Billing first, so you are not charged again. Cannot sign in? Email privacy@escanor.in from your account email and we will delete it for you.',
+        ],
+        items: [
+          'Sign in to Escanor (web, desktop or the Android app).',
+          'Open Settings → Privacy & data → Delete account, or use the button on this page.',
+          'Type your account email to confirm (and a two-step verification code if you have it on).',
+          'You are signed out everywhere and every key stops working at once. Your account is deleted 7 days later; sign in before then if you change your mind.',
+        ],
+      ),
+      LegalSection('What is deleted',
+        paragraphs: [
+          'Your profile, workspaces you own, connected services and their stored keys, AI conversations and runs, paired machines and their command history, terminal sessions, notification tokens and sessions.',
+        ],
+      ),
+      LegalSection('What is kept, and for how long',
+        items: [
+          '**Name, email and sign-up date:** 180 days, under the IT (Intermediary) Rules, 2021.',
+          '**Payment records:** as long as tax and accounting law requires (up to 8 years).',
+          '**Security logs:** until they expire (one year).',
+          '**Consent and privacy-request records:** kept as evidence, with your contact details removed.',
+        ],
+      ),
+    ],
+  ),
+  'accessibility': LegalDocument(
+    title: 'Accessibility',
+    description: 'Our commitment to making Escanor usable by everyone.',
+    sections: [
+      LegalSection('Our commitment',
+        paragraphs: [
+          'We build Escanor to be usable with a keyboard, screen readers and zoom, with readable contrast in light and dark themes, and with labels on every control. We follow the Web Content Accessibility Guidelines (WCAG) 2.1 level AA and the Indian standard IS 17802, and test new screens against them.',
+        ],
+      ),
+      LegalSection('Tell us about a problem',
+        paragraphs: [
+          'If something in Escanor is hard to use with your assistive technology, email support@escanor.in with "Accessibility" in the subject, or use [Grievances](/grievances). We acknowledge within 24 hours, fix what we can, and can provide information in another format in the meantime.',
+        ],
+      ),
+    ],
+  ),
+  'privacy/us': LegalDocument(
+    title: 'United States privacy notice',
+    description: 'Additional information for residents of US states with privacy laws. Read it with the Privacy policy.',
+    sections: [
+      LegalSection('Your rights',
+        paragraphs: [
+          'Depending on your state, you may have the right to know what personal information we hold about you, get a copy, correct it, delete it, and opt out of its sale, sharing for targeted advertising, or profiling. You can appeal if we decline a request. We will not treat you differently for exercising these rights.',
+        ],
+      ),
+      LegalSection('What we collect, and from where',
+        paragraphs: [
+          'Identifiers (name, email, account IDs, IP address); commercial information (plan and payment status); internet activity (sign-ins and actions in Escanor); and the content you bring to Escanor. Account credentials you store with us are sensitive personal information; we use them only to provide the service. We collect this from you, your organisation and the services you connect. The purposes and recipients are listed in the [Privacy policy](/privacy).',
+        ],
+      ),
+      LegalSection('Sale, sharing and browser signals',
+        paragraphs: [
+          'We do not sell personal information, share it for cross-context behavioural advertising, or use it for targeted advertising, and we have not done so in the past 12 months. We honour Global Privacy Control signals as an opt-out.',
+        ],
+      ),
+      LegalSection('Making a request',
+        paragraphs: [
+          'Use [Privacy requests](/privacy/requests) or email privacy@escanor.in, and tell us your state. An authorised agent may submit a request with proof of authority. We confirm receipt within 10 business days and respond within 45 days. To appeal a decision, reply to our response or use [Grievances](/grievances); if you are not satisfied, you may contact your state attorney general.',
+        ],
+      ),
+      LegalSection('Children',
+        paragraphs: [
+          'Escanor is not directed to children under 13 and is only for adults aged 18 or over.',
+        ],
+      ),
+    ],
+  ),
+};
+
+const legalLinks = <(String, String)>[
+  ('legal', 'Legal'),
+  ('privacy', 'Privacy'),
+  ('terms', 'Terms'),
+  ('acceptable-use', 'Acceptable use'),
+  ('refunds', 'Refunds'),
+  ('cookies', 'Cookies'),
+  ('privacy/requests', 'Privacy requests'),
+  ('delete-account', 'Delete account'),
+  ('grievances', 'Grievances'),
+  ('support', 'Support'),
+  ('security', 'Security'),
+  ('accessibility', 'Accessibility'),
+  ('privacy/us', 'US privacy'),
+  ('about', 'About'),
+];
+
+/// The documents worth listing, in the website's order. ("legal" and "about" are website pages.)
+final legalList = [
+  for (final (key, label) in legalLinks)
+    if (key != 'legal' && legalDocuments.containsKey(key)) (key: key, label: label),
+];
+
+/// The label of a document, for a page title.
+String legalLabel(String key) {
+  for (final d in legalList) {
+    if (d.key == key) return d.label;
+  }
+  return 'Legal';
+}
