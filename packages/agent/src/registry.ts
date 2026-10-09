@@ -7,6 +7,12 @@ export type RegistryEntry = {
   title: string;
   createdAt: string;
   accountId: string;
+  /** 'terminal' = a Claude Code session started outside the agent and imported by TerminalSessionSync. */
+  source?: 'terminal';
+  /** Last transcript message the hub has, so a session continued in the terminal only sends what is new. */
+  syncedUuid?: string;
+  /** Transcript mtime at the last sync; an unchanged file is not re-read. */
+  syncedMtime?: number;
 };
 
 const isEntry = (e: unknown): e is RegistryEntry =>
