@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api.dart' show errorText;
 import '../../core/prefs.dart';
 import '../../core/theme.dart';
+import '../../ui/chat_parts.dart';
 import '../../ui/widgets.dart';
 import '../companion/dog_state.dart';
 import '../composer/attachments.dart' show Attachment, AttachmentKind;
@@ -238,69 +239,67 @@ class _ChatViewState extends ConsumerState<ChatView> {
       if (a.id == accountId) accountLabel = a.label;
     }
 
-    // Newest at the bottom: the list is drawn from the bottom up, so new output shows without scrolling.
     final rounds = sessionId == null ? 0 : store.roundsFor(sessionId);
-    final tail = <Widget>[
-      if (busy && rounds > 0 && pending == null)
-        Padding(padding: const EdgeInsets.only(bottom: 4), child: Text(roundsText(rounds), style: TextStyle(fontSize: 12, color: c.muted))),
-      if (busy && pending == null)
-        BusySpinner(key: ValueKey('spin-$startedAt'), startedAt: startedAt, thinking: lastIsThinking(rows), task: inProgress?.activeForm ?? inProgress?.content),
-      if (todos != null && todos.isNotEmpty) TodoListView(todos: todos),
-    ];
+    final loading = sessionId != null && store.isLoading(sessionId);
+    final place = [if (vm != null) store.nameOf(vm), if ((session?.cwd ?? '').isNotEmpty) session!.cwd].join(' · ');
 
     return Material(
       color: c.canvas,
       child: CwdScope(
         cwd: session?.cwd ?? '',
         child: Column(children: [
-          _ChatHeader(
-              title: session == null ? 'New chat' : store.titleOf(session),
-              onSettings: session == null ? null : () => showChatSettings(context, vmId, session!),
-              vm: vm,
-              cwd: session?.cwd,
-              onBack: widget.onBack,
-              onRefresh: sessionId == null ? null : _reload,
-              refreshing: sessionId != null && store.isLoading(sessionId)),
-          Expanded(
-            child: items.isEmpty
-                ? Center(
-                    child: SingleChildScrollView(
-                      child: DogState(
-                        scene: 'sit',
-                        scale: 4,
-                        title: sessionId != null ? (store.isLoading(sessionId) ? 'Loading…' : 'No messages yet') : 'Start a new chat on ${vm?.name ?? 'this machine'}',
-                        text: sessionId != null
-                            ? (store.isLoading(sessionId) ? 'Getting this chat from your machine.' : 'Say something and it shows up here.')
-                            : 'Ask for a change, a fix or an explanation. It runs on that machine.',
-                      ),
-                    ),
-                  )
-                : ListView.builder(
-                    reverse: true,
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                    itemCount: items.length + tail.length,
-                    itemBuilder: (context, i) {
-                      if (i < tail.length) return tail[tail.length - 1 - i];
-                      final item = items[items.length - 1 - (i - tail.length)];
-                      return MessageView(key: ValueKey(item.key), item: item, live: busy, waitingForPermission: pending != null);
-                    },
-                  ),
+          ChatHeader(
+            title: session == null ? 'New chat' : store.titleOf(session),
+            place: place,
+            dot: vm == null ? null : (vm.connected ? c.success : c.mutedSoft),
+            onBack: widget.onBack,
+            actions: [
+              if (sessionId != null)
+                loading
+                    ? const Padding(padding: EdgeInsets.all(14), child: Spinner(size: 18))
+                    : IconButton(onPressed: _reload, tooltip: 'Refresh', icon: Icon(Icons.refresh_rounded, size: 22, color: c.body)),
+              if (session != null) IconButton(onPressed: () => showChatSettings(context, vmId, session!), tooltip: 'Chat settings', icon: Icon(Icons.tune_rounded, size: 22, color: c.body)),
+            ],
           ),
-          if (pending != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: PermissionPanel(
-                key: ValueKey(pending.requestId),
-                toolName: pending.toolName,
-                input: pending.input,
-                onAnswer: (behavior) => store.resolvePermission(vmId, sessionId ?? '', pending.requestId, behavior,
-                    twins: permissionTwins(unresolved, pending)),
-              ),
+          Expanded(
+            child: ChatMessageList(
+              empty: sessionId != null
+                  ? ChatEmptyState(
+                      title: loading ? 'Loading…' : 'No messages yet',
+                      text: loading ? 'Getting this chat from your machine.' : 'Say something and it shows up here.',
+                    )
+                  : ChatEmptyState(
+                      title: 'Start a new chat on ${vm?.name ?? 'this machine'}',
+                      text: 'Ask for a change, a fix or an explanation. It runs on that machine.',
+                      suggestions: machineSuggestions,
+                      onPick: (t) => _send(t, const [], vmId, sessionId, accountId),
+                    ),
+              children: [
+                for (final item in items) MessageView(key: ValueKey(item.key), item: item, live: busy, waitingForPermission: pending != null),
+                if (busy && pending == null)
+                  BusySpinner(
+                    key: ValueKey('spin-$startedAt'),
+                    startedAt: startedAt,
+                    thinking: lastIsThinking(rows),
+                    task: inProgress?.activeForm ?? inProgress?.content,
+                    rounds: rounds,
+                  ),
+                if (todos != null && todos.isNotEmpty) TodoListView(todos: todos),
+              ],
             ),
-          Container(
-            decoration: BoxDecoration(color: c.canvas, border: Border(top: BorderSide(color: c.hairline))),
-            padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
-            child: ChatComposer(
+          ),
+          ChatBottom(
+            above: [
+              if (pending != null)
+                PermissionPanel(
+                  key: ValueKey(pending.requestId),
+                  toolName: pending.toolName,
+                  input: pending.input,
+                  onAnswer: (behavior) => store.resolvePermission(vmId, sessionId ?? '', pending.requestId, behavior,
+                      twins: permissionTwins(unresolved, pending)),
+                ),
+            ],
+            composer: ChatComposer(
               key: ValueKey('$vmId:${sessionId ?? 'new'}'),
               attach: 'media',
               running: busy,
@@ -314,25 +313,22 @@ class _ChatViewState extends ConsumerState<ChatView> {
                 }));
               },
               onSend: (typed, attached) => _send(typed, attached, vmId, sessionId, accountId),
-              placeholder: sessionId != null ? 'Message Claude…' : 'Start a new conversation…',
-              chips: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(children: [
-                  _Chip(icon: Icons.dns_outlined, label: vm == null ? '' : store.nameOf(vm)),
-                  _Chip(icon: Icons.person_outline_rounded, label: accountLabel),
-                  if (sessionId == null)
-                    _DropdownChip(
-                      icon: Icons.folder_outlined,
-                      title: 'Folder',
-                      value: _project,
-                      options: [(value: '', label: 'Workspace root'), for (final p in _projects) (value: p, label: p)],
-                      onChanged: (v) => setState(() => _project = v),
-                    ),
-                  _DropdownChip(icon: Icons.shield_outlined, title: 'Permission mode', value: _mode, options: chatModeOptions, onChanged: (v) => _choose(mode: v)),
-                  _DropdownChip(icon: Icons.auto_awesome_outlined, title: 'Model', value: _model, options: chatModelOptions, onChanged: (v) => _choose(model: v)),
-                  _DropdownChip(icon: Icons.speed_rounded, title: 'Effort', value: _effort, options: chatEffortOptions, onChanged: (v) => _choose(effort: v)),
-                ]),
-              ),
+              placeholder: sessionId != null ? 'Message Claude' : 'Start a new conversation',
+              chips: ChatChips(children: [
+                ChatChip(icon: Icons.dns_outlined, label: vm == null ? '' : store.nameOf(vm)),
+                ChatChip(icon: Icons.person_outline_rounded, label: accountLabel),
+                if (sessionId == null)
+                  ChatDropdownChip(
+                    icon: Icons.folder_outlined,
+                    title: 'Folder',
+                    value: _project,
+                    options: [(value: '', label: 'Workspace root'), for (final p in _projects) (value: p, label: p)],
+                    onChanged: (v) => setState(() => _project = v),
+                  ),
+                ChatDropdownChip(icon: Icons.shield_outlined, title: 'Permission mode', value: _mode, options: chatModeOptions, onChanged: (v) => _choose(mode: v)),
+                ChatDropdownChip(icon: Icons.auto_awesome_outlined, title: 'Model', value: _model, options: chatModelOptions, onChanged: (v) => _choose(model: v)),
+                ChatDropdownChip(icon: Icons.speed_rounded, title: 'Effort', value: _effort, options: chatEffortOptions, onChanged: (v) => _choose(effort: v)),
+              ]),
             ),
           ),
         ]),
@@ -341,126 +337,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
   }
 }
 
-class _ChatHeader extends StatelessWidget {
-  const _ChatHeader({required this.title, required this.vm, this.cwd, this.onBack, this.onRefresh, this.onSettings, this.refreshing = false});
-  final String title;
-  final VmDto? vm;
-  final String? cwd;
-  final VoidCallback? onBack;
-  final VoidCallback? onRefresh;
-  final VoidCallback? onSettings;
-  final bool refreshing;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.c;
-    final sub = TextStyle(fontSize: 12, color: c.muted);
-    return Container(
-      constraints: const BoxConstraints(minHeight: 56),
-      padding: EdgeInsets.fromLTRB(onBack != null ? 8 : 16, 6, 8, 6),
-      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: c.hairline))),
-      child: Row(children: [
-        if (onBack != null) IconButton(onPressed: onBack, tooltip: 'Back', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: c.body)),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-            Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: onBack != null ? 21 : 18, height: 1.2, color: c.ink, fontWeight: FontWeight.w500)),
-            Row(children: [
-              if (vm != null) Flexible(child: Text(vm!.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: sub)),
-              if (vm != null)
-                Padding(
-                  padding: const EdgeInsets.only(left: 6),
-                  child: Container(width: 6, height: 6, decoration: BoxDecoration(shape: BoxShape.circle, color: vm!.connected ? c.success : c.hairline)),
-                ),
-              if (cwd != null && cwd!.isNotEmpty) Flexible(child: Text('  · $cwd', maxLines: 1, overflow: TextOverflow.ellipsis, style: sub)),
-            ]),
-          ]),
-        ),
-        if (onRefresh != null)
-          refreshing
-              ? const Padding(padding: EdgeInsets.all(14), child: Spinner(size: 18))
-              : IconButton(onPressed: onRefresh, tooltip: 'Refresh', icon: Icon(Icons.refresh_rounded, size: 22, color: c.body)),
-        if (onSettings != null) IconButton(onPressed: onSettings, tooltip: 'Chat settings', icon: Icon(Icons.tune_rounded, size: 22, color: c.body)),
-      ]),
-    );
-  }
-}
-
-class _Chip extends StatelessWidget {
-  const _Chip({required this.icon, required this.label});
-  final IconData icon;
-  final String label;
-  @override
-  Widget build(BuildContext context) {
-    final c = context.c;
-    return Padding(
-      padding: const EdgeInsets.only(right: 6),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(color: c.surfaceCard, border: Border.all(color: c.hairline), borderRadius: BorderRadius.circular(Radii.pill)),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 12, color: c.muted),
-          const SizedBox(width: 6),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 140),
-            child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: c.muted)),
-          ),
-        ]),
-      ),
-    );
-  }
-}
-
-class _DropdownChip extends StatelessWidget {
-  const _DropdownChip({required this.icon, required this.title, required this.value, required this.options, required this.onChanged});
-  final IconData icon;
-  final String title;
-  final String value;
-  final List<({String value, String label})> options;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.c;
-    var current = value;
-    for (final o in options) {
-      if (o.value == value) current = o.label;
-    }
-    return Padding(
-      padding: const EdgeInsets.only(right: 6),
-      child: PopupMenuButton<String>(
-        tooltip: title,
-        initialValue: value,
-        onSelected: (v) {
-          haptic();
-          onChanged(v);
-        },
-        color: c.canvas,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.lg), side: BorderSide(color: c.hairline)),
-        position: PopupMenuPosition.over,
-        itemBuilder: (_) => [
-          for (final o in options)
-            PopupMenuItem<String>(
-              value: o.value,
-              height: 40,
-              child: Text(o.label,
-                  style: TextStyle(fontSize: 13, color: o.value == value ? c.primary : c.body, fontWeight: o.value == value ? FontWeight.w500 : FontWeight.w400)),
-            ),
-        ],
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(color: c.surfaceCard, border: Border.all(color: c.hairline), borderRadius: BorderRadius.circular(Radii.pill)),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, size: 12, color: c.body),
-            const SizedBox(width: 6),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 120),
-              child: Text(current, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: c.body)),
-            ),
-            const SizedBox(width: 4),
-            Icon(Icons.expand_more_rounded, size: 14, color: c.body),
-          ]),
-        ),
-      ),
-    );
-  }
-}
+/// Ways to start a chat on a machine.
+const machineSuggestions = [
+  'Explain what this project does',
+  'Find and fix the failing tests',
+  'Review my uncommitted changes',
+  'What changed in the last few commits?',
+];

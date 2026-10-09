@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,10 +9,14 @@ import '../../ui/widgets.dart';
 import 'chat_meta.dart';
 import 'chat_meta_store.dart';
 
-/// Your assistant chats, organised like any chat app: search, pinned on top, then by recency, with a menu on each.
+/// Your assistant chats, organised like any chat app: search, pinned on top, then by recency, with a menu on each. Search
+/// matches names at once, then (with [search]) what was said inside every chat, by words and by meaning.
 class ChatList extends ConsumerStatefulWidget {
-  const ChatList({super.key, required this.chats, required this.activeId, required this.onOpen, required this.onDelete, this.hint = false});
+  const ChatList({super.key, required this.chats, required this.activeId, required this.onOpen, required this.onDelete, this.hint = false, this.search});
   final List<ChatItem> chats;
+
+  /// Look inside the chats on the server: best first, with the words that matched. Null searches names only.
+  final Future<List<({String id, String snippet})>> Function(String query)? search;
   final String? activeId;
   final void Function(String id) onOpen;
   final void Function(String id, String name) onDelete;
@@ -26,16 +32,51 @@ class _ChatListState extends ConsumerState<ChatList> {
   final _query = TextEditingController();
   bool _showArchived = false;
 
+  // The server's answer for [_hitsFor] (null until it comes), and whether one is on its way.
+  Timer? _debounce;
+  String _hitsFor = '';
+  List<({String id, String snippet})>? _hits;
+  bool _looking = false;
+
   @override
   void initState() {
     super.initState();
-    _query.addListener(() => setState(() {}));
+    _query.addListener(_typed);
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _query.dispose();
     super.dispose();
+  }
+
+  /// Names match as you type; the server is asked once typing pauses.
+  void _typed() {
+    final q = _query.text.trim();
+    _debounce?.cancel();
+    if (q == _hitsFor) return setState(() {});
+    final search = widget.search;
+    setState(() {
+      _hits = null;
+      _hitsFor = '';
+      _looking = search != null && q.length >= 2;
+    });
+    if (!_looking) return;
+    _debounce = Timer(const Duration(milliseconds: 350), () async {
+      List<({String id, String snippet})>? hits;
+      try {
+        hits = await search!(q);
+      } catch (_) {
+        hits = null; // offline or an older server: the names still match
+      }
+      if (!mounted || _query.text.trim() != q) return; // typed on since: this answer is for another search
+      setState(() {
+        _hits = hits ?? const [];
+        _hitsFor = q;
+        _looking = false;
+      });
+    });
   }
 
   void _menu(ChatRow row) {
@@ -91,14 +132,33 @@ class _ChatListState extends ConsumerState<ChatList> {
     final meta = ref.watch(chatMetaProvider);
     final chats = widget.chats;
     final query = _query.text;
-    final sections = organise(chats, meta, query: query, showArchived: _showArchived);
-    final archivedCount = meta.archived.where((id) => chats.any((ch) => ch.id == id)).length;
     final searching = query.trim().isNotEmpty;
+    final sections = searching ? const <ChatSection>[] : organise(chats, meta, showArchived: _showArchived);
+    final found = searching ? searchResults(chats, meta, query, _hitsFor == query.trim() ? _hits : null) : const <SearchRow>[];
+    final archivedCount = meta.archived.where((id) => chats.any((ch) => ch.id == id)).length;
 
     final children = <Widget>[
       if (chats.isEmpty && widget.hint)
         Padding(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), child: Text('Your chats will show up here.', style: TextStyle(fontSize: 14, color: c.muted))),
-      if (searching && sections.isEmpty)
+      if (searching && found.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+          child: Semantics(
+            header: true,
+            child: Text('${found.length} ${found.length == 1 ? 'result' : 'results'}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: c.muted)),
+          ),
+        ),
+      for (final f in found) _Row(row: f.row, snippet: f.snippet, active: f.row.id == widget.activeId, onOpen: () => widget.onOpen(f.row.id), onMenu: () => _menu(f.row)),
+      if (searching && _looking)
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(children: [
+            const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+            const SizedBox(width: 10),
+            Text('Looking inside your chats…', style: TextStyle(fontSize: 13, color: c.muted)),
+          ]),
+        )
+      else if (searching && found.isEmpty)
         Padding(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12), child: Text('No chats match “${query.trim()}”.', style: TextStyle(fontSize: 14, color: c.muted))),
       for (final s in sections) ...[
         Semantics(
@@ -160,8 +220,11 @@ class _ChatListState extends ConsumerState<ChatList> {
 }
 
 class _Row extends StatelessWidget {
-  const _Row({required this.row, required this.active, required this.onOpen, required this.onMenu});
+  const _Row({required this.row, required this.active, required this.onOpen, required this.onMenu, this.snippet = ''});
   final ChatRow row;
+
+  /// What matched inside the chat, under its name.
+  final String snippet;
   final bool active;
   final VoidCallback onOpen;
   final VoidCallback onMenu;
@@ -173,7 +236,7 @@ class _Row extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 2),
       child: Material(
         color: active ? c.surfaceCard : Colors.transparent,
-        shape: const StadiumBorder(),
+        shape: snippet.isEmpty ? const StadiumBorder() : RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.lg)),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onOpen,
@@ -182,7 +245,14 @@ class _Row extends StatelessWidget {
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(14, 10, 4, 10),
-                child: Text(row.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, color: active ? c.ink : c.body)),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                  Text(row.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, color: active ? c.ink : c.body)),
+                  if (snippet.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(snippet, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, height: 1.4, color: c.muted)),
+                    ),
+                ]),
               ),
             ),
             IconButton(

@@ -92,7 +92,7 @@ void main() {
     expect(find.byType(Image), findsNothing, reason: 'a remote markdown image is never loaded');
     expect(find.text('[image: x]'), findsOneWidget);
 
-    await tester.tap(find.text('1. Yes'));
+    await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
     final answer = sent.lastWhere((r) => r.url.path.endsWith('/permission-response'));
     expect(jsonDecode(answer.body), {'requestId': 'r1', 'behavior': 'allow'});

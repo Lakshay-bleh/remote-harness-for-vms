@@ -27,7 +27,7 @@ class FakeBackend implements ConversationBackend {
   }
 
   @override
-  Future<String> send(String text, String? conversationId, List<ApiAttachment> attachments) async {
+  Future<String> send(String text, String? conversationId, List<ApiAttachment> attachments, {String? model}) async {
     sent.add((text: text, id: conversationId, attachments: attachments));
     if (sendError != null) throw sendError!;
     if (sendGate != null) return sendGate!.future;

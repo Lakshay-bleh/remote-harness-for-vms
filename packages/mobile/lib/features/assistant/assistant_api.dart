@@ -20,10 +20,11 @@ extension AssistantApi on Api {
   }
 
   /// Send a message (a new conversation when [conversationId] is null). Returns the conversation's id.
-  Future<String> assistantSend(String text, {String? conversationId, List<ApiAttachment> attachments = const []}) async {
+  Future<String> assistantSend(String text, {String? conversationId, List<ApiAttachment> attachments = const [], String? model}) async {
     final r = await post('/ai/chat', {
       'text': text,
       'conversation_id': conversationId,
+      if (model != null && model.isNotEmpty && model != autoModel) 'model': model,
       if (attachments.isNotEmpty) 'attachments': [for (final a in attachments) a.toJson()],
     });
     return '${(r as Map)['conversation_id']}';
@@ -42,6 +43,13 @@ extension AssistantApi on Api {
     final stopped = r is Map ? r['stopped'] : null;
     return stopped is bool ? stopped : true;
   }
+
+  /// The models the assistant can answer with, and what Auto would use right now.
+  Future<AssistantModels> assistantModels() async => AssistantModels.fromJson(await get('/ai/models'));
+
+  /// Chats whose words or meaning match [query], best first (the server reads the whole chat, not just its title).
+  Future<ChatSearch> assistantSearch(String query, {int limit = 20}) async =>
+      ChatSearch.fromJson(await get('/ai/conversations/search?q=${Uri.encodeQueryComponent(query)}&limit=$limit'));
 
   Future<void> assistantRemove(String id) async {
     await delete('/ai/conversations/${enc(id)}');

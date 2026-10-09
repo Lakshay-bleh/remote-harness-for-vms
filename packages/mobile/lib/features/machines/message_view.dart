@@ -6,11 +6,10 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
-import '../../ui/widgets.dart';
-import '../companion/dog_spinner.dart';
+import '../../ui/chat_parts.dart';
+import 'autonomy.dart' show roundsText;
 import 'diff.dart';
 import 'group_messages.dart';
-import 'hub_markdown.dart';
 import 'message_format.dart';
 
 /// One item of a machine chat, drawn like the Claude Code CLI draws it (Message.tsx).
@@ -423,48 +422,28 @@ class _ThinkingState extends State<_Thinking> {
   }
 }
 
-/// "Pondering… (12s · thinking)" while a turn runs.
+/// "Pondering… 12s · thinking" while a turn runs: the line every chat shows while it works.
 class BusySpinner extends StatefulWidget {
-  const BusySpinner({super.key, required this.startedAt, required this.thinking, this.task});
+  const BusySpinner({super.key, required this.startedAt, required this.thinking, this.task, this.rounds = 0});
   final int startedAt;
   final bool thinking;
   final String? task;
+
+  /// How many times it has been told to keep going on its own (autonomous chats).
+  final int rounds;
   @override
   State<BusySpinner> createState() => _BusySpinnerState();
 }
 
 class _BusySpinnerState extends State<BusySpinner> {
   final String _verb = spinnerVerbs[Random().nextInt(spinnerVerbs.length)];
-  late final Timer _tick = Timer.periodic(const Duration(seconds: 1), (_) => setState(() {}));
-
-  @override
-  void initState() {
-    super.initState();
-    _tick; // the elapsed time moves on every second
-  }
-
-  @override
-  void dispose() {
-    _tick.cancel();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
-    final c = context.c;
-    final secs = max(0, (DateTime.now().millisecondsSinceEpoch - widget.startedAt) ~/ 1000);
-    final status = [fmtDuration(secs * 1000), if (widget.thinking) 'thinking'].join(' · ');
+    final extra = [if (widget.thinking) 'thinking', if (widget.rounds > 0) roundsText(widget.rounds)].join(' · ');
     return Padding(
       padding: const EdgeInsets.only(top: 12),
-      child: Row(children: [
-        const Padding(padding: EdgeInsets.only(right: 8), child: DogSpinner(size: 28)),
-        Expanded(
-          child: Text.rich(TextSpan(children: [
-            TextSpan(text: '${widget.task ?? _verb}…'),
-            TextSpan(text: '  ($status)', style: TextStyle(color: c.mutedSoft)),
-          ]), style: monoStyle(context).copyWith(color: c.primary)),
-        ),
-      ]),
+      child: WorkingLine(text: widget.task ?? _verb, startedAtMs: widget.startedAt, extra: extra.isEmpty ? null : extra),
     );
   }
 }
@@ -510,8 +489,9 @@ class TodoListView extends StatelessWidget {
   }
 }
 
-/// The permission prompt, pinned above the message box like the CLI's bottom-of-terminal dialog.
-class PermissionPanel extends StatefulWidget {
+/// The permission prompt, pinned above the message box: the same question card every chat uses, with exactly what will run
+/// (the command, the edit, the file) shown at once.
+class PermissionPanel extends StatelessWidget {
   const PermissionPanel({super.key, required this.toolName, required this.input, required this.onAnswer, this.resolved = false});
   final String toolName;
   final Map<String, dynamic> input;
@@ -521,30 +501,10 @@ class PermissionPanel extends StatefulWidget {
   final Future<void> Function(String behavior) onAnswer;
 
   @override
-  State<PermissionPanel> createState() => _PermissionPanelState();
-}
-
-class _PermissionPanelState extends State<PermissionPanel> {
-  String? _busy;
-
-  Future<void> _respond(String behavior) async {
-    setState(() => _busy = behavior);
-    try {
-      await widget.onAnswer(behavior);
-    } catch (e) {
-      if (mounted) {
-        setState(() => _busy = null);
-        toast(context, e.toString());
-      }
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
     final c = context.c;
     final cwd = CwdScope.of(context);
-    final name = widget.toolName;
-    final input = widget.input;
+    final name = toolName;
     final isEdit = name == 'Edit' || name == 'MultiEdit';
     final target = displayPath(input['file_path'] ?? input['notebook_path'], cwd);
     final mono = monoStyle(context);
@@ -553,56 +513,29 @@ class _PermissionPanelState extends State<PermissionPanel> {
       detail = DiffView(name: name, input: input);
     } else if (name == 'Bash') {
       detail = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        SelectableText('${input['command'] ?? ''}', style: mono.copyWith(color: c.ink)),
-        if ('${input['description'] ?? ''}'.isNotEmpty) Text('${input['description']}', style: mono.copyWith(color: c.mutedSoft)),
+        if ('${input['description'] ?? ''}'.isNotEmpty) Padding(padding: const EdgeInsets.only(bottom: 6), child: Text('${input['description']}', style: TextStyle(fontSize: 14, color: c.body))),
+        DetailsBox('${input['command'] ?? ''}'),
       ]);
     } else if (name == 'Write') {
       detail = WritePreview(content: '${input['content'] ?? ''}');
     } else {
       final args = toolArgs(name, input, cwd);
-      detail = SelectableText('${toolName(name, input)}(${args.isNotEmpty ? args : jsonEncode(input)})', style: mono.copyWith(color: c.body));
+      detail = SelectableText('${_toolLabel(name, input)}(${args.isNotEmpty ? args : jsonEncode(input)})', style: mono.copyWith(color: c.body));
     }
-    Widget option(String behavior, String label, bool first) => InkWell(
-          onTap: _busy != null ? null : () => _respond(behavior),
-          borderRadius: BorderRadius.circular(Radii.xs),
-          child: Opacity(
-            opacity: _busy != null ? 0.4 : 1,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-              child: Row(children: [
-                Text('❯ ', style: mono.copyWith(color: first ? c.permission : Colors.transparent)),
-                Expanded(child: Text(label, style: mono.copyWith(color: first ? c.ink : c.body))),
-                if (_busy == behavior) const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
-              ]),
-            ),
-          ),
-        );
-    return Container(
-      constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.55),
-      decoration: BoxDecoration(
-        color: c.surfaceSoft,
-        borderRadius: BorderRadius.circular(Radii.md),
-        border: Border(top: BorderSide(color: c.permission, width: 2)),
-        boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 16, offset: Offset(0, 4))],
-      ),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Text(permissionTitle(name), style: mono.copyWith(fontWeight: FontWeight.w600, color: c.permission)),
-          if (target.isNotEmpty) Text(target, maxLines: 1, overflow: TextOverflow.ellipsis, style: mono.copyWith(color: c.mutedSoft)),
-          Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: detail),
-          if (widget.resolved)
-            Text('Resolved', style: mono.copyWith(color: c.mutedSoft))
-          else ...[
-            Padding(padding: const EdgeInsets.only(bottom: 4), child: Text(permissionQuestion(name, target), style: mono.copyWith(color: c.ink))),
-            option('allow', '1. Yes', true),
-            option('deny', '2. No', false),
-          ],
-        ]),
-      ),
+    return ApprovalPanel(
+      title: permissionTitle(name),
+      subtitle: target,
+      details: detail,
+      detailsOpen: true,
+      question: permissionQuestion(name, target),
+      answered: resolved ? 'Resolved' : null,
+      onAnswer: (allow) => onAnswer(allow ? 'allow' : 'deny'),
     );
   }
 }
+
+/// The tool's name as shown (the widget's own `toolName` field hides the function inside it).
+String _toolLabel(String name, Map<String, dynamic> input) => toolName(name, input);
 
 /// One display item.
 class MessageView extends StatelessWidget {
@@ -618,29 +551,13 @@ class MessageView extends StatelessWidget {
     final it = item;
     switch (it) {
       case UserItem():
-        return Container(
-          margin: const EdgeInsets.only(top: 12),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(color: c.surfaceCard, borderRadius: BorderRadius.circular(Radii.xs)),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            for (final b in it.blocks)
-              if (b['type'] == 'text')
-                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  SizedBox(width: 20, child: Text('❯', style: mono.copyWith(color: c.mutedSoft))),
-                  Expanded(child: SelectableText('${b['text'] ?? ''}', style: mono.copyWith(color: c.ink))),
-                ])
-              else
-                _ImageBlock(block: b),
-          ]),
+        final text = [for (final b in it.blocks) if (b['type'] == 'text') '${b['text'] ?? ''}'].join('\n\n');
+        return Padding(
+          padding: const EdgeInsets.only(top: chatGap),
+          child: UserBubble(text: text, media: [for (final b in it.blocks) if (b['type'] != 'text') _ImageBlock(block: b)]),
         );
       case TextItem():
-        return Padding(
-          padding: const EdgeInsets.only(top: 10),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            SizedBox(width: 20, child: Padding(padding: const EdgeInsets.only(top: 1), child: Text('●', style: mono.copyWith(color: c.ink)))),
-            Expanded(child: HubMarkdown(it.text)),
-          ]),
-        );
+        return Padding(padding: const EdgeInsets.only(top: 10), child: AnswerText(it.text));
       case ThinkingItem():
         return _Thinking(text: it.text);
       case ToolItem():

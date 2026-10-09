@@ -127,10 +127,11 @@ void main() {
     final container = await pumpScreen(tester);
     expect(find.text('New chat'), findsOneWidget);
     expect(find.text('What should we work on?'), findsOneWidget);
-    expect(find.text('Asleep'), findsOneWidget, reason: 'the machine chip');
-    expect(find.text('Connected:'), findsOneWidget);
-    expect(find.text('GitHub'), findsOneWidget);
+    expect(find.text('Escanor · Asleep'), findsOneWidget, reason: 'where it runs, under the title');
+    expect(find.text('Auto'), findsOneWidget, reason: 'the model chip');
+    expect(find.text('GitHub'), findsOneWidget, reason: 'what it can work on, as a chip');
 
+    await tester.ensureVisible(find.text('Fix the failing build in my repository'));
     await tester.tap(find.text('Fix the failing build in my repository'));
     await tester.pump();
     expect(find.text('Fix the failing build in my repository'), findsOneWidget, reason: 'shown at once');
@@ -140,11 +141,13 @@ void main() {
 
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump(const Duration(milliseconds: 50));
-    expect(find.text('Read the build log'), findsOneWidget);
+    expect(find.text('Read the build log'), findsOneWidget, reason: 'the question, pinned above the message box');
+    expect(find.text('NEEDS YOUR OK'), findsOneWidget);
     await tester.tap(find.text('Continue'));
     await tester.pump(const Duration(milliseconds: 50));
     expect(answers.single, {'allow': true});
-    expect(find.text('You said continue.'), findsOneWidget);
+    expect(find.text('NEEDS YOUR OK'), findsNothing, reason: 'answered: no longer pinned');
+    expect(find.text('Read the build log · you said continue.'), findsOneWidget, reason: 'what was said stays in the chat');
 
     // a new chat from the header starts empty again
     await tester.tap(find.byTooltip('New chat'));
@@ -160,7 +163,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
     expect(find.text('Model A wasn’t available, so Model B is answering.'), findsOneWidget);
-    expect(find.textContaining(RegExp(r'^Asking GPT OSS 120b · step 2 · 1[45]s$')), findsOneWidget);
+    expect(find.textContaining(RegExp(r'^Asking GPT OSS 120b · step 2…  1[45]s$')), findsOneWidget);
 
     await tester.tap(find.byTooltip('Stop'));
     await tester.pump();
