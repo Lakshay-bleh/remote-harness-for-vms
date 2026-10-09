@@ -29,6 +29,8 @@ void main() {
     expect(find.text('Continue with Google'), findsOneWidget);
     expect(find.byType(GoogleIcon), findsOneWidget);
     expect(find.text('dev email'), findsNothing, reason: 'only a debug build pointed at another server shows it');
+    await tester.ensureVisible(find.text('I run my own Remote Harness hub'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('I run my own Remote Harness hub'));
     expect(advanced, 1);
   });

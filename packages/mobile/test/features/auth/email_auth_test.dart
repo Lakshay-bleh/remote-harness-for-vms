@@ -39,10 +39,21 @@ void main() {
     }));
   }
 
-  testWidgets('no mail on the server: no dead form', (tester) async {
-    await tester.pumpWidget(themed(EmailAuth(begin: () => 'ch', onCode: (_) {}, authApi: fakeApi(available: false))));
+  testWidgets('no mail on the server: password sign-in still works; sign-up and reset, which need a mailed code, are hidden', (tester) async {
+    final codes = <String>[];
+    await tester.pumpWidget(themed(EmailAuth(begin: () => 'ch', onCode: codes.add, authApi: fakeApi(available: false))));
     await tester.pumpAndSettle();
-    expect(find.text('Sign in'), findsNothing);
+    expect(find.text('Create account'), findsNothing);
+    expect(find.text('Forgot password?'), findsNothing);
+    expect(find.textContaining('Creating an account with email is not available right now'), findsOneWidget);
+
+    final fields = find.byType(TextField);
+    expect(fields, findsNWidgets(2));
+    await tester.enterText(fields.at(0), 'ada@example.com');
+    await tester.enterText(fields.at(1), 'right-password-1');
+    await tester.tap(find.widgetWithText(InkWell, 'Sign in').last);
+    await tester.pumpAndSettle();
+    expect(codes, ['esc_code']);
   });
 
   testWidgets('signs in with email and password, sending this app’s PKCE challenge', (tester) async {

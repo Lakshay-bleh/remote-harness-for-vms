@@ -278,7 +278,6 @@ class _EmailAuthState extends State<EmailAuth> {
 
   @override
   Widget build(BuildContext context) {
-    if (_available == false) return const SizedBox.shrink(); // the server cannot send mail: Google stays the one way in
     if (_available == null) return const SizedBox(height: 160);
     return AutofillGroup(
       child: switch (_step) {
@@ -383,7 +382,9 @@ class _EmailAuthState extends State<EmailAuth> {
 
   Widget _mainStep() {
     final c = context.c;
-    final signingUp = _step == _Step.signup;
+    // Without mail the server cannot send sign-up or reset codes, but signing in with a password needs no email at all.
+    final mail = _available != false;
+    final signingUp = mail && _step == _Step.signup;
     void submit() => signingUp ? _submitSignUp() : _submitSignIn();
 
     Widget tab(_Step t, String label) {
@@ -409,14 +410,15 @@ class _EmailAuthState extends State<EmailAuth> {
     }
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: _spaced([
-      Semantics(
-        label: 'Sign in or create an account',
-        child: Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(border: Border.all(color: c.hairline), borderRadius: BorderRadius.circular(Radii.pill)),
-          child: Row(children: [tab(_Step.signin, 'Sign in'), tab(_Step.signup, 'Create account')]),
+      if (mail)
+        Semantics(
+          label: 'Sign in or create an account',
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(border: Border.all(color: c.hairline), borderRadius: BorderRadius.circular(Radii.pill)),
+            child: Row(children: [tab(_Step.signin, 'Sign in'), tab(_Step.signup, 'Create account')]),
+          ),
         ),
-      ),
       ..._banner(),
       if (signingUp)
         _labelled(
@@ -432,7 +434,7 @@ class _EmailAuthState extends State<EmailAuth> {
         ),
       _emailField(action: TextInputAction.next),
       _passwordField('Password', meter: signingUp, newPassword: signingUp, onDone: submit),
-      if (!signingUp)
+      if (!signingUp && mail)
         Align(
           alignment: Alignment.centerRight,
           child: GestureDetector(
@@ -441,6 +443,9 @@ class _EmailAuthState extends State<EmailAuth> {
           ),
         ),
       EButton(label: _busy ? 'Please wait…' : (signingUp ? 'Create account' : 'Sign in'), expand: true, onPressed: _busy ? null : submit),
+      if (!mail)
+        Text('New here? Continue with Google. Creating an account with email is not available right now.',
+            textAlign: TextAlign.center, style: TextStyle(fontSize: 12.5, height: 1.5, color: c.muted)),
     ]));
   }
 }
