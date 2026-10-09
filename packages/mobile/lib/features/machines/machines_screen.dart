@@ -11,6 +11,7 @@ import '../../ui/widgets.dart';
 import 'hub_app.dart';
 import 'hub_state.dart';
 import 'hub_store.dart';
+import 'machines_home.dart';
 import 'machines_start.dart';
 import 'managed.dart';
 
@@ -88,13 +89,19 @@ class _MachinesScreenState extends ConsumerState<MachinesScreen> {
     });
     final c = context.c;
     final hub = _hub.data;
-    if (hub != null && !hub.available) return const HubApp(embedded: true);
+    // The Servers half of the Machines tab has the tab's header; Add comes from the server list once there is a hub.
+    final half = MachinesHalf.of(context);
+    if (hub != null && !hub.available) {
+      MachinesHalf.offerAdd(context, null);
+      return const HubApp(embedded: true);
+    }
     final error = _applyError ?? (hub == null ? _hub.error : null);
     if (error != null) {
+      MachinesHalf.offerAdd(context, null);
       return Material(
         color: c.canvas,
         child: Column(children: [
-          const ScreenHeader(title: 'Servers'),
+          if (!half) const ScreenHeader(title: 'Servers'),
           Expanded(
             child: Center(
               child: Padding(
@@ -119,9 +126,10 @@ class _MachinesScreenState extends ConsumerState<MachinesScreen> {
       );
     }
     if (!_ready || hub == null) {
+      MachinesHalf.offerAdd(context, null);
       return Material(
         color: c.canvas,
-        child: const Column(children: [ScreenHeader(title: 'Servers'), Expanded(child: Center(child: Spinner()))]),
+        child: Column(children: [if (!half) const ScreenHeader(title: 'Servers'), const Expanded(child: Center(child: Spinner()))]),
       );
     }
     return HubApp(embedded: true, managed: hub);

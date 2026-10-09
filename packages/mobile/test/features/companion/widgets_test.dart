@@ -4,6 +4,7 @@ import 'package:escanor/core/theme.dart';
 import 'package:escanor/features/companion/animals.dart';
 import 'package:escanor/features/companion/buddy.dart';
 import 'package:escanor/features/companion/companion.dart';
+import 'package:escanor/features/companion/companion_floor.dart';
 import 'package:escanor/features/companion/companion_settings_page.dart';
 import 'package:escanor/features/companion/dog_spinner.dart';
 import 'package:escanor/features/companion/dog_state.dart';
@@ -247,6 +248,123 @@ void main() {
         await t.pump(const Duration(milliseconds: 100));
       }
       expect(spriteRect(t), home, reason: 'back in its corner');
+    });
+
+    testWidgets('rests above a message box along the bottom, not on it, and back in its corner when it goes', (t) async {
+      await screen(t);
+      resetCompanionFloor();
+      Widget page({required bool composer, bool shown = true}) => app(
+            Scaffold(
+              body: Stack(children: [
+                Positioned.fill(
+                  child: TickerMode(
+                    enabled: shown,
+                    child: Column(children: [
+                      const Expanded(child: SizedBox.expand()),
+                      if (composer) const CompanionFloor(child: SizedBox(height: 120, width: double.infinity)),
+                    ]),
+                  ),
+                ),
+                const Buddy(),
+              ]),
+            ),
+            reduceMotion: true,
+          );
+      await t.pumpWidget(page(composer: true));
+      await t.pump();
+      await t.pump();
+      expect(companionFloor.value, 800 - 120);
+      expect(spriteRect(t).bottom, lessThanOrEqualTo(800 - 120), reason: 'above the message box, not on its buttons');
+
+      // The screen with it is hidden (another tab): back to its corner.
+      await t.pumpWidget(page(composer: true, shown: false));
+      await t.pump();
+      await t.pump();
+      expect(companionFloor.value, isNull);
+      expect(spriteRect(t).bottom, 800 - 8);
+
+      await t.pumpWidget(page(composer: true));
+      await t.pump();
+      await t.pump();
+      expect(spriteRect(t).bottom, lessThanOrEqualTo(800 - 120));
+
+      await t.pumpWidget(page(composer: false));
+      await t.pump();
+      await t.pump();
+      expect(companionFloor.value, isNull);
+      expect(spriteRect(t).bottom, 800 - 8);
+    });
+
+    testWidgets('no outings while the keyboard is up, and one under way stops when it comes up', (t) async {
+      await screen(t);
+      resetCompanionFloor();
+      t.view.viewInsets = const FakeViewPadding(bottom: 900); // 300 logical pixels of keyboard
+      addTearDown(t.view.resetViewInsets);
+      await t.pumpWidget(shell(const Buddy(eager: true, only: Excursion.stroll), onBehind: () {}));
+      final typing = spriteRect(t);
+      expect(typing.bottom, 800 - 300 - 8, reason: 'in its corner, just above the keyboard');
+      for (var i = 0; i < 40; i++) {
+        await t.pump(const Duration(milliseconds: 100));
+        expect(spriteRect(t), typing, reason: 'it does not run about over what is being typed');
+      }
+
+      // The keyboard goes: in its corner at the bottom again, and the outings start again.
+      t.view.resetViewInsets();
+      await t.pump();
+      final home = spriteRect(t);
+      expect(home.bottom, 800 - 8);
+      var out = false;
+      for (var i = 0; i < 300 && !out; i++) {
+        await t.pump(const Duration(milliseconds: 100));
+        out = spriteRect(t).left > home.left + 50;
+      }
+      expect(out, isTrue, reason: 'off on its stroll');
+
+      // Mid-stroll the keyboard comes up: straight back to its corner above it, not walking across the middle of the screen.
+      t.view.viewInsets = const FakeViewPadding(bottom: 900);
+      await t.pump();
+      await t.pump();
+      expect(spriteRect(t), typing);
+      for (var i = 0; i < 20; i++) {
+        await t.pump(const Duration(milliseconds: 100));
+        expect(spriteRect(t), typing);
+      }
+    });
+
+    testWidgets('an outing under way follows the floor when the message box under it grows', (t) async {
+      await screen(t);
+      resetCompanionFloor();
+      Widget page(double composer) => app(
+            Scaffold(
+              body: Stack(children: [
+                Positioned.fill(
+                  child: Column(children: [
+                    const Expanded(child: SizedBox.expand()),
+                    CompanionFloor(child: SizedBox(height: composer, width: double.infinity)),
+                  ]),
+                ),
+                const Buddy(eager: true, only: Excursion.stroll),
+              ]),
+            ),
+          );
+      await t.pumpWidget(page(60));
+      await t.pump();
+      await t.pump();
+      final home = spriteRect(t);
+      var out = false;
+      for (var i = 0; i < 60 && !out; i++) {
+        await t.pump(const Duration(milliseconds: 100));
+        out = spriteRect(t).left > home.left + 50;
+      }
+      expect(out, isTrue);
+      expect(spriteRect(t).bottom, home.bottom);
+
+      await t.pumpWidget(page(160)); // a second line of text, a photo attached
+      await t.pump();
+      await t.pump();
+      final now = spriteRect(t);
+      expect(now.left, greaterThan(home.left + 50), reason: 'still out on its stroll');
+      expect(now.bottom, lessThanOrEqualTo(800 - 160), reason: 'walking along the top of the bigger box, not through it');
     });
 
     testWidgets('a lap of the screen turns it sideways and upside down', (t) async {

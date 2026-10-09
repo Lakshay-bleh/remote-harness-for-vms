@@ -9,6 +9,7 @@ import '../../core/theme.dart';
 import '../../ui/widgets.dart';
 import '../companion/dog_state.dart';
 import '../composer/attachments.dart';
+import '../companion/companion_floor.dart';
 import '../composer/chat_composer.dart';
 import 'chat_store.dart';
 import 'error_card.dart';
@@ -337,16 +338,18 @@ class _ComputerChatState extends State<ComputerChat> {
             ],
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
-          child: ChatComposer(
-            key: ValueKey(chat.id),
-            placeholder: widget.online ? 'Message your computer' : 'Computer offline',
-            disabled: !widget.online,
-            running: busy,
-            attach: 'text',
-            onSend: (t, f) => _send(t, f),
-            onStop: () => _stopWaiting(chat.id),
+        CompanionFloor(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+            child: ChatComposer(
+              key: ValueKey(chat.id),
+              placeholder: widget.online ? 'Message your computer' : 'Computer offline',
+              disabled: !widget.online,
+              running: busy,
+              attach: 'text',
+              onSend: (t, f) => _send(t, f),
+              onStop: () => _stopWaiting(chat.id),
+            ),
           ),
         ),
       ],

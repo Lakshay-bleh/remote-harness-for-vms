@@ -10,6 +10,7 @@ import '../../core/nav.dart';
 import '../../core/prefs.dart';
 import '../../core/theme.dart';
 import '../../ui/widgets.dart';
+import '../companion/companion_floor.dart';
 import '../composer/chat_composer.dart';
 import 'approval_card.dart';
 import 'assistant_api.dart';
@@ -236,13 +237,15 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                 ),
               ),
             ),
-          ChatComposer(
-            placeholder: 'Message your assistant',
-            running: _chat.state.running,
-            stopping: _chat.stopping,
-            sendWhileRunning: _chat.canSend,
-            onSend: (t, files) => _chat.send(t, files),
-            onStop: _chat.stop,
+          CompanionFloor(
+            child: ChatComposer(
+              placeholder: 'Message your assistant',
+              running: _chat.state.running,
+              stopping: _chat.stopping,
+              sendWhileRunning: _chat.canSend,
+              onSend: (t, files) => _chat.send(t, files),
+              onStop: _chat.stop,
+            ),
           ),
         ]),
       ),

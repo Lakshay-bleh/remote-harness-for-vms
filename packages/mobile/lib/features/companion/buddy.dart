@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import '../../core/busy.dart';
 import 'animals.dart';
 import 'busy_scene.dart';
+import 'companion_floor.dart';
 import 'pixel_dog.dart';
 import 'roam.dart';
 import 'sprites.dart';
@@ -28,8 +29,9 @@ const Duration _sniffFor = Duration(seconds: 5);
 /// motion get it standing still in its corner.
 ///
 /// It is a direct child of the shell's Stack: it fills it (so it can roam anywhere) but only the companion itself takes
-/// taps. Phones: bottom left, just above the tab bar (and above the message field while the keyboard is up). Wide
-/// screens: bottom right.
+/// taps. Phones: bottom left, just above the tab bar, or just above the message box on a screen that has one. Wide
+/// screens: bottom right. It stays in its corner while the keyboard is up (no outings over what is being typed), and an
+/// outing carries on along the same edge when the screen changes size under it.
 class Buddy extends StatefulWidget {
   const Buddy({super.key, this.busy = false, this.scale = 2, this.animal, this.eager = false, this.only});
   final bool busy;
@@ -59,7 +61,9 @@ class _BuddyState extends State<Buddy> with SingleTickerProviderStateMixin, Widg
   late final Ticker _ticker = createTicker(_onTick);
   Timer? _outing;
   Plan? _plan;
-  Vec _home = const Vec(0, 0);
+
+  /// The screen the outing was planned on; where it is now is worked out from that and the screen as it is now.
+  Geometry? _planned;
   Sample? _at;
   Excursion? _last;
   Geometry? _geometry;
@@ -70,12 +74,20 @@ class _BuddyState extends State<Buddy> with SingleTickerProviderStateMixin, Widg
   Timer? _saidTimer;
 
   final _sprite = GlobalKey();
+  final _area = GlobalKey();
+
+  // How far above the bottom of its area the controls along the bottom of the screen begin (a message box): it rests above
+  // them, not on them. Null on a screen without any.
+  double? _lift;
+  bool _keyboard = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     busyCount.addListener(_onBusy);
+    companionFloor.addListener(_onFloor);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onFloor());
     GestureBinding.instance.pointerRouter.addGlobalRoute(_onPointer);
     HardwareKeyboard.instance.addHandler(_onKey);
     _wake();
@@ -98,7 +110,26 @@ class _BuddyState extends State<Buddy> with SingleTickerProviderStateMixin, Widg
 
   @override
   void didChangeMetrics() {
-    if (mounted) setState(() {}); // the keyboard came or went
+    if (!mounted) return;
+    final keyboard = View.of(context).viewInsets.bottom > 0;
+    // The keyboard came up: whoever is typing does not want it running about over the message, so it goes home at once.
+    if (keyboard && !_keyboard && _plan != null) _endOuting(schedule: true);
+    _keyboard = keyboard;
+    setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onFloor());
+  }
+
+  /// The bottom controls moved, came or went: where they begin, measured from the bottom of the companion's area.
+  void _onFloor() {
+    if (!mounted) return;
+    final floor = companionFloor.value;
+    final area = _area.currentContext?.findRenderObject() as RenderBox?;
+    double? lift;
+    if (floor != null && area != null && area.attached && area.hasSize) {
+      final bottom = area.localToGlobal(Offset(0, area.size.height)).dy;
+      lift = math.max(0, bottom - floor);
+    }
+    if (lift != _lift) setState(() => _lift = lift);
   }
 
   void _onBusy() {
@@ -141,13 +172,14 @@ class _BuddyState extends State<Buddy> with SingleTickerProviderStateMixin, Widg
     final life = WidgetsBinding.instance.lifecycleState;
     final hidden = life != null && life != AppLifecycleState.resumed;
     // not now: the app is in the background, it is asleep, it is busy working, or it should keep still
-    if (g == null || hidden || _asleep || widget.busy || _busy > 0 || _still) return _scheduleOuting(20000);
+    final typing = View.of(context).viewInsets.bottom > 0;
+    if (g == null || hidden || typing || _asleep || widget.busy || _busy > 0 || _still) return _scheduleOuting(20000);
     final kind = widget.only ?? pickExcursion(_rand.nextDouble, _last);
     _last = kind;
     setState(() {
-      _home = g.home;
+      _planned = g;
       _plan = planExcursion(kind, g, _rand.nextDouble);
-      _at = sample(_plan!, _home, 0);
+      _at = sample(_plan!, g.home, 0);
     });
     _ticker.start();
   }
@@ -155,7 +187,7 @@ class _BuddyState extends State<Buddy> with SingleTickerProviderStateMixin, Widg
   void _onTick(Duration elapsed) {
     final plan = _plan;
     if (plan == null || !mounted) return;
-    final s = sample(plan, _home, elapsed.inMicroseconds / 1000);
+    final s = sample(plan, _planned!.home, elapsed.inMicroseconds / 1000);
     if (s.done) {
       _endOuting(schedule: true);
       return;
@@ -169,6 +201,7 @@ class _BuddyState extends State<Buddy> with SingleTickerProviderStateMixin, Widg
       setState(() {
         _plan = null;
         _at = null;
+        _planned = null;
       });
     }
     if (schedule) _scheduleOuting(widget.eager ? 4000 : nextDelay(_rand.nextDouble));
@@ -198,6 +231,7 @@ class _BuddyState extends State<Buddy> with SingleTickerProviderStateMixin, Widg
     _sleepTimer?.cancel();
     _saidTimer?.cancel();
     busyCount.removeListener(_onBusy);
+    companionFloor.removeListener(_onFloor);
     GestureBinding.instance.pointerRouter.removeGlobalRoute(_onPointer);
     HardwareKeyboard.instance.removeHandler(_onKey);
     WidgetsBinding.instance.removeObserver(this);
@@ -212,22 +246,25 @@ class _BuddyState extends State<Buddy> with SingleTickerProviderStateMixin, Widg
     final sw = W * s;
     final sh = H * s;
     final wide = mq.size.width >= 768;
-    final keyboard = View.of(context).viewInsets.bottom > 0;
     final pad = mq.padding;
 
     return Positioned.fill(
-      child: LayoutBuilder(builder: (context, box) {
+      child: LayoutBuilder(key: _area, builder: (context, box) {
         final vw = box.maxWidth;
         final vh = box.maxHeight;
-        // where it rests: its own corner, clear of the notch, the home bar and the keyboard
+        // where it rests: its own corner, clear of the notch, the home bar, the keyboard (the area already ends above it)
+        // and a message box
         final left = wide ? vw - pad.right - 12 - sw : pad.left + 4;
-        final bottom = wide ? pad.bottom + 12 : (keyboard ? 72.0 : 8.0);
-        final home = Vec(left + sw / 2, vh - bottom - sh / 2);
-        _geometry = Geometry(vw: vw, vh: vh, sw: sw, sh: sh, home: home, top: pad.top + 4);
+        final lift = _lift;
+        final bottom = wide ? math.max(pad.bottom + 12, lift == null ? 0.0 : lift + 8) : (lift == null ? 8.0 : lift + 4);
+        // never above the top edge, however short the area gets
+        final home = Vec(left + sw / 2, math.max(pad.top + 4 + sh / 2, vh - bottom - sh / 2));
+        final g = _geometry = Geometry(vw: vw, vh: vh, sw: sw, sh: sh, home: home, top: pad.top + 4);
 
         final at = _at;
+        final planned = _planned;
         final scene = at?.leg.scene ?? buddyScene(busy: widget.busy || _busy > 0, asleep: _asleep, sniffing: _sniffing);
-        final pos = at?.pos ?? home;
+        final pos = at == null ? home : (planned == null ? at.pos : refit(at.pos, planned, g));
         final turn = at == null ? (rotate: 0, mirror: false) : orientation(at.leg.feet, at.leg.face);
         final transform = Matrix4.rotationZ(turn.rotate * math.pi / 180)..multiply(Matrix4.diagonal3Values(turn.mirror ? -1 : 1, 1, 1));
         final said = _said;

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:escanor/features/companion/roam.dart';
 import 'package:escanor/features/companion/sprites.dart';
+import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const g = Geometry(vw: 1280, vh: 800, sw: 72, sh: 44, home: Vec(40, 770), top: 8);
@@ -123,6 +124,55 @@ void main() {
           expect(pickExcursion(() => r, last), isNot(last));
         }
       }
+    });
+  });
+
+  group('edges and corners', () {
+    // The picture is wider than it is tall: on a wall (turned a quarter) it is sh across and sw high.
+    Rect box(Vec at, Leg leg, Geometry g) {
+      final onWall = leg.feet.x != 0;
+      final w = onWall ? g.sh : g.sw;
+      final h = onWall ? g.sw : g.sh;
+      return Rect.fromCenter(center: Offset(at.x, at.y), width: w, height: h);
+    }
+
+    const phone = Geometry(vw: 390, vh: 700, sw: 72, sh: 44, home: Vec(40, 670), top: 44);
+    const wide = Geometry(vw: 1280, vh: 800, sw: 72, sh: 44, home: Vec(1232, 766), top: 8);
+    for (final (name, geo) in const [('phone', phone), ('wide', wide)]) {
+      for (final dice in const [0.1, 0.9]) {
+        test('$name: the lap never pokes past an edge, not even turning a corner (${dice < 0.5 ? 'clockwise' : 'the other way'})', () {
+          final plan = planExcursion(Excursion.patrol, geo, () => dice);
+          for (var ms = 0; ms <= plan.total; ms += 5) {
+            final s = sample(plan, geo.home, ms);
+            final r = box(s.pos, s.leg, geo);
+            final floor = geo.home.y + geo.sh / 2;
+            expect(r.left >= 0 && r.right <= geo.vw && r.top >= geo.top - 0.001 && r.bottom <= floor + 0.001, isTrue,
+                reason: 'at ${ms}ms it is at $r (feet ${s.leg.feet}) on a ${geo.vw}x${geo.vh} screen, floor $floor');
+          }
+        });
+      }
+      for (final kind in const [Excursion.stroll, Excursion.zoomies, Excursion.nap]) {
+        test('$name: ${kind.name} stays on the screen and goes somewhere', () {
+          final plan = planExcursion(kind, geo, seeded());
+          var furthest = 0.0;
+          for (final l in plan.legs) {
+            expect(l.to.x - geo.sw / 2 >= 0 && l.to.x + geo.sw / 2 <= geo.vw, isTrue, reason: '${kind.name} at ${l.to}');
+            furthest = math.max(furthest, (l.to.x - geo.home.x).abs());
+          }
+          expect(furthest, greaterThan(100), reason: 'it heads for the far side');
+        });
+      }
+    }
+
+    test('refit: when the screen changes under an outing it keeps to the same edge', () {
+      const before = Geometry(vw: 390, vh: 700, sw: 72, sh: 44, home: Vec(40, 670), top: 44);
+      const after = Geometry(vw: 390, vh: 400, sw: 72, sh: 44, home: Vec(40, 300), top: 44); // the keyboard came up
+      expect(refit(const Vec(200, 670), before, after), const Vec(200, 300), reason: 'the floor is still the floor');
+      expect(refit(const Vec(200, 44 + 22), before, after).y, 44 + 22, reason: 'the ceiling is still the ceiling');
+      final wall = refit(const Vec(24, 400), before, after);
+      expect(wall.x, 24, reason: 'on the same wall');
+      expect(wall.y > 66 && wall.y < 300, isTrue, reason: 'part way up it, as before');
+      expect(refit(const Vec(200, 670), before, before), const Vec(200, 670));
     });
   });
 }

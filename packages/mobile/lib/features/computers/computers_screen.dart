@@ -5,6 +5,7 @@ import '../../core/theme.dart';
 import '../../ui/parts.dart';
 import '../../ui/widgets.dart';
 import '../companion/dog_state.dart';
+import '../machines/machines_home.dart';
 import 'computer_detail.dart';
 import 'computer_prefs.dart';
 import 'overflow_menu.dart';
@@ -76,19 +77,22 @@ class _ComputersScreenState extends State<ComputersScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // The Computers half of the Machines tab: its header (and Add) is the tab's.
+    final half = MachinesHalf.offerAdd(context, _add);
     return Material(
       color: context.c.canvas,
       child: Column(
         children: [
-          ScreenHeader(
-            title: 'Computers',
-            actions: [
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: EButton(label: 'Add', icon: Icons.add_rounded, onPressed: _add),
-              ),
-            ],
-          ),
+          if (!half)
+            ScreenHeader(
+              title: 'Computers',
+              actions: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: EButton(label: 'Add', icon: Icons.add_rounded, onPressed: _add),
+                ),
+              ],
+            ),
           Expanded(
             child: _computers.isEmpty
                 ? SingleChildScrollView(
