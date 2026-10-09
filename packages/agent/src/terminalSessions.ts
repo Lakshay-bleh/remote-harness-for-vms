@@ -65,7 +65,7 @@ export class TerminalSessionSync {
     }
   }
 
-  /** A session the agent ran has ended: the hub already has its messages, so remember where its transcript stops. */
+  /** A turn the agent ran has finished: the hub already has its messages, so remember where its transcript stops. */
   async markSynced(sessionId: string, cwd: string): Promise<void> {
     const entry = this.o.registry.get(sessionId);
     if (!entry) return;
@@ -80,12 +80,17 @@ export class TerminalSessionSync {
 
   private async syncSession(info: SDKSessionInfo): Promise<void> {
     const id = info.sessionId;
-    if (this.o.isLive(id)) return;
     const entry = this.o.registry.get(id);
     if (entry?.syncedMtime !== undefined && info.lastModified <= entry.syncedMtime) return;
 
     const msgs = await this.readAll(id, info.cwd!);
-    if (this.o.isLive(id)) return;
+    if (this.o.isLive(id)) {
+      // Its messages reach the hub live. Keep the marker at the end of its transcript anyway: the chat stays open until
+      // the agent stops, and a marker left behind would resend everything since then after the next start.
+      const last = msgs.at(-1)?.uuid;
+      if (entry && last) this.o.registry.upsert({ ...entry, syncedUuid: last, syncedMtime: info.lastModified });
+      return;
+    }
 
     let next: RegistryEntry;
     let toSend: SessionMessage[];

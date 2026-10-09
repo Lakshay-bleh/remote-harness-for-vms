@@ -91,4 +91,19 @@ describe('TerminalSessionSync', () => {
     assert.deepEqual(out.content[1], { type: 'text', text: '[image too large to show here]' });
     assert.deepEqual(out.content[2], { type: 'text', text: 'hi' });
   });
+
+  it('keeps the marker current while the agent runs a chat, so a restart resends nothing', async () => {
+    const live = new Set(['own']);
+    const t = setup({ live });
+    t.registry.upsert({ sessionId: 'own', cwd: t.root, title: 'x', createdAt: 'x', accountId: 'default', syncedUuid: '1', syncedMtime: 1 });
+    const s = { cwd: t.root, lastModified: 2, msgs: [msg('1'), msg('2'), msg('3')] };
+    t.sessions.set('own', s);
+    await t.sync.syncOnce();
+    assert.deepEqual(t.sent, [], 'a live chat is never sent by the sync');
+    assert.equal(t.registry.get('own')?.syncedUuid, '3');
+    live.clear(); // the agent restarted; the chat is no longer running
+    s.lastModified = 3;
+    await t.sync.syncOnce();
+    assert.deepEqual(t.sent, []);
+  });
 });

@@ -50,7 +50,7 @@ const terminalSync = config.syncTerminalSessions
       accountId: profiles[0].id,
     })
   : null;
-if (terminalSync) manager.onSessionEnded = (id, cwd) => void terminalSync.markSynced(id, cwd);
+if (terminalSync) manager.onTurnEnded = (id, cwd) => void terminalSync.markSynced(id, cwd);
 
 const connection = new HubConnection(
   config.hubUrl,

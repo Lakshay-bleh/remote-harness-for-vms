@@ -82,8 +82,8 @@ export class SessionManager {
   // What each running session's own MCP client last reported, so the hub can show real connection state.
   private mcpSessionStatus = new Map<LiveSession, Map<string, { status: string; error?: string }>>();
   private lastMcpReport = '';
-  /** Called after a session this agent ran has stopped (TerminalSessionSync records where its transcript ends). */
-  onSessionEnded: ((sessionId: string, cwd: string) => void) | null = null;
+  /** Called after each turn of a session this agent runs, and when it stops (TerminalSessionSync records where its transcript ends). */
+  onTurnEnded: ((sessionId: string, cwd: string) => void) | null = null;
 
   constructor(
     private workspaceRoot: string,
@@ -380,6 +380,7 @@ export class SessionManager {
           tempId: ctx.tempId,
           message,
         });
+        if (msg.type === 'result' && ctx.getSessionId()) this.onTurnEnded?.(ctx.getSessionId(), ctx.cwd);
       }
     } catch (err) {
       this.send({
@@ -397,7 +398,7 @@ export class SessionManager {
       this.mcpSessionStatus.delete(ctx.session);
       this.reportMcpStatus();
       this.send({ type: 'session_ended', sessionId: sessionId || ctx.tempId || ctx.liveKey });
-      if (sessionId) this.onSessionEnded?.(sessionId, ctx.cwd);
+      if (sessionId) this.onTurnEnded?.(sessionId, ctx.cwd);
     }
   }
 
