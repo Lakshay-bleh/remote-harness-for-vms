@@ -395,18 +395,28 @@ export class SessionManager {
   }
 
   interrupt(sessionId: string): void {
-    void this.live.get(sessionId)?.interrupt();
+    this.control(sessionId, 'Stop', (live) => live.interrupt());
   }
 
   setPermissionMode(sessionId: string, mode: PermissionMode): void {
-    void this.live.get(sessionId)?.setPermissionMode(mode);
+    this.control(sessionId, 'Changing the permission mode', (live) => live.setPermissionMode(mode));
   }
 
   setModel(sessionId: string, model: string | undefined): void {
-    void this.live.get(sessionId)?.setModel(model);
+    this.control(sessionId, 'Switching the model', (live) => live.setModel(model));
   }
 
   setEffort(sessionId: string, effort: EffortLevel | null): void {
-    void this.live.get(sessionId)?.setEffort(effort);
+    this.control(sessionId, 'Changing the effort', (live) => live.setEffort(effort));
+  }
+
+  // The SDK rejects control requests it can't honour (e.g. a model id its catalog doesn't know). Left unhandled, that
+  // rejection kills the whole agent and every session on it, so report it on the session instead.
+  private control(sessionId: string, what: string, run: (live: LiveSession) => Promise<unknown>): void {
+    const live = this.live.get(sessionId);
+    if (!live) return;
+    run(live).catch((err) => {
+      this.send({ type: 'error', sessionId, message: `${what} failed: ${err instanceof Error ? err.message : String(err)}` });
+    });
   }
 }

@@ -4,7 +4,11 @@ import type { AgentToHubMessage, HubToAgentMessage } from '@remote-harness/share
 const DEFAULT_RECONNECT_DELAY_MS = 3000;
 const DEFAULT_MAX_BUFFERED = 1000;
 // Cloudflare closes WebSockets that are idle for ~100s, so keep traffic flowing.
-const PING_INTERVAL_MS = 25_000;
+const DEFAULT_PING_INTERVAL_MS = 25_000;
+// After sleep or a network change the old TCP socket is half-open: writes just queue and 'close' never fires,
+// so the agent would stay "connected" to nothing. No pong within this window means the socket is dead.
+const DEFAULT_PONG_TIMEOUT_MS = 60_000;
+const HANDSHAKE_TIMEOUT_MS = 15_000;
 
 export class HubConnection {
   private ws: WebSocket | null = null;
@@ -13,29 +17,49 @@ export class HubConnection {
   private buffer: AgentToHubMessage[] = [];
   private reconnectDelayMs: number;
   private maxBuffered: number;
+  private pingIntervalMs: number;
+  private pongTimeoutMs: number;
 
   constructor(
     private url: string,
     private token: string,
     private onMessage: (msg: HubToAgentMessage) => void,
     private onOpen: () => void,
-    opts: { reconnectDelayMs?: number; maxBuffered?: number } = {},
+    opts: { reconnectDelayMs?: number; maxBuffered?: number; pingIntervalMs?: number; pongTimeoutMs?: number } = {},
   ) {
     this.reconnectDelayMs = opts.reconnectDelayMs ?? DEFAULT_RECONNECT_DELAY_MS;
     this.maxBuffered = opts.maxBuffered ?? DEFAULT_MAX_BUFFERED;
+    this.pingIntervalMs = opts.pingIntervalMs ?? DEFAULT_PING_INTERVAL_MS;
+    this.pongTimeoutMs = opts.pongTimeoutMs ?? DEFAULT_PONG_TIMEOUT_MS;
   }
 
   connect(): void {
     this.closedByUser = false;
-    const ws = new WebSocket(this.url, { headers: { authorization: `Bearer ${this.token}` } });
+    const ws = new WebSocket(this.url, {
+      headers: { authorization: `Bearer ${this.token}` },
+      handshakeTimeout: HANDSHAKE_TIMEOUT_MS,
+    });
     this.ws = ws;
+    let lastHeard = Date.now();
+    const heard = () => { lastHeard = Date.now(); };
+    ws.on('pong', heard);
 
     ws.on('open', () => {
-      this.pingTimer = setInterval(() => ws.readyState === WebSocket.OPEN && ws.ping(), PING_INTERVAL_MS);
+      heard();
+      this.pingTimer = setInterval(() => {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        if (Date.now() - lastHeard > this.pongTimeoutMs) {
+          console.error(`Hub connection silent for ${Math.round((Date.now() - lastHeard) / 1000)}s, reconnecting`);
+          ws.terminate(); // emits 'close', which schedules the reconnect
+          return;
+        }
+        ws.ping();
+      }, this.pingIntervalMs);
       this.onOpen(); // sends the hello first, so the hub knows who we are before the replay
       this.flush();
     });
     ws.on('message', (data) => {
+      heard();
       try {
         this.onMessage(JSON.parse(data.toString()) as HubToAgentMessage);
       } catch (err) {
@@ -44,6 +68,7 @@ export class HubConnection {
     });
     ws.on('close', () => {
       if (this.pingTimer) clearInterval(this.pingTimer);
+      this.pingTimer = null;
       if (!this.closedByUser) setTimeout(() => this.connect(), this.reconnectDelayMs);
     });
     ws.on('error', (err) => console.error('Hub connection error', err.message));

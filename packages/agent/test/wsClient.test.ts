@@ -61,6 +61,43 @@ describe('HubConnection offline buffering', () => {
     }
   });
 
+  it('drops a silent connection and reconnects when pongs stop (network changed under it)', async () => {
+    // A hub that never answers pings looks exactly like a half-open TCP socket after sleep or a Wi-Fi change:
+    // nothing ever emits 'close', so without a pong deadline the agent stays "connected" to nothing forever.
+    const http = createServer();
+    const wss = new WebSocketServer({ server: http, autoPong: false });
+    let connections = 0;
+    wss.on('connection', () => { connections++; });
+    await new Promise<void>((r) => http.listen(0, '127.0.0.1', r));
+    let opens = 0;
+    const conn = new HubConnection(`ws://127.0.0.1:${(http.address() as AddressInfo).port}`, 't', () => {}, () => { opens++; },
+      { reconnectDelayMs: 20, pingIntervalMs: 50, pongTimeoutMs: 120 });
+    try {
+      conn.connect();
+      await wait(600);
+      assert.ok(opens >= 2, `expected a reconnect after missed pongs, got ${opens} open(s)`);
+      assert.ok(connections >= 2);
+    } finally {
+      conn.close();
+      for (const c of wss.clients) c.terminate();
+      wss.close(); http.closeAllConnections(); await new Promise((r) => http.close(r));
+    }
+  });
+
+  it('keeps a healthy connection open while pongs arrive', async () => {
+    const hub = await fakeHub();
+    let opens = 0;
+    const conn = new HubConnection(hub.url, 't', () => {}, () => { opens++; }, { reconnectDelayMs: 20, pingIntervalMs: 50, pongTimeoutMs: 120 });
+    try {
+      conn.connect();
+      await wait(600);
+      assert.equal(opens, 1);
+    } finally {
+      conn.close();
+      await hub.close();
+    }
+  });
+
   it('is bounded and sheds streaming sdk_messages before critical events', () => {
     const conn = new HubConnection('ws://127.0.0.1:1', 't', () => {}, () => {}, { maxBuffered: 3 });
     conn.send({ type: 'permission_request', sessionId: 's', requestId: 'r', toolName: 'Bash', input: {} });
