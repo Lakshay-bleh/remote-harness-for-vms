@@ -12,6 +12,7 @@ const { HubConnection } = await import('./wsClient.js');
 const { discoverProfiles } = await import('./profiles.js');
 const { listProjects } = await import('./projects.js');
 const { isBroadRoot } = await import('./paths.js');
+const { TerminalSessionSync } = await import('./terminalSessions.js');
 
 // The version lives in package.json (0.3.0 is the first release that installs hub-managed MCP servers, see MIN_MCP_AGENT_VERSION;
 // 0.4.0 the first that takes a per-machine MCP entry; 0.5.0 the first that honours `autoAllowTools`), so it cannot drift from the release.
@@ -38,6 +39,18 @@ function readGuide(): string {
 }
 
 const manager = new SessionManager(config.workspaceRoot, config.dataDir, profiles, (msg) => connection.send(msg), { managed: config.managed, guide: readGuide(), mcpOverride: config.mcpOverride, protectedPaths: config.protectedPaths, fetchAllow: config.fetchAllow });
+
+// Claude Code sessions run in a terminal here show up in the app too.
+const terminalSync = config.syncTerminalSessions
+  ? new TerminalSessionSync({
+      workspaceRoot: config.workspaceRoot,
+      registry: manager.sessionRegistry,
+      send: (msg) => connection.send(msg),
+      isLive: (id) => manager.isLive(id),
+      accountId: profiles[0].id,
+    })
+  : null;
+if (terminalSync) manager.onSessionEnded = (id, cwd) => void terminalSync.markSynced(id, cwd);
 
 const connection = new HubConnection(
   config.hubUrl,
@@ -81,14 +94,17 @@ const connection = new HubConnection(
       sessions: manager.summaries(),
     });
     console.log(`Connected to hub as "${config.vmName}"`);
+    void terminalSync?.syncOnce();
   },
 );
 
 connection.connect();
+terminalSync?.start();
 
 // systemd and containers stop a process with SIGTERM, so handle it like Ctrl-C: stop the Claude processes first.
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
+    terminalSync?.stop();
     manager.shutdown();
     connection.close();
     process.exit(0);

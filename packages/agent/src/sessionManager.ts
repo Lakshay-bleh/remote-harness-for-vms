@@ -68,7 +68,7 @@ function toUserMessage(text: string, images: ImageAttachment[] | undefined): SDK
   };
 }
 
-function titleFrom(text: string): string {
+export function titleFrom(text: string): string {
   const oneLine = text.trim().replace(/\s+/g, ' ');
   return oneLine.length > 60 ? `${oneLine.slice(0, 57)}...` : oneLine || 'New session';
 }
@@ -82,6 +82,8 @@ export class SessionManager {
   // What each running session's own MCP client last reported, so the hub can show real connection state.
   private mcpSessionStatus = new Map<LiveSession, Map<string, { status: string; error?: string }>>();
   private lastMcpReport = '';
+  /** Called after a session this agent ran has stopped (TerminalSessionSync records where its transcript ends). */
+  onSessionEnded: ((sessionId: string, cwd: string) => void) | null = null;
 
   constructor(
     private workspaceRoot: string,
@@ -108,6 +110,14 @@ export class SessionManager {
 
   private resolveProfile(accountId: string | undefined): ClaudeProfile {
     return this.profiles.find((p) => p.id === accountId) ?? this.profiles[0];
+  }
+
+  get sessionRegistry(): SessionRegistry {
+    return this.registry;
+  }
+
+  isLive(sessionId: string): boolean {
+    return this.live.has(sessionId);
   }
 
   summaries(): AgentSessionSummary[] {
@@ -387,6 +397,7 @@ export class SessionManager {
       this.mcpSessionStatus.delete(ctx.session);
       this.reportMcpStatus();
       this.send({ type: 'session_ended', sessionId: sessionId || ctx.tempId || ctx.liveKey });
+      if (sessionId) this.onSessionEnded?.(sessionId, ctx.cwd);
     }
   }
 

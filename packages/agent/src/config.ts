@@ -65,6 +65,9 @@ export const config = {
   // under WORKSPACE_ROOT but your actual projects are under ~/projects).
   projectsRoot: resolve(process.env.PROJECTS_ROOT || workspaceRoot),
   dataDir: resolve(process.env.DATA_DIR || './data'),
+  // Show Claude Code sessions started in a terminal on this machine (inside WORKSPACE_ROOT) in the app. A managed
+  // worker has no terminal user, so it is off there.
+  syncTerminalSessions: process.env.SYNC_TERMINAL_SESSIONS ? process.env.SYNC_TERMINAL_SESSIONS !== '0' : !managed,
   profilesDir: resolve(process.env.PROFILES_DIR || `${homedir()}/.claude-profiles`),
   // In a managed worker WebFetch asks unless its host is listed here (comma separated; `*.example.com` allowed).
   fetchAllow: (process.env.ESCANOR_FETCH_ALLOW ?? '').split(',').map((h) => h.trim()).filter(Boolean),
