@@ -123,7 +123,9 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
     _chat.model = model;
     final title = chatName(_chat.id, meta, list) ?? 'New chat';
     final caps = _caps?.data;
-    final usable = (caps?.integrations ?? const <CapabilityIntegration>[]).where((i) => i.availableToAssistant == true).toList();
+    final integrations = caps?.integrations ?? const <CapabilityIntegration>[];
+    // Unchecked (null) counts: it is connected, and the machine reads connections live once it is up.
+    final usable = integrations.where((i) => i.availableToAssistant != false && !i.needsReconnect).toList();
     final blocks = toDisplay(_chat.state);
     // While a turn runs: what it is doing and for how long, ticking every second.
     final working = _chat.state.running && _chat.state.pending == 0;
@@ -215,7 +217,8 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                 options: modelOptions(_models.data, model),
                 onChanged: (v) => ref.read(assistantModelProvider.notifier).choose(v),
               ),
-              if (caps != null)
+              // Services connected but none the assistant can use (or all needing a reconnect) are not "nothing connected".
+              if (caps != null && (usable.isNotEmpty || integrations.isEmpty))
                 ChatChip(
                   icon: Icons.hub_outlined,
                   label: usable.isEmpty
