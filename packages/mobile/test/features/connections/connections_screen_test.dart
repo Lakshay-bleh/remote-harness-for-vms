@@ -80,7 +80,7 @@ void main() {
     expect(find.text('Connect GitHub'), findsOneWidget);
     expect(find.text('Personal access token'), findsOneWidget);
     expect(find.text('Org name'), findsOneWidget);
-    expect(find.text('Where do I find this?'), findsOneWidget);
+    expect(find.text('Where do I find this?'), findsNothing, reason: 'no link out of the app');
     final sheetFields = find.descendant(of: find.byType(BottomSheet), matching: find.byType(TextField));
     await tester.enterText(sheetFields.first, ' ghp_secret ');
     await tester.pump();

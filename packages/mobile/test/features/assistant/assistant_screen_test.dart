@@ -27,7 +27,8 @@ void main() {
     items = [];
     stops = [];
     n2Running = true;
-    await Storage.initForTest(secrets: {
+    // This test is about answering an approval by hand, so this phone is set to ask first.
+    await Storage.initForTest(prefs: {'escanor.prefs.v1': '{"defaultMode":"default"}', 'escanor.migrated.autonomy.v1': '1'}, secrets: {
       'escanor_access': 'a',
       'escanor_refresh': 'r',
       'escanor_access_expires': '${DateTime.now().add(const Duration(hours: 1)).millisecondsSinceEpoch}',

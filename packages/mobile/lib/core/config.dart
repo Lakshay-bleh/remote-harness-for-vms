@@ -8,7 +8,6 @@ String escanorApiBase() => (_builtApi.isNotEmpty ? _builtApi : _defaultApi).repl
 /// The scheme this app owns; escanor.in/auth/mobile/login hands the login code to it.
 const String appScheme = 'escanor';
 const String mobileLoginRedirect = 'https://www.escanor.in/auth/mobile/login';
-const String websiteBase = 'https://www.escanor.in';
 
 /// Application id on Android and bundle id on iOS.
 const String appId = 'com.escanorlabs.escanor';

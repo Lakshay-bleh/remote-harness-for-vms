@@ -2,13 +2,14 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../core/config.dart' show websiteBase;
 import '../../core/theme.dart';
 import '../../ui/parts.dart';
 import '../../ui/widgets.dart';
 import '../account/privacy_data_page.dart';
 import 'legal_content.dart';
+import 'about_page.dart';
 import 'legal_rich.dart';
+import 'whats_new.dart';
 import 'settings_widgets.dart';
 
 /// Open one legal document as a page inside the current tab.
@@ -116,7 +117,13 @@ class _LegalRichTextState extends State<LegalRichText> {
     _parts = parseLegalRich(widget.text);
     for (final p in _parts) {
       final href = p.href;
-      if (href != null) _taps.add(TapGestureRecognizer()..onTap = () => launchUrl(Uri.parse(href), mode: LaunchMode.externalApplication));
+      final doc = p.doc;
+      if (doc != null) {
+        _taps.add(TapGestureRecognizer()
+          ..onTap = () => doc == privacyRequestsDoc ? pushPage(context, const PrivacyDataPage()) : openLegalDoc(context, doc));
+      } else if (href != null) {
+        _taps.add(TapGestureRecognizer()..onTap = () => launchUrl(Uri.parse(href), mode: LaunchMode.inAppBrowserView));
+      }
     }
   }
 
@@ -141,7 +148,7 @@ class _LegalRichTextState extends State<LegalRichText> {
       for (final p in _parts)
         if (p.bold)
           TextSpan(text: p.text, style: TextStyle(fontWeight: FontWeight.w600, color: c.ink))
-        else if (p.href != null)
+        else if (p.href != null || p.doc != null)
           TextSpan(
             text: p.text,
             style: TextStyle(decoration: TextDecoration.underline, decorationColor: widget.style.color),
@@ -201,12 +208,8 @@ class AboutPage extends StatelessWidget {
         SRow(icon: Icons.headset_mic_outlined, label: 'Get help', onTap: () => openLegalDoc(context, 'support')),
         SRow(icon: Icons.verified_user_outlined, label: 'Privacy policy', onTap: () => openLegalDoc(context, 'privacy')),
         SRow(icon: Icons.description_outlined, label: 'Terms of service', onTap: () => openLegalDoc(context, 'terms')),
-        // "about" is a website page, not a stored document: it opens on the web.
-        SRow(
-          icon: Icons.description_outlined,
-          label: 'About Escanor',
-          onTap: () => launchUrl(Uri.parse('$websiteBase/about'), mode: LaunchMode.externalApplication),
-        ),
+        SRow(icon: Icons.info_outline_rounded, label: 'About Escanor', onTap: () => pushPage(context, const AboutEscanorPage())),
+        SRow(icon: Icons.new_releases_outlined, label: 'What’s new', onTap: () => pushPage(context, const WhatsNewPage())),
       ]),
     ]);
   }

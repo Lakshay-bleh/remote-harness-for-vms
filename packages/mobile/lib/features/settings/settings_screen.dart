@@ -149,12 +149,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               const SizedBox(height: 24),
               Group(title: 'Connected', children: [
                 SRow(
-                  icon: Icons.laptop_outlined,
-                  label: 'Computers',
-                  value: computers > 0 ? '$computers' : null,
-                  onTap: () => ref.read(navProvider.notifier).go(AppTab.computers),
+                  icon: Icons.dns_outlined,
+                  label: 'Machines and computers',
+                  value: computers > 0 ? '$computers paired' : null,
+                  onTap: () => ref.read(navProvider.notifier).go(AppTab.machines),
                 ),
-                SRow(icon: Icons.dns_outlined, label: 'Machines', onTap: () => ref.read(navProvider.notifier).go(AppTab.machines)),
+                SRow(icon: Icons.bolt_rounded, label: 'Automations', onTap: () => ref.read(navProvider.notifier).go(AppTab.automations)),
                 SRow(icon: Icons.cable_rounded, label: 'Connections', onTap: () => ref.read(navProvider.notifier).go(AppTab.connections)),
               ]),
               const SizedBox(height: 24),

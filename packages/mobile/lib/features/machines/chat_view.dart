@@ -10,6 +10,7 @@ import '../../ui/widgets.dart';
 import '../companion/dog_state.dart';
 import '../composer/attachments.dart' show Attachment, AttachmentKind;
 import '../composer/chat_composer.dart';
+import 'autonomy.dart';
 import 'group_messages.dart';
 import 'hub_store.dart';
 import 'message_format.dart';
@@ -151,7 +152,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
         if (a.kind == AttachmentKind.image && a.data != null) ImageAttachment(mediaType: a.mime, dataBase64: a.data!),
     ];
     final files = [for (final a in attached) if (a.kind == AttachmentKind.text) (name: a.name, text: a.text ?? '')];
-    final text = inlineText(typed, files, maxTextChars) ?? typed;
+    var text = inlineText(typed, files, maxTextChars) ?? typed;
+    // An autonomous chat is told once more, with each request, to work on its own and check its work (chat does not show this).
+    if (isAutonomousMode(_mode) && text.trim().isNotEmpty) text = withAutonomyBrief(text);
     if (sessionId != null) {
       final input = parseUserInput({'text': text, 'images': images.isEmpty ? null : images});
       if (!input.ok) return _problem(StateError(input.error!));
@@ -236,7 +239,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
     }
 
     // Newest at the bottom: the list is drawn from the bottom up, so new output shows without scrolling.
+    final rounds = sessionId == null ? 0 : store.roundsFor(sessionId);
     final tail = <Widget>[
+      if (busy && rounds > 0 && pending == null)
+        Padding(padding: const EdgeInsets.only(bottom: 4), child: Text(roundsText(rounds), style: TextStyle(fontSize: 12, color: c.muted))),
       if (busy && pending == null)
         BusySpinner(key: ValueKey('spin-$startedAt'), startedAt: startedAt, thinking: lastIsThinking(rows), task: inProgress?.activeForm ?? inProgress?.content),
       if (todos != null && todos.isNotEmpty) TodoListView(todos: todos),

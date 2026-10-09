@@ -18,11 +18,20 @@ List<TextSpan> _spans(WidgetTester t) => [
 
 void main() {
   group('inline marks', () {
-    test('a site path opens on the website', () {
+    test('a site path opens the same page inside the app', () {
       expect(parseLegalRich('Make a request on [Privacy requests](/privacy/requests), in Settings.'), const [
         RichPart('Make a request on '),
-        RichPart('Privacy requests', href: 'https://www.escanor.in/privacy/requests'),
+        RichPart('Privacy requests', doc: privacyRequestsDoc),
         RichPart(', in Settings.'),
+      ]);
+      expect(parseLegalRich('[Refunds](/refunds)'), const [RichPart('Refunds', doc: 'refunds')]);
+    });
+    test('a path the app has no page for is its label, never a link to the website', () {
+      expect(parseLegalRich('read the [documentation](/docs) or [book a call](/book-a-call)'), const [
+        RichPart('read the '),
+        RichPart('documentation'),
+        RichPart(' or '),
+        RichPart('book a call'),
       ]);
     });
     test('an https link opens as it is', () {
@@ -51,7 +60,7 @@ void main() {
         RichPart(' 90 days. '),
         RichPart('Commands:', bold: true),
         RichPart(' see '),
-        RichPart('Privacy policy', href: 'https://www.escanor.in/privacy'),
+        RichPart('Privacy policy', doc: 'privacy'),
         RichPart('.'),
       ]);
       expect(parseLegalRich('No marks here, \$5 and it’s fine.'), const [RichPart('No marks here, \$5 and it’s fine.')]);
@@ -86,6 +95,8 @@ void main() {
           for (final text in [...s.paragraphs, ...s.items]) {
             for (final p in parseLegalRich(text)) {
               if (p.href != null) expect(p.href, startsWith('https://'));
+              if (p.doc != null) expect(p.doc == privacyRequestsDoc || legalDocuments.containsKey(p.doc), true, reason: '${p.doc} in $text');
+              expect(p.href?.contains('escanor.in'), isNot(true), reason: 'no link to the website: $text');
               expect(p.text.contains('**'), false, reason: text);
             }
           }

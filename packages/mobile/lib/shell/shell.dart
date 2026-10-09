@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,26 +12,27 @@ import '../features/account/policy_gate.dart';
 import '../features/assistant/assistant_screen.dart';
 import '../features/assistant/chat_drawer.dart';
 import '../features/companion/buddy.dart';
-import '../features/computers/computers_screen.dart';
+import '../features/automations/automations_screen.dart';
 import '../features/connections/connections_screen.dart';
-import '../features/machines/machines_screen.dart';
+import '../features/machines/machines_home.dart';
 import '../features/push/push_host.dart';
+import '../features/settings/whats_new.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/voice/voice_host.dart';
 
 const _tabs = <(AppTab, String, IconData, IconData)>[
   (AppTab.assistant, 'Chat', Icons.chat_bubble_outline_rounded, Icons.chat_bubble_rounded),
-  (AppTab.computers, 'Computers', Icons.laptop_outlined, Icons.laptop_rounded),
-  (AppTab.connections, 'Connections', Icons.cable_outlined, Icons.cable_rounded),
   (AppTab.machines, 'Machines', Icons.dns_outlined, Icons.dns_rounded),
+  (AppTab.automations, 'Automations', Icons.bolt_outlined, Icons.bolt_rounded),
+  (AppTab.connections, 'Connections', Icons.cable_outlined, Icons.cable_rounded),
   (AppTab.settings, 'Settings', Icons.settings_outlined, Icons.settings_rounded),
 ];
 
 Widget _screenFor(AppTab t) => switch (t) {
       AppTab.assistant => const AssistantScreen(),
-      AppTab.computers => const ComputersScreen(),
+      AppTab.machines => const MachinesHome(),
+      AppTab.automations => const AutomationsScreen(),
       AppTab.connections => const ConnectionsScreen(),
-      AppTab.machines => const MachinesScreen(),
       AppTab.settings => const SettingsScreen(),
     };
 
@@ -47,7 +50,10 @@ class _ShellState extends ConsumerState<Shell> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => openChatDrawer.value = () => _scaffold.currentState?.openDrawer());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      openChatDrawer.value = () => _scaffold.currentState?.openDrawer();
+      if (mounted) unawaited(maybeShowWhatsNew(context)); // once, after an update
+    });
   }
 
   @override

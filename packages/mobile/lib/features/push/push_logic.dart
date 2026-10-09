@@ -5,7 +5,7 @@ library;
 enum PushState { unsupported, unavailable, off, on, denied }
 
 /// Where tapping a notification lands. The same names as the app's tabs.
-enum PushDest { assistant, computers, connections, machines, settings }
+enum PushDest { assistant, computers, connections, machines, automations, settings }
 
 /// The Android notification channel the backend names in every message. Keep the two in step.
 const channelId = 'escanor_alerts';

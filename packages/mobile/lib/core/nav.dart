@@ -4,9 +4,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'prefs.dart';
 
 /// The places, in the order they appear on the phone's tab bar.
-enum AppTab { assistant, computers, connections, machines, settings }
+enum AppTab { assistant, machines, automations, connections, settings }
 
-AppTab tabFromName(String? name) => AppTab.values.firstWhere((t) => t.name == name, orElse: () => AppTab.assistant);
+/// Which half of the Machines tab is showing: 0 your servers (VMs), 1 your computers running Escanor Desktop. They are one place now.
+final ValueNotifier<int> machinesSegment = ValueNotifier<int>(0);
+
+/// A tab by name. The old "computers" tab is the Desktops half of Machines.
+AppTab tabFromName(String? name) {
+  if (name == 'computers') {
+    machinesSegment.value = 1;
+    return AppTab.machines;
+  }
+  return AppTab.values.firstWhere((t) => t.name == name, orElse: () => AppTab.assistant);
+}
 
 class NavState {
   const NavState({required this.tab, this.conversationId, this.resets = const {}, this.visited = const {}});

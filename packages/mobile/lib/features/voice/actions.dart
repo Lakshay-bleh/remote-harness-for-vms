@@ -174,7 +174,6 @@ const sites = <String, String>{
   'reddit': 'https://www.reddit.com',
   'wikipedia': 'https://www.wikipedia.org',
   'chatgpt': 'https://chatgpt.com',
-  'escanor': 'https://www.escanor.in',
 };
 
 String formatClock(int hour, int minute) {

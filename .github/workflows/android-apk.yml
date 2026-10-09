@@ -74,6 +74,33 @@ jobs:
           echo "code=$((100 + GITHUB_RUN_NUMBER))" >> "$GITHUB_OUTPUT"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${GITHUB_REF_TYPE}" = "tag" ]; then echo "publish=true" >> "$GITHUB_OUTPUT"; else echo "publish=false" >> "$GITHUB_OUTPUT"; fi
 
+      # Every release carries its own news: the notes for this version come from the same file the app shows (What's new), and a version
+      # with no entry does not build.
+      - name: Release notes for this version
+        id: notes
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, sys
+          def norm(v):
+              v = v.strip().split('+')[0].split(' ')[0]
+              while v.endswith('.0') and v.count('.') > 1:
+                  v = v[:-2]
+              return v
+          want = norm(os.environ['VERSION'])
+          notes = json.load(open('packages/mobile/assets/whats_new.json'))
+          entry = next((n for n in notes if norm(str(n.get('version', ''))) == want), None)
+          items = [i for i in (entry or {}).get('items', []) if isinstance(i, str) and i.strip()]
+          if not entry or not items:
+              print(f"::error::No release notes for {want}. Add an entry with at least one item to packages/mobile/assets/whats_new.json.")
+              sys.exit(1)
+          body = f"## {entry.get('title') or 'Escanor ' + want}\n\n" + "\n".join(f"- {i}" for i in items) + "\n"
+          open(os.path.join(os.environ['RUNNER_TEMP'], 'notes.md'), 'w').write(body)
+          print(body)
+          PY
+          echo "path=$RUNNER_TEMP/notes.md" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -164,5 +191,5 @@ jobs:
           tag_name: v${{ steps.v.outputs.version }}
           target_commitish: ${{ github.sha }}
           name: Escanor ${{ steps.v.outputs.version }} (Android)
-          generate_release_notes: true
+          body_path: ${{ steps.notes.outputs.path }}
           files: remote-harness-${{ steps.v.outputs.version }}*.apk

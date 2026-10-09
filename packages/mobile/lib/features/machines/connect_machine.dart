@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme.dart';
 import '../../ui/widgets.dart';
@@ -24,7 +23,6 @@ class _ConnectMachineBodyState extends State<ConnectMachineBody> {
   Widget build(BuildContext context) {
     final c = context.c;
     final hub = widget.hub;
-    final guide = hub.guideUrl;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
       Text(
         'Run this on the server you want to control. It installs the agent and points it at your hub, so it appears here as soon as it starts.',
@@ -60,10 +58,20 @@ class _ConnectMachineBodyState extends State<ConnectMachineBody> {
       ),
       const SizedBox(height: 16),
       const Notice('The secret lets a machine join your hub. Keep it to yourself; it works for your machines only.', tone: NoticeTone.warn),
-      if (guide != null && RegExp(r'^https://', caseSensitive: false).hasMatch(guide)) ...[
-        const SizedBox(height: 16),
-        EButton(label: 'Read the setup guide', expand: true, onPressed: () => launchUrl(Uri.parse(guide), mode: LaunchMode.externalApplication)),
-      ],
+      const SizedBox(height: 16),
+      Text('WHAT HAPPENS', style: TextStyle(fontSize: 11, letterSpacing: 0.6, fontWeight: FontWeight.w500, color: c.muted)),
+      const SizedBox(height: 6),
+      for (final (i, step) in const [
+        'Open a terminal on the server (SSH in, or use its console).',
+        'Paste the command above and run it. It installs the Escanor agent and points it at your hub.',
+        'The agent connects out to your hub, so the server needs no open ports and no firewall changes.',
+        'Within a few seconds the server shows up under Servers, with a green dot. Tap it to start a chat on it.',
+        'Chats there work on their own: Escanor does the work, checks it, and fixes what fails.',
+      ].indexed)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Text('${i + 1}. $step', style: TextStyle(fontSize: 13, height: 1.45, color: c.body)),
+        ),
     ]);
   }
 }
