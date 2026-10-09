@@ -134,7 +134,9 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
     final list = ref.watch(conversationsProvider).list;
     final title = chatName(_chat.id, meta, list) ?? 'New chat';
     final caps = _caps?.data;
-    final usable = (caps?.integrations ?? const <CapabilityIntegration>[]).where((i) => i.availableToAssistant == true).toList();
+    final integrations = caps?.integrations ?? const <CapabilityIntegration>[];
+    // Unchecked (null) counts: it is connected, and the machine reads connections live once it is up.
+    final usable = integrations.where((i) => i.availableToAssistant != false && !i.needsReconnect).toList();
     final blocks = toDisplay(_chat.state);
     _followNewest(blocks);
     // While a turn runs: what it is doing and for how long, ticking every second.
@@ -224,7 +226,7 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                 ]),
               ),
             )
-          else if (caps != null)
+          else if (caps != null && integrations.isEmpty)
             Align(
               alignment: Alignment.centerLeft,
               child: GestureDetector(
