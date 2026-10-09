@@ -7,6 +7,7 @@ import '../../core/api.dart' show errorText;
 import '../../core/prefs.dart';
 import '../../core/theme.dart';
 import '../../ui/widgets.dart';
+import '../companion/companion_floor.dart';
 import '../companion/dog_state.dart';
 import '../composer/attachments.dart' show Attachment, AttachmentKind;
 import '../composer/chat_composer.dart';
@@ -297,41 +298,43 @@ class _ChatViewState extends ConsumerState<ChatView> {
                     twins: permissionTwins(unresolved, pending)),
               ),
             ),
-          Container(
-            decoration: BoxDecoration(color: c.canvas, border: Border(top: BorderSide(color: c.hairline))),
-            padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
-            child: ChatComposer(
-              key: ValueKey('$vmId:${sessionId ?? 'new'}'),
-              attach: 'media',
-              running: busy,
-              stopping: _stopping,
-              sendWhileRunning: true,
-              onStop: () {
-                if (sessionId == null || _stopping) return;
-                setState(() => _stopping = true);
-                unawaited(store.interrupt(vmId, sessionId).catchError(_problem).whenComplete(() {
-                  if (mounted) setState(() => _stopping = false);
-                }));
-              },
-              onSend: (typed, attached) => _send(typed, attached, vmId, sessionId, accountId),
-              placeholder: sessionId != null ? 'Message Claude…' : 'Start a new conversation…',
-              chips: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(children: [
-                  _Chip(icon: Icons.dns_outlined, label: vm == null ? '' : store.nameOf(vm)),
-                  _Chip(icon: Icons.person_outline_rounded, label: accountLabel),
-                  if (sessionId == null)
-                    _DropdownChip(
-                      icon: Icons.folder_outlined,
-                      title: 'Folder',
-                      value: _project,
-                      options: [(value: '', label: 'Workspace root'), for (final p in _projects) (value: p, label: p)],
-                      onChanged: (v) => setState(() => _project = v),
-                    ),
-                  _DropdownChip(icon: Icons.shield_outlined, title: 'Permission mode', value: _mode, options: chatModeOptions, onChanged: (v) => _choose(mode: v)),
-                  _DropdownChip(icon: Icons.auto_awesome_outlined, title: 'Model', value: _model, options: chatModelOptions, onChanged: (v) => _choose(model: v)),
-                  _DropdownChip(icon: Icons.speed_rounded, title: 'Effort', value: _effort, options: chatEffortOptions, onChanged: (v) => _choose(effort: v)),
-                ]),
+          CompanionFloor(
+            child: Container(
+              decoration: BoxDecoration(color: c.canvas, border: Border(top: BorderSide(color: c.hairline))),
+              padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+              child: ChatComposer(
+                key: ValueKey('$vmId:${sessionId ?? 'new'}'),
+                attach: 'media',
+                running: busy,
+                stopping: _stopping,
+                sendWhileRunning: true,
+                onStop: () {
+                  if (sessionId == null || _stopping) return;
+                  setState(() => _stopping = true);
+                  unawaited(store.interrupt(vmId, sessionId).catchError(_problem).whenComplete(() {
+                    if (mounted) setState(() => _stopping = false);
+                  }));
+                },
+                onSend: (typed, attached) => _send(typed, attached, vmId, sessionId, accountId),
+                placeholder: sessionId != null ? 'Message Claude…' : 'Start a new conversation…',
+                chips: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(children: [
+                    _Chip(icon: Icons.dns_outlined, label: vm == null ? '' : store.nameOf(vm)),
+                    _Chip(icon: Icons.person_outline_rounded, label: accountLabel),
+                    if (sessionId == null)
+                      _DropdownChip(
+                        icon: Icons.folder_outlined,
+                        title: 'Folder',
+                        value: _project,
+                        options: [(value: '', label: 'Workspace root'), for (final p in _projects) (value: p, label: p)],
+                        onChanged: (v) => setState(() => _project = v),
+                      ),
+                    _DropdownChip(icon: Icons.shield_outlined, title: 'Permission mode', value: _mode, options: chatModeOptions, onChanged: (v) => _choose(mode: v)),
+                    _DropdownChip(icon: Icons.auto_awesome_outlined, title: 'Model', value: _model, options: chatModelOptions, onChanged: (v) => _choose(model: v)),
+                    _DropdownChip(icon: Icons.speed_rounded, title: 'Effort', value: _effort, options: chatEffortOptions, onChanged: (v) => _choose(effort: v)),
+                  ]),
+                ),
               ),
             ),
           ),

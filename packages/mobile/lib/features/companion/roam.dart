@@ -97,8 +97,10 @@ double _dist(Vec a, Vec b) => math.sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) 
 /// the same thing as a matrix; this is the readable form, for tests and debugging.
 String cssFor(({int rotate, bool mirror}) o) => 'rotate(${o.rotate}deg) scaleX(${o.mirror ? -1 : 1})';
 
-/// The edges: where the picture's centre sits when it is walking along each.
-({double floor, double left, double right, double ceiling, double minX, double maxX, double wallTop}) _edges(Geometry g) => (
+/// The edges: where the picture's centre sits when it is walking along each. The picture is wider than it is tall, so on
+/// a wall (turned a quarter) it is [Geometry.sh] across and [Geometry.sw] high: [wallBottom] and [wallTop] are where it
+/// stands on a wall right in a corner, its feet on the wall and its side on the floor or the ceiling.
+({double floor, double left, double right, double ceiling, double minX, double maxX, double wallTop, double wallBottom}) _edges(Geometry g) => (
       floor: g.home.y,
       left: g.sh / 2 + 2,
       right: g.vw - g.sh / 2 - 2,
@@ -106,6 +108,7 @@ String cssFor(({int rotate, bool mirror}) o) => 'rotate(${o.rotate}deg) scaleX($
       minX: g.sw / 2 + 2,
       maxX: g.vw - g.sw / 2 - 2,
       wallTop: g.top + g.sw / 2,
+      wallBottom: g.home.y + g.sh / 2 - g.sw / 2,
     );
 
 Leg _leg(Vec from, Vec to, Scene scene, Vec feet, Vec face, [double speed = walk, bool jump = false]) =>
@@ -125,12 +128,23 @@ Plan planExcursion(Excursion kind, Geometry g, [double Function()? rand]) {
 
   void stay(int ms, Scene scene, Vec feet, Vec face) => legs.add(Leg(to: at, ms: ms, scene: scene, feet: feet, face: face));
 
+  // Strolls, zoomies and naps head for the far side: right from a phone's left corner, left from a wide screen's right one.
+  final toRight = home.x < g.vw / 2;
+  final away = toRight ? _right : _left;
+  final back = toRight ? _left : _right;
+  double farX(double inset) => toRight ? e.maxX - inset : e.minX + inset;
+
+  // Round a corner: it turns where it stands, tucked into the corner, so no part of it ever pokes past an edge.
+  void turn(Vec to, Vec feet, Vec face) {
+    legs.add(Leg(to: to, ms: 1, scene: Scene.run, feet: feet, face: face, jump: true));
+    at = to;
+  }
+
   switch (kind) {
     case Excursion.stroll:
-      final far = Vec(math.max(home.x + 40, e.maxX - 6), e.floor);
-      go(far, Scene.run, _floorFeet, _right);
-      stay(3000, Scene.sniff, _floorFeet, _right);
-      go(home, Scene.run, _floorFeet, _left);
+      go(Vec(farX(6), e.floor), Scene.run, _floorFeet, away);
+      stay(3000, Scene.sniff, _floorFeet, away);
+      go(home, Scene.run, _floorFeet, back);
     case Excursion.patrol:
       // clockwise or the other way round, by the dice
       final clockwise = dice() < 0.5;
@@ -138,17 +152,23 @@ Plan planExcursion(Excursion kind, Geometry g, [double Function()? rand]) {
       Vec r(double y) => Vec(e.right, y);
       if (clockwise) {
         go(Vec(e.minX, e.floor), Scene.run, _floorFeet, _left);
+        turn(l(e.wallBottom), _left, _up);
         go(l(e.wallTop), Scene.run, _left, _up);
-        go(Vec(e.left, e.ceiling), Scene.run, _up, _right);
-        go(Vec(e.right, e.ceiling), Scene.run, _up, _right);
-        go(r(e.floor), Scene.run, _right, _down);
+        turn(Vec(e.minX, e.ceiling), _up, _right);
+        go(Vec(e.maxX, e.ceiling), Scene.run, _up, _right);
+        turn(r(e.wallTop), _right, _down);
+        go(r(e.wallBottom), Scene.run, _right, _down);
+        turn(Vec(e.maxX, e.floor), _floorFeet, _left);
         go(home, Scene.run, _floorFeet, _left);
       } else {
         go(Vec(e.maxX, e.floor), Scene.run, _floorFeet, _right);
+        turn(r(e.wallBottom), _right, _up);
         go(r(e.wallTop), Scene.run, _right, _up);
-        go(Vec(e.right, e.ceiling), Scene.run, _up, _left);
-        go(Vec(e.left, e.ceiling), Scene.run, _up, _left);
-        go(l(e.floor), Scene.run, _left, _down);
+        turn(Vec(e.maxX, e.ceiling), _up, _left);
+        go(Vec(e.minX, e.ceiling), Scene.run, _up, _left);
+        turn(l(e.wallTop), _left, _down);
+        go(l(e.wallBottom), Scene.run, _left, _down);
+        turn(Vec(e.minX, e.floor), _floorFeet, _right);
         go(home, Scene.run, _floorFeet, _right);
       }
     case Excursion.peek:
@@ -161,19 +181,30 @@ Plan planExcursion(Excursion kind, Geometry g, [double Function()? rand]) {
       go(Vec(-g.sw / 2 - 12, e.floor), Scene.run, _floorFeet, _right, walk, true);
       go(home, Scene.run, _floorFeet, _right);
     case Excursion.zoomies:
-      final mid = Vec(math.min(e.maxX - 20, math.max(home.x + 60, g.vw * (0.4 + dice() * 0.25))), e.floor);
-      go(mid, Scene.run, _floorFeet, _right);
-      stay(3400, Scene.react, _floorFeet, _right);
-      go(Vec(e.maxX, e.floor), Scene.run, _floorFeet, _right, dash);
-      go(home, Scene.run, _floorFeet, _left, dash);
+      final x = g.vw * (0.4 + dice() * 0.25);
+      final mid = Vec(toRight ? math.min(e.maxX - 20, math.max(home.x + 60, x)) : math.max(e.minX + 20, math.min(home.x - 60, x)), e.floor);
+      go(mid, Scene.run, _floorFeet, away);
+      stay(3400, Scene.react, _floorFeet, away);
+      go(Vec(farX(0), e.floor), Scene.run, _floorFeet, away, dash);
+      go(home, Scene.run, _floorFeet, back, dash);
     case Excursion.nap:
-      final bed = Vec(e.maxX - 8, e.floor);
-      go(bed, Scene.run, _floorFeet, _right);
-      stay(9000, Scene.sleep, _floorFeet, _right);
-      stay(1400, Scene.sniff, _floorFeet, _left);
-      go(home, Scene.run, _floorFeet, _left);
+      go(Vec(farX(8), e.floor), Scene.run, _floorFeet, away);
+      stay(9000, Scene.sleep, _floorFeet, away);
+      stay(1400, Scene.sniff, _floorFeet, back);
+      go(home, Scene.run, _floorFeet, back);
   }
   return Plan(kind, legs, legs.fold(0, (n, l) => n + l.ms));
+}
+
+/// Where a point of an outing planned on [from] belongs on [to]: the screen changed size while it was out (the keyboard
+/// came or went, the message box grew, the phone turned). The floor stays the floor, the ceiling the ceiling and each wall
+/// its wall, so it carries on along the same edge instead of walking through the middle of the screen.
+Vec refit(Vec p, Geometry from, Geometry to) {
+  if (identical(from, to)) return p;
+  final a = _edges(from);
+  final b = _edges(to);
+  double map(double v, double a0, double a1, double b0, double b1) => (a1 - a0).abs() < 1 ? b0 + (v - a0) : b0 + (v - a0) * (b1 - b0) / (a1 - a0);
+  return Vec(map(p.x, a.left, a.right, b.left, b.right), map(p.y, a.ceiling, a.floor, b.ceiling, b.floor));
 }
 
 class Sample {

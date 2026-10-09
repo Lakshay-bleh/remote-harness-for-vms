@@ -9,8 +9,10 @@ import '../../ui/widgets.dart';
 import '../companion/dog_state.dart';
 import 'connect_machine.dart';
 import 'escanor_connect.dart';
+import 'hub_app.dart' show hubWideWidth;
 import 'hub_scope.dart';
 import 'hub_store.dart';
+import 'machines_home.dart';
 import 'message_format.dart';
 import 'protocol.dart';
 import 'settings_sheets.dart';
@@ -111,11 +113,16 @@ class _HubSidebarState extends State<HubSidebar> {
     final q = _query.text.trim().toLowerCase();
     bool matches(SessionDto x) => !store.isSessionHidden(x.vmId.isEmpty ? (s.selectedVmId ?? '') : x.vmId, x.id) && (q.isEmpty || store.titleOf(x).toLowerCase().contains(q));
     void connect() => showConnectMachineSheet(context, managed!);
+    // The Servers half of the Machines tab: its header (and Add) is the tab's.
+    final half = MachinesHalf.offerAdd(context, managed != null ? connect : null);
 
     return Material(
-      color: c.surfaceSoft,
+      // a sidebar beside the chat on a wide screen; on a phone, the page itself
+      color: half && MediaQuery.sizeOf(context).width < hubWideWidth ? c.canvas : c.surfaceSoft,
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        if (managed != null || embedded)
+        if (half)
+          const SizedBox.shrink()
+        else if (managed != null || embedded)
           ScreenHeader(title: 'Servers', actions: [
             if (managed != null)
               Padding(padding: const EdgeInsets.only(right: 4), child: EButton(label: 'Add', icon: Icons.add_rounded, onPressed: connect)),
