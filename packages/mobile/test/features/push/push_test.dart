@@ -11,6 +11,21 @@ void main() {
       expect(routeFor({'kind': 'emergency_alerts'}), PushDest.assistant);
       expect(routeFor({'kind': 'team_pings'}), PushDest.assistant);
       expect(routeFor({'kind': 'server_down'}), PushDest.machines);
+      expect(routeFor({'kind': 'checks'}), PushDest.automations);
+    });
+
+    test('asks by itself once, only when the phone has not been asked', () {
+      expect(shouldAskOnce(PushState.off, askedBefore: false), isTrue);
+      expect(shouldAskOnce(PushState.off, askedBefore: true), isFalse);
+      for (final s in [PushState.on, PushState.denied, PushState.unavailable, PushState.unsupported]) {
+        expect(shouldAskOnce(s, askedBefore: false), isFalse, reason: '$s');
+      }
+    });
+
+    test('anything an automation or an automatic check sent opens Automations', () {
+      expect(routeFor({'kind': 'emergency_alerts', 'check': 'incidents'}), PushDest.automations);
+      expect(routeFor({'kind': 'deployment_approvals', 'run_id': 'r1'}), PushDest.automations);
+      expect(routeFor({'kind': 'deployment_approvals', 'command_id': 'c1'}), PushDest.assistant);
     });
 
     test('falls back to the main screen for anything it does not know, however odd', () {

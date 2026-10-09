@@ -26,5 +26,9 @@ extension AutopilotApi on Api {
 
   Future<void> removeTrigger(String id) async => delete('/autopilot/triggers/${enc(id)}');
 
+  /// Switch an automatic check on or off ([enabled]), or let it start a run to fix what it finds ([fix]).
+  Future<Watcher> editWatcher(String id, {bool? enabled, bool? fix}) async =>
+      Watcher.fromJson(await patch('/autopilot/watchers/${enc(id)}', {'enabled': ?enabled, 'fix': ?fix}));
+
   Future<AutopilotRun> runTriggerNow(String id) async => AutopilotRun.fromJson(await post('/autopilot/triggers/${enc(id)}/run'));
 }

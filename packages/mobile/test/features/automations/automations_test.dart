@@ -6,6 +6,7 @@ import 'package:escanor/core/storage.dart';
 import 'package:escanor/core/theme.dart';
 import 'package:escanor/features/automations/automations_screen.dart';
 import 'package:escanor/features/automations/autopilot_models.dart';
+import 'package:escanor/ui/parts.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -43,6 +44,11 @@ Map<String, dynamic> overview({bool enabled = true, bool paused = false, bool ca
       'runs': runs,
       'needs_you': [for (final r in runs) if (r['status'] == 'needs_you') r],
       'triggers': triggers,
+      'watchers': [
+        {'id': 'failed-deployments', 'name': 'Failed deployments', 'about': 'Tells you the moment a deployment fails.', 'enabled': true, 'fix': false,
+         'last_found_at': DateTime.now().toUtc().toIso8601String(), 'last_finding': 'Failed deployment: api v3 in production.', 'found_count': 1},
+        {'id': 'health', 'name': 'Health drops', 'about': 'Tells you when health falls.', 'enabled': true, 'fix': false},
+      ],
       'templates': [
         {'id': 'morning', 'name': 'Every morning, check everything', 'kind': 'schedule', 'config': {'daily_at': '09:00'}, 'goal': 'Check it all.', 'criteria': 'A short report.'},
       ],
@@ -83,6 +89,12 @@ void main() {
           if (body.containsKey('level')) (data['policy'] as Map)['level'] = body['level'];
           return http.Response(jsonEncode(data['policy']), 200);
         }
+        if (p.startsWith('/autopilot/watchers/') && req.method == 'PATCH') {
+          final id = p.split('/').last;
+          final w = (data['watchers'] as List).cast<Map<String, dynamic>>().firstWhere((w) => w['id'] == id);
+          w.addAll(jsonDecode(req.body) as Map<String, dynamic>);
+          return http.Response(jsonEncode(w), 200);
+        }
         if (p == '/autopilot/triggers' && req.method == 'POST') {
           final t = {...jsonDecode(req.body) as Map<String, dynamic>, 'id': 't1', 'fired_count': 0};
           data['triggers'] = [t];
@@ -118,6 +130,18 @@ void main() {
     expect(t('schedule', {'daily_at': '09:00'}).when, 'Every day at 09:00 UTC');
     expect(t('health_below', {'threshold': 60}).when, 'When health is below 60');
     expect(t('incident_opened', {}).when, 'When an incident opens');
+  });
+
+  test('automatic checks are read defensively, and an older server simply has none', () {
+    final o = AutopilotOverview.fromJson(overview());
+    expect(o.watchers.map((w) => w.id), ['failed-deployments', 'health']);
+    expect(o.watchers.first.foundCount, 1);
+    expect(o.watchers.first.lastFinding, contains('api v3'));
+    expect(AutopilotOverview.fromJson({...overview()}..remove('watchers')).watchers, isEmpty);
+    final w = Watcher.fromJson({'id': 'x'});
+    expect(w.enabled, isTrue, reason: 'a check is on unless switched off');
+    expect(w.fix, isFalse, reason: 'it only tells you unless asked to fix');
+    expect(originLabels['check'], 'An automatic check');
   });
 
   test('a category can only be set as far as its ceiling', () {
@@ -188,6 +212,31 @@ void main() {
     await tester.tap(find.text('Autonomous'));
     await tester.pumpAndSettle();
     expect(sent.any((r) => r.url.path == '/autopilot/policy' && jsonDecode(r.body)['level'] == 'autonomous'), isTrue);
+  });
+
+  testWidgets('two kinds of automation: the automatic checks can be switched and told to fix, next to the ones you set', (tester) async {
+    tall(tester);
+    await tester.pumpWidget(app(const AutomationsScreen()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Automations').last);
+    await tester.pumpAndSettle();
+    expect(find.text('ALWAYS CHECKING'), findsOneWidget);
+    expect(find.text('SET BY YOU'), findsOneWidget);
+    expect(find.text('Failed deployments'), findsOneWidget);
+    expect(find.textContaining('api v3'), findsOneWidget);
+    expect(find.textContaining('Found something'), findsOneWidget);
+
+    // Each card has its on/off switch first, then "also fix it".
+    final switches = find.byType(ESwitch);
+    await tester.tap(switches.at(1)); // fix, on the failed-deployments card
+    await tester.pumpAndSettle();
+    final fix = sent.lastWhere((r) => r.url.path == '/autopilot/watchers/failed-deployments' && r.method == 'PATCH');
+    expect(jsonDecode(fix.body), {'fix': true});
+
+    await tester.tap(find.byType(ESwitch).at(2)); // the health card's on/off
+    await tester.pumpAndSettle();
+    final off = sent.lastWhere((r) => r.url.path == '/autopilot/watchers/health' && r.method == 'PATCH');
+    expect(jsonDecode(off.body), {'enabled': false});
   });
 
   testWidgets('someone who cannot manage sees the rules but cannot change them', (tester) async {

@@ -107,12 +107,14 @@ class NotificationPrefs {
     this.serverDown = true,
     this.deploymentApprovals = true,
     this.teamPings = true,
+    this.checks = true,
   });
   final bool pushEnabled;
   final bool emergencyAlerts;
   final bool serverDown;
   final bool deploymentApprovals;
   final bool teamPings;
+  final bool checks;
 
   factory NotificationPrefs.fromJson(Map<String, dynamic> j) => NotificationPrefs(
         pushEnabled: j['push_enabled'] != false,
@@ -120,6 +122,7 @@ class NotificationPrefs {
         serverDown: j['server_down'] != false,
         deploymentApprovals: j['deployment_approvals'] != false,
         teamPings: j['team_pings'] != false,
+        checks: j['checks'] != false,
       );
 
   Map<String, dynamic> toJson() => {
@@ -128,6 +131,7 @@ class NotificationPrefs {
         'server_down': serverDown,
         'deployment_approvals': deploymentApprovals,
         'team_pings': teamPings,
+        'checks': checks,
       };
 
   bool operator [](String key) => toJson()[key] == true;
@@ -140,4 +144,5 @@ const notificationKinds = [
   (key: 'server_down', label: 'Machine or server down', sub: 'A computer or server stopped responding'),
   (key: 'deployment_approvals', label: 'Approvals needed', sub: 'The assistant wants your OK before it deploys or changes something'),
   (key: 'team_pings', label: 'Team messages', sub: 'A teammate sent you a note'),
+  (key: 'checks', label: 'Automatic checks', sub: 'A deployment failed or a tool stopped syncing'),
 ];

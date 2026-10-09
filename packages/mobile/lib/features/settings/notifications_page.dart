@@ -16,6 +16,7 @@ const _icons = {
   'server_down': Icons.bolt_rounded,
   'deployment_approvals': Icons.rocket_launch_outlined,
   'team_pings': Icons.groups_outlined,
+  'checks': Icons.radar_rounded,
 };
 
 const _prefsCache = CachePolicy('notification-prefs', ttl: Duration(minutes: 5), maxAge: Duration(days: 30));
