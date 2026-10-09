@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.26",
+    "date": "2026-10-09",
+    "title": "Notifications that work, and checks that never sleep",
+    "items": [
+      "Notifications now reach your phone. The previous build was made without the part that receives them, so nothing arrived. The app also asks once whether it may notify you; you can change that any time in Settings > Notifications.",
+      "Two kinds of automation. Always checking: built in and on for everything you connect, Escanor looks every couple of minutes for a failed deployment, a new incident, a tool that stopped syncing or a drop in health, and tells you straight away. Turn on \"Also look into it and fix what is safe\" on any check and it starts working on the problem too. Set by you: the automations you create, as before.",
+      "A new Automatic checks switch in Settings > Notifications, and a notification about an automation or a check opens the Automations tab.",
+      "This release is signed with Escanor's release key. If you installed a test build of 1.24 or 1.25, uninstall it once before installing this one."
+    ]
+  },
+  {
     "version": "1.25",
     "date": "2026-10-09",
     "title": "Escanor works on its own",
