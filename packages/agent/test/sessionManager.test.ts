@@ -121,4 +121,37 @@ describe('SessionManager', () => {
     assert.deepEqual(typeof verdict === 'object' ? (verdict as { behavior: string }).behavior : verdict, 'deny');
     assert.ok(sent.some((m) => m.type === 'session_ended'));
   });
+
+  it('reports a rejected model switch to the phone instead of crashing the agent', async () => {
+    // The SDK rejects set_model for a model id its catalog doesn't know; an unhandled rejection used to kill the process.
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    const fail = async () => { throw new Error('"claude-x" isn\'t described by this version\'s model catalog'); };
+    const query = (() => ({
+      [Symbol.asyncIterator]: async function* () { await held; },
+      interrupt: fail, setPermissionMode: fail, setModel: fail, applyFlagSettings: fail,
+      setMcpServers: async () => {}, mcpServerStatus: async () => [], close: () => {},
+    })) as never;
+    const sent: AgentToHubMessage[] = [];
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'sm-test-')));
+    const manager = new SessionManager(dir, join(dir, 'data'), [{ id: 'default', label: 'default' }], (m) => sent.push(m), { query } as never);
+    const unhandled: unknown[] = [];
+    const onUnhandled = (e: unknown) => unhandled.push(e);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      start(manager);
+      manager.setModel('t1', 'claude-x');
+      manager.setEffort('t1', 'high');
+      manager.setPermissionMode('t1', 'default');
+      manager.interrupt('t1');
+      await new Promise((r) => setTimeout(r, 50));
+      assert.deepEqual(unhandled, []);
+      const errors = sent.filter((m) => m.type === 'error') as { message: string; sessionId?: string }[];
+      assert.equal(errors.length, 4);
+      assert.match(errors[0].message, /model catalog/);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+      release();
+    }
+  });
 });
