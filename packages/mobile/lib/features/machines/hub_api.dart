@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../../core/storage.dart';
 import 'hub_url.dart';
 import 'protocol.dart';
+import 'session_search.dart';
 
 /// Where this phone keeps its hub login: the address (an ordinary setting) and the token (a secret, in the
 /// Keychain / Keystore). A flag marks credentials that came from Escanor's hosted hub, so signing out of
@@ -189,6 +190,10 @@ class HubApi {
   Future<McpOverview> getMcpOverview() async => McpOverview.fromJson(await request('/mcp-servers'));
 
   Future<List<SessionDto>> listSessions(String vmId) async => SessionDto.listFrom(await request('/vms/${_e(vmId)}/sessions'));
+
+  /// Chats on this machine whose title or messages match [query], best first. A hub from before search answers 404.
+  Future<List<SessionSearchHit>> searchSessions(String vmId, String query, {int limit = 20}) async =>
+      SessionSearchHit.listFrom(await request('/vms/${_e(vmId)}/sessions/search?q=${_e(query)}&limit=$limit', timeout: controlTimeout));
 
   Future<List<String>> listProjects(String vmId) async {
     final r = await request('/vms/${_e(vmId)}/projects');

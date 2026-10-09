@@ -39,6 +39,8 @@ const MAX_BODY_UNAUTHENTICATED = '16kb';
 const MAX_BODY_AUTHENTICATED = '20mb';
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const MAX_MESSAGE_LIMIT = 10_000;
+const DEFAULT_SEARCH_LIMIT = 20;
+const MAX_SEARCH_LIMIT = 100;
 const MIN_TOKEN_TTL_SECONDS = 60;
 const MAX_TOKEN_TTL_SECONDS = 2 * 365 * 24 * 60 * 60;
 
@@ -255,6 +257,14 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
 
   router.get('/vms/:vmId/sessions', (req, res) => {
     res.json(T(res).listSessionsByVm(req.params.vmId));
+  });
+
+  // Search this VM's chats by title and by what was said in them. Declared before the `/sessions/:sessionId` routes so
+  // "search" is never taken for a session id.
+  router.get('/vms/:vmId/sessions/search', (req, res) => {
+    const q = typeof req.query.q === 'string' ? req.query.q : '';
+    const limit = clampLimit(req.query.limit, DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT);
+    res.json(T(res).searchSessions(req.params.vmId, q, limit));
   });
 
   router.get('/vms/:vmId/projects', async (req, res) => {
