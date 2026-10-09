@@ -3,6 +3,7 @@ var __name = (target, value) => __defProp(target, "name", { value, configurable:
 
 // src/hub.ts
 import { DurableObject } from "cloudflare:workers";
+import { searchSessions } from "./session-search.js";
 
 // src/protocol.ts
 var MIN_MCP_AGENT_VERSION = "0.3.0";
@@ -633,6 +634,10 @@ var Hub = class extends DurableObject {
     }
     if (method === "GET" && (m = path.match(/^\/vms\/([^/]+)\/projects$/))) {
       return json(await this.requestProjects(m[1]));
+    }
+    if (method === "GET" && (m = path.match(/^\/vms\/([^/]+)\/sessions\/search$/))) {
+      const exec = (query, ...params) => this.sql.exec(query, ...params).toArray();
+      return json(searchSessions(exec, m[1], url.searchParams.get("q"), url.searchParams.get("limit")));
     }
     if (method === "GET" && (m = path.match(/^\/vms\/([^/]+)\/sessions\/([^/]+)\/messages$/))) {
       return json(this.listMessages(m[2]));
