@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { PermissionMode } from '@remote-harness/shared';
+import type { EffortLevel, PermissionMode } from '@remote-harness/shared';
 
 export type RegistryEntry = {
   sessionId: string;
@@ -14,8 +14,10 @@ export type RegistryEntry = {
   syncedUuid?: string;
   /** Transcript mtime at the last sync; an unchanged file is not re-read. */
   syncedMtime?: number;
-  /** The permission mode last chosen for this chat, so a resumed run keeps it instead of falling back to 'default'. */
+  /** What the person last chose for this chat. A resumed chat starts with these instead of the defaults. */
   permissionMode?: PermissionMode;
+  model?: string;
+  effort?: EffortLevel | null;
 };
 
 const isEntry = (e: unknown): e is RegistryEntry =>
@@ -90,16 +92,18 @@ export class SessionRegistry {
     return this.entries.get(sessionId);
   }
 
-  /** Change some fields of a known session; unknown ids are ignored. */
-  update(sessionId: string, fields: Partial<Omit<RegistryEntry, 'sessionId'>>): void {
-    const entry = this.entries.get(sessionId);
-    if (!entry) return;
-    this.entries.set(sessionId, { ...entry, ...fields });
+  upsert(entry: RegistryEntry): void {
+    this.entries.set(entry.sessionId, entry);
     this.persist();
   }
 
-  upsert(entry: RegistryEntry): void {
-    this.entries.set(entry.sessionId, entry);
+  /** Change some fields of a known session (nothing happens for one this VM has no record of). */
+  update(sessionId: string, patch: Partial<Omit<RegistryEntry, 'sessionId'>>): void {
+    const e = this.entries.get(sessionId);
+    if (!e) return;
+    const next = { ...e, ...patch };
+    if (JSON.stringify(next) === JSON.stringify(e)) return;
+    this.entries.set(sessionId, next);
     this.persist();
   }
 

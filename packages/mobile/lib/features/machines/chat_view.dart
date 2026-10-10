@@ -47,6 +47,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
   String? _sessionId;
   String? _vmId;
   bool _stopping = false;
+  bool _loadingEarlier = false;
   List<MessageDto>? _rowsMemo;
 
   /// The first message of a new chat is on its way: the chat it becomes keeps this one's choices.
@@ -146,6 +147,18 @@ class _ChatViewState extends ConsumerState<ChatView> {
 
   void _problem(Object e) {
     if (mounted) toast(context, errorText(e));
+  }
+
+  Future<void> _earlier(String vmId, String sessionId) async {
+    if (_loadingEarlier) return;
+    setState(() => _loadingEarlier = true);
+    try {
+      await store.loadEarlier(vmId, sessionId);
+    } catch (e) {
+      _problem(e);
+    } finally {
+      if (mounted) setState(() => _loadingEarlier = false);
+    }
   }
 
   void _send(String typed, List<Attachment> attached, String vmId, String? sessionId, String? accountId) {
@@ -279,6 +292,20 @@ class _ChatViewState extends ConsumerState<ChatView> {
                       onPick: (t) => _send(t, const [], vmId, sessionId, accountId),
                     ),
               children: [
+                if (sessionId != null && items.isNotEmpty && store.hasEarlier(sessionId))
+                  Padding(
+                    key: const ValueKey('earlier'),
+                    padding: const EdgeInsets.only(bottom: chatGap),
+                    child: Center(
+                      child: EButton(
+                        label: 'Show earlier messages',
+                        icon: Icons.expand_less_rounded,
+                        kind: ButtonKind.quiet,
+                        busy: _loadingEarlier,
+                        onPressed: () => _earlier(vmId, sessionId),
+                      ),
+                    ),
+                  ),
                 for (final item in items) MessageView(key: ValueKey(item.key), item: item, live: busy, waitingForPermission: pending != null),
                 // The reply as Claude writes it, until the finished message takes its place.
                 if (busy && pending == null && partial != null && partial.isNotEmpty)

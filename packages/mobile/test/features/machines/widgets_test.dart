@@ -138,6 +138,9 @@ void main() {
       'message': {'type': 'assistant', 'message': {'content': [{'type': 'text', 'text': 'Fixed it.'}]}},
     }));
     await tester.pump();
+    // Finished messages from the socket are shown in batches (one repaint per [HubStore.batchEvery]). The store was started
+    // in setUp, outside the test's fake clock, so its batch timer runs on the real one.
+    await tester.runAsync(() => Future<void>.delayed(HubStore.batchEvery * 3));
     await tester.pump();
     expect(answer('Writing the fix now'), findsNothing, reason: 'the finished message takes its place');
     expect(answer('Fixed it.'), findsOneWidget);
