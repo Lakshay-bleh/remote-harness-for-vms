@@ -51,8 +51,9 @@ test('values that could smuggle in extra settings or commands are refused', () =
     vmname: ['', '-x', 'has space', 'a;b', 'a\nb', 'a'.repeat(101), '../x'],
     apikey: ['key\nWORKSPACE_ROOT=/', 'k e y', 'k;id', '$(id)'],
     path: ['', 'a\nb', '/ok\nWORKSPACE_ROOT=/'],
+    mode: ['', 'yolo', 'bypassPermissions\nWORKSPACE_ROOT=/', 'default;id', 'BYPASSPERMISSIONS', ' default'],
   };
-  const fn: Record<string, string> = { url: 'valid_hub_url', token: 'valid_hub_token', vmname: 'valid_vm_name', apikey: 'valid_api_key', path: 'valid_path' };
+  const fn: Record<string, string> = { url: 'valid_hub_url', token: 'valid_hub_token', vmname: 'valid_vm_name', apikey: 'valid_api_key', path: 'valid_path', mode: 'valid_permission_mode' };
   for (const [kind, values] of Object.entries(bad)) {
     for (const v of values) {
       if (kind === 'apikey' && v === '') continue;
@@ -67,6 +68,7 @@ test('ordinary values are accepted', () => {
     ['valid_hub_url', 'wss://hub.example.com/agent'], ['valid_hub_url', 'ws://127.0.0.1:8787/agent'], ['valid_hub_url', 'wss://hub.example.com:8443/a/b'],
     ['valid_hub_token', 'kQ3v9x_-ABCdef0123456789+/='], ['valid_vm_name', 'incident-4821.web_1'], ['valid_api_key', ''], ['valid_api_key', 'sk-ant-api03-AbC_dEf-123'],
     ['valid_path', '/home/me/projects'], ['valid_path', '/srv/my projects/x'],
+    ['valid_permission_mode', 'default'], ['valid_permission_mode', 'bypassPermissions'], ['valid_permission_mode', 'auto'],
   ];
   for (const [f, v] of ok) assert.equal(bash(`${f} "$VALUE"`, { VALUE: v }).status, 0, `${f} ${v}`);
 });

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:escanor/core/storage.dart';
+import 'package:escanor/features/machines/chat_choices.dart';
 import 'package:escanor/features/machines/hub_api.dart';
 import 'package:escanor/features/machines/hub_socket.dart';
 import 'package:escanor/features/machines/hub_state.dart';
@@ -58,7 +59,7 @@ void main() {
     expect(sockets[0].closed, isTrue);
   });
 
-  test('what was picked for a new chat is sent once the machine names it', () async {
+  test('what was picked for a new chat goes with the request that starts it, and is not sent again once it is named', () async {
     answer = (req) => req.url.path.endsWith('/sessions') ? http.Response(jsonEncode({'tempId': 't1'}), 202) : http.Response('{"ok":true}', 202);
     final store = make();
     await store.startNewChat('v', input, choices: const ChatChoices(mode: 'plan', model: 'claude-opus-5-5', effort: 'high'));
@@ -70,12 +71,8 @@ void main() {
     await pumpEventQueue();
     expect(store.state.selectedSessionId, 's1');
     expect(store.namedAs('t1'), 's1');
-    final paths = sent.skip(1).map((r) => '${r.url.path} ${r.body}').toList();
-    expect(paths, [
-      '/api/vms/v/sessions/s1/permission-mode {"mode":"plan"}',
-      '/api/vms/v/sessions/s1/model {"model":"claude-opus-5-5"}',
-      '/api/vms/v/sessions/s1/effort {"effort":"high"}',
-    ]);
+    expect(sent.length, 1, reason: 'the machine started the chat with them already');
+    expect(store.savedChoices('v', 's1'), const SavedChoices(mode: 'plan', model: 'claude-opus-5-5', effort: 'high'));
   });
 
   test('defaults are not sent; a choice changed while waiting is', () async {
@@ -98,7 +95,18 @@ void main() {
     await store.startNewChat('v', input, choices: const ChatChoices(mode: 'acceptEdits'));
     await pumpEventQueue();
     expect(store.state.selectedSessionId, 's1');
-    expect(sent.last.url.path, '/api/vms/v/sessions/s1/permission-mode');
+    expect(sent.map((r) => r.url.path), ['/api/vms/v/sessions'], reason: 'the mode went with the request that started it');
+    expect(store.savedChoices('v', 's1')!.mode, 'acceptEdits');
+  });
+
+  test('live text from a chat nobody has open is not kept, so it cannot flash stale when the chat is opened', () async {
+    final store = make();
+    sockets[0].open();
+    store.dispatch(const Select(vmId: 'v', sessionId: 'open'));
+    sockets[0].message(jsonEncode({'type': 'sdk_partial', 'vmId': 'v', 'sessionId': 'elsewhere', 'text': 'Half a sente'}));
+    sockets[0].message(jsonEncode({'type': 'sdk_partial', 'vmId': 'v', 'sessionId': 'open', 'text': 'Writing'}));
+    await pumpEventQueue();
+    expect(store.state.partialBySession, {'open': 'Writing'});
   });
 
   test('an answer that does not reach the machine brings the prompt back', () async {

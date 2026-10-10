@@ -126,6 +126,9 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
   /// New chats waiting for the machine to name them, with the mode/model/effort chosen for them.
   final Map<String, ChatChoices> _pendingChoices = {};
 
+  /// What went with the request that started each of those chats (the machine starts the chat with it).
+  final Map<String, ChatChoices> _sentWithCreate = {};
+
   /// Temporary ids the machine has already named (the event can beat the answer that started the chat).
   final Map<String, String> _named = {};
 
@@ -226,6 +229,8 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
       final a = actionForEvent(msg, _nextLocalId);
       if (a is AppendMessage && !_wantsRows(a.sessionId) && msg is! PermissionRequestEvent) {
         // not open here: nothing to show (a permission prompt is still kept: it is something waiting for the person)
+      } else if (a is SetPartial && !_wantsRows(a.sessionId)) {
+        // nor its live text: the message that ends it would be dropped above, so it would flash stale when the chat is opened
       } else if (a is AppendMessage) {
         _dispatchBatched(a);
       } else if (a != null) {
@@ -328,6 +333,7 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
     _rounds.clear();
     _halted.clear();
     _pendingChoices.clear();
+    _sentWithCreate.clear();
     _named.clear();
     if (_observing) {
       WidgetsBinding.instance.removeObserver(this);
@@ -364,14 +370,19 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
   void _onSessionCreated(SessionCreated a) {
     _named[a.tempId] = a.sessionId;
     final choices = _pendingChoices.remove(a.tempId);
-    if (choices != null) _applyChoices(a.vmId, a.sessionId, choices);
+    final sent = _sentWithCreate.remove(a.tempId);
+    if (choices != null) _applyChoices(a.vmId, a.sessionId, choices, sent: sent);
   }
 
-  /// What was picked for a new chat before it existed is sent once the machine has named it, and remembered for the chat.
-  void _applyChoices(String vmId, String sessionId, ChatChoices c) {
+  /// What was picked for a new chat is remembered for it once the machine has named it. The machine started the chat with
+  /// what went with the request ([sent]), so only a choice changed since then is sent again.
+  void _applyChoices(String vmId, String sessionId, ChatChoices c, {ChatChoices? sent}) {
     choicesStore.write(vmId, sessionId, SavedChoices(mode: c.mode, model: c.model, effort: c.effort));
     if (isPermissionMode(c.mode)) _keepModeForNewChats(vmId, c.mode);
-    unawaited(_pushChoices(vmId, sessionId, SavedChoices(mode: c.mode, model: c.model, effort: c.effort)).catchError((_) {}));
+    final changed = sent == null
+        ? SavedChoices(mode: c.mode, model: c.model, effort: c.effort)
+        : SavedChoices(mode: c.mode == sent.mode ? 'default' : c.mode, model: c.model == sent.model ? '' : c.model, effort: c.effort == sent.effort ? '' : c.effort);
+    unawaited(_pushChoices(vmId, sessionId, changed).catchError((_) {}));
   }
 
   /// Tell the machine what this chat is set to. A choice left at "default" needs no telling.
@@ -536,9 +547,10 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
     choicesStore.write(vmId, tempId, picked);
     final named = _named[tempId];
     if (named != null) {
-      _applyChoices(vmId, named, choices);
+      _applyChoices(vmId, named, choices, sent: choices);
     } else {
       _pendingChoices[tempId] = choices;
+      _sentWithCreate[tempId] = choices;
     }
     dispatch(Select(vmId: vmId, sessionId: named ?? tempId, accountId: input.accountId));
     return tempId;

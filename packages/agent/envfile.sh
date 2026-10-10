@@ -11,6 +11,8 @@ valid_hub_token() { [[ ${1-} =~ ^[A-Za-z0-9._~+/=-]{16,512}$ ]]; }
 valid_vm_name()   { [[ ${1-} =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$ ]]; }
 valid_api_key()   { [[ ${1-} =~ ^[A-Za-z0-9._-]{0,512}$ ]]; }
 valid_path()      { [[ -n ${1-} && ${1-} != *[[:cntrl:]]* ]]; }
+# What a chat starts in when the app picks none. The Escanor app's command sets it from the owner's plan.
+valid_permission_mode() { [[ ${1-} =~ ^(default|acceptEdits|bypassPermissions|plan|dontAsk|auto)$ ]]; }
 
 # set_env_var FILE KEY VALUE -- replace KEY's line (or append it), verbatim, keeping the file owner-only.
 set_env_var() {

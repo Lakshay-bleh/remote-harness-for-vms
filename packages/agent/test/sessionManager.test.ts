@@ -7,14 +7,19 @@ import type { AgentToHubMessage, ManagedMcpServer } from '@remote-harness/shared
 import { SessionManager } from '../src/sessionManager.ts';
 
 // A stand-in for the SDK's query(): records the options it was given and ends immediately.
-function fakeQuery() {
+function fakeQuery(opts: { hold?: Promise<void> } = {}) {
   const calls: any[] = [];
+  const modes: string[] = [];
   const query = ((args: any) => {
     calls.push(args.options);
     return {
-      [Symbol.asyncIterator]: async function* () {},
+      [Symbol.asyncIterator]: async function* () {
+        if (opts.hold) await opts.hold;
+      },
       interrupt: async () => {},
-      setPermissionMode: async () => {},
+      setPermissionMode: async (m: string) => {
+        modes.push(m);
+      },
       setModel: async () => {},
       applyFlagSettings: async () => {},
       setMcpServers: async () => {},
@@ -22,15 +27,15 @@ function fakeQuery() {
       close: () => {},
     };
   }) as never;
-  return { calls, query };
+  return { calls, modes, query };
 }
 
-const make = (opts: Record<string, unknown> = {}) => {
+const make = (opts: Record<string, unknown> = {}, hold?: Promise<void>) => {
   const sent: AgentToHubMessage[] = [];
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'sm-test-')));
-  const fq = fakeQuery();
+  const fq = fakeQuery({ hold });
   const manager = new SessionManager(dir, join(dir, 'data'), [{ id: 'default', label: 'default' }], (m) => sent.push(m), { query: fq.query, ...opts } as never);
-  return { manager, sent, dir, calls: fq.calls };
+  return { manager, sent, dir, calls: fq.calls, modes: fq.modes };
 };
 const start = (m: SessionManager, text = 'hi') => m.handleUserInput({ type: 'user_input', sessionId: 't1', tempId: 't1', text });
 
@@ -368,5 +373,183 @@ describe('SessionManager', () => {
     const iAssistant = sent.findIndex((x) => x.type === 'sdk_message' && (x as { message: { type: string } }).message.type === 'assistant');
     assert.ok(iPartial < iAssistant);
   });
+
+  describe('the machine\'s own default mode (DEFAULT_PERMISSION_MODE, from the owner\'s plan)', () => {
+    type CanUse = (tool: string, input: Record<string, unknown>, o: { signal: AbortSignal }) => Promise<{ behavior: string; message?: string }>;
+    const signal = new AbortController().signal;
+    const notRoot = { isRoot: false };
+
+    it('a bypass machine starts a chat nobody chose a mode for in bypass, with the opt-in', () => {
+      const { manager, calls } = make({ defaultMode: 'bypassPermissions', ...notRoot });
+      start(manager);
+      assert.equal(calls[0].permissionMode, 'bypassPermissions');
+      assert.equal(calls[0].allowDangerouslySkipPermissions, true);
+    });
+
+    it('a mode chosen in the app wins over the machine default, and the opt-in stays so it can be switched back', () => {
+      const { manager, calls } = make({ defaultMode: 'bypassPermissions', ...notRoot });
+      manager.handleUserInput({ type: 'user_input', sessionId: 't1', tempId: 't1', text: 'hi', permissionMode: 'default' });
+      assert.equal(calls[0].permissionMode, 'default');
+      assert.equal(calls[0].allowDangerouslySkipPermissions, true);
+    });
+
+    it('turns the app\'s "Autonomous" into bypass there: Claude Code\'s own auto mode refuses commands and tells the person to run them', async () => {
+      let release!: () => void;
+      const { manager, calls, modes } = make({ defaultMode: 'bypassPermissions', ...notRoot }, new Promise<void>((r) => (release = r)));
+      manager.handleUserInput({ type: 'user_input', sessionId: 't1', tempId: 't1', text: 'hi', permissionMode: 'auto' });
+      assert.equal(calls[0].permissionMode, 'bypassPermissions');
+      manager.setPermissionMode('t1', 'plan');
+      manager.setPermissionMode('t1', 'auto');
+      await new Promise((r) => setTimeout(r, 10));
+      assert.deepEqual(modes, ['plan', 'bypassPermissions'], 'a mode the person picked on purpose is kept');
+      release();
+    });
+
+    it('in bypass it answers what still reaches it by itself: everything is allowed, and a question is handed back', async () => {
+      const { manager, sent, calls } = make({ defaultMode: 'bypassPermissions', ...notRoot });
+      start(manager);
+      const canUse = calls[0].canUseTool as CanUse;
+      assert.equal((await canUse('Bash', { command: 'sudo apt-get install -y jq' }, { signal })).behavior, 'allow');
+      const asked = await canUse('AskUserQuestion', { questions: [] }, { signal });
+      assert.equal(asked.behavior, 'deny');
+      assert.match(asked.message ?? '', /decide/i);
+      assert.equal(sent.filter((m) => m.type === 'permission_request').length, 0, 'nothing was sent to the phone');
+    });
+
+    it('as root (where Claude Code refuses bypass) it runs in default mode without the opt-in and allows everything itself', async () => {
+      const { manager, sent, calls } = make({ defaultMode: 'bypassPermissions', isRoot: true });
+      start(manager);
+      assert.equal(calls[0].permissionMode, 'default');
+      assert.equal('allowDangerouslySkipPermissions' in calls[0], false);
+      const canUse = calls[0].canUseTool as CanUse;
+      assert.equal((await canUse('Bash', { command: 'apt-get install -y jq' }, { signal })).behavior, 'allow');
+      assert.equal(sent.filter((m) => m.type === 'permission_request').length, 0);
+    });
+
+    it('an ordinary machine starts chats in default mode and passes the app\'s choice through unchanged', async () => {
+      let release!: () => void;
+      const { manager, calls, modes } = make({ ...notRoot }, new Promise<void>((r) => (release = r)));
+      start(manager);
+      assert.equal(calls[0].permissionMode, 'default');
+      assert.equal('allowDangerouslySkipPermissions' in calls[0], false);
+      manager.setPermissionMode('t1', 'auto');
+      await new Promise((r) => setTimeout(r, 10));
+      assert.deepEqual(modes, ['auto']);
+      release();
+    });
+  });
+
+  describe('switching a running chat to bypass when it was started without the opt-in', () => {
+    // A run that names itself, then answers each message with a result when told to, until it is closed.
+    function turnQuery(sessionId: string) {
+      const calls: any[] = [];
+      const modes: string[] = [];
+      let closed = 0;
+      let next!: (v: 'result' | 'end') => void;
+      const query = ((args: any) => {
+        calls.push(args.options);
+        let wait = new Promise<'result' | 'end'>((r) => (next = r));
+        return {
+          [Symbol.asyncIterator]: async function* () {
+            yield { type: 'system', subtype: 'init', session_id: sessionId };
+            for (;;) {
+              const v = await wait;
+              if (v === 'end') return;
+              wait = new Promise((r) => (next = r));
+              yield { type: 'result', subtype: 'success' };
+            }
+          },
+          interrupt: async () => {},
+          setPermissionMode: async (m: string) => {
+            modes.push(m);
+          },
+          setModel: async () => {}, applyFlagSettings: async () => {}, setMcpServers: async () => {}, mcpServerStatus: async () => [],
+          close: () => {
+            closed++;
+            next('end');
+          },
+        };
+      }) as never;
+      return { calls, modes, query, endTurn: () => next('result'), closed: () => closed };
+    }
+    const tick = () => new Promise((r) => setTimeout(r, 20));
+    const plain = 'This chat switches to Bypass permissions the next time it starts.';
+
+    it('says so plainly (once), and once the turn is over the next message resumes the chat in bypass', async () => {
+      const dir = realpathSync(mkdtempSync(join(tmpdir(), 'sm-test-')));
+      const q = turnQuery('s-9');
+      const sent: AgentToHubMessage[] = [];
+      const m = new SessionManager(dir, join(dir, 'data'), [{ id: 'default', label: 'default' }], (x) => sent.push(x), { query: q.query, isRoot: false } as never);
+      start(m);
+      await tick();
+      m.setPermissionMode('s-9', 'bypassPermissions');
+      m.setPermissionMode('s-9', 'bypassPermissions'); // the phone repeats it before each message
+      const notes = sent.filter((x) => x.type === 'error').map((x) => (x as { message: string }).message);
+      assert.deepEqual(notes, [plain]);
+      assert.deepEqual(q.modes, [], 'Claude Code is not asked for a switch it refuses');
+      assert.equal(q.closed(), 0, 'the turn that is running is left to finish');
+
+      q.endTurn();
+      await tick();
+      assert.equal(q.closed(), 1);
+      assert.equal(m.isLive('s-9'), false);
+      assert.equal(sent.filter((x) => x.type === 'error').length, 1, 'closing it on purpose is not reported as a failure');
+
+      m.handleUserInput({ type: 'user_input', sessionId: 's-9', text: 'go on' });
+      assert.equal(q.calls[1].resume, 's-9');
+      assert.equal(q.calls[1].permissionMode, 'bypassPermissions');
+      assert.equal(q.calls[1].allowDangerouslySkipPermissions, true);
+      await tick();
+      assert.equal(m.isLive('s-9'), true);
+    });
+
+    it('pressing Stop while the switch waits for the turn restarts it then', async () => {
+      const dir = realpathSync(mkdtempSync(join(tmpdir(), 'sm-test-')));
+      const q = turnQuery('s-11');
+      const m = new SessionManager(dir, join(dir, 'data'), [{ id: 'default', label: 'default' }], () => {}, { query: q.query, isRoot: false } as never);
+      start(m);
+      await tick();
+      m.setPermissionMode('s-11', 'bypassPermissions');
+      assert.equal(q.closed(), 0);
+      m.interrupt('s-11');
+      await tick();
+      assert.equal(q.closed(), 1);
+      assert.equal(m.isLive('s-11'), false);
+    });
+
+    it('a chat that is between turns is closed at once, and switching back before then keeps it running', async () => {
+      const dir = realpathSync(mkdtempSync(join(tmpdir(), 'sm-test-')));
+      const q = turnQuery('s-10');
+      const m = new SessionManager(dir, join(dir, 'data'), [{ id: 'default', label: 'default' }], () => {}, { query: q.query, isRoot: false } as never);
+      start(m);
+      await tick();
+      m.setPermissionMode('s-10', 'bypassPermissions');
+      m.setPermissionMode('s-10', 'acceptEdits');
+      q.endTurn();
+      await tick();
+      assert.equal(q.closed(), 0, 'the person changed their mind: nothing to restart');
+      assert.deepEqual(q.modes, ['acceptEdits']);
+      m.setPermissionMode('s-10', 'auto'); // Autonomous on an ordinary machine is Claude Code's own auto mode: no restart
+      await tick();
+      assert.equal(q.closed(), 0);
+      m.setPermissionMode('s-10', 'bypassPermissions');
+      await tick();
+      assert.equal(q.closed(), 1);
+      assert.equal(m.sessionRegistry.get('s-10')?.permissionMode, 'bypassPermissions');
+    });
+  });
 });
 
+describe('defaultModeFrom (DEFAULT_PERMISSION_MODE)', () => {
+  it('takes a known mode and falls back to default for anything else', async () => {
+    // config.ts insists on these at import; nothing connects anywhere.
+    process.env.HUB_URL ||= 'ws://127.0.0.1:1/agent';
+    process.env.HUB_TOKEN ||= 'test';
+    const { defaultModeFrom } = await import('../src/config.ts');
+    assert.equal(defaultModeFrom('bypassPermissions'), 'bypassPermissions');
+    assert.equal(defaultModeFrom(' default '), 'default');
+    assert.equal(defaultModeFrom(undefined), 'default');
+    assert.equal(defaultModeFrom(''), 'default');
+    assert.equal(defaultModeFrom('yolo'), 'default');
+  });
+});
