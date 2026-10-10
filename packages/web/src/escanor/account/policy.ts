@@ -11,7 +11,8 @@ const RULES_NOTICE_EVERY_MS = 90 * 24 * 3_600_000;
 export function needsAcceptance(states: ConsentState[], version: string): boolean {
   return ACCEPTANCE_PURPOSES.some((purpose) => {
     const found = states.find((s) => s.purpose === purpose);
-    return !found || !found.granted || found.notice_version < version;
+    // accepted_version: the highest version accepted (newer APIs); notice_version: the latest recorded (older APIs).
+    return !found || !found.granted || (found.accepted_version ?? found.notice_version) < version;
   });
 }
 

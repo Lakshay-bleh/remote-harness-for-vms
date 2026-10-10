@@ -513,7 +513,7 @@ const legalDocuments = <String, LegalDocument>{
     sections: [
       LegalSection('Declaration',
         paragraphs: [
-          'Lakshay Jain, trading as Escanor Labs, has audited Escanor\'s website, web app, desktop app, Android app and iPhone app against the Guidelines for Prevention and Regulation of Dark Patterns, 2023 issued by the Central Consumer Protection Authority. We declare that, as of 8 October 2026, Escanor does not use any of the dark patterns listed in those guidelines. Signed by Lakshay Jain, sole proprietor of Escanor Labs and its Grievance Officer. Next audit due by 8 October 2027.',
+          'Lakshay Jain, trading as Escanor Labs, has audited Escanor\'s website, web app, desktop app, Android app and iPhone app against the Guidelines for Prevention and Regulation of Dark Patterns, 2023 issued by the Central Consumer Protection Authority. We declare that, as of 10 October 2026, Escanor does not use any of the dark patterns listed in those guidelines. Signed by Lakshay Jain, sole proprietor of Escanor Labs and its Grievance Officer. Next audit due by 10 October 2027.',
         ],
       ),
       LegalSection('What we checked',

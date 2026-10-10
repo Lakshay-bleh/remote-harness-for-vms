@@ -22,3 +22,10 @@ test('a newer version accepted elsewhere (website, desktop) counts: an app one v
   assert.equal(needsAcceptance([s('terms', '2026-10-08'), s('privacy_notice', '2026-10-08')], '2026-10-07'), false);
   assert.equal(needsAcceptance([s('terms', '2026-10-08'), s('privacy_notice', '2026-10-06')], '2026-10-07'), true);
 });
+
+test('the highest accepted version counts, so an older client recording its version afterwards does not re-ask', () => {
+  const after = (p: string) => ({ ...s(p, '2026-10-08'), accepted_version: '2026-10-10' });
+  assert.equal(needsAcceptance([after('terms'), after('privacy_notice')], '2026-10-10'), false);
+  assert.equal(needsAcceptance([after('terms'), after('privacy_notice')], '2026-10-11'), true);
+  assert.equal(needsAcceptance([s('terms', '2026-10-08'), s('privacy_notice', '2026-10-08')], '2026-10-10'), true);
+});
