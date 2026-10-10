@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/nav.dart';
 import '../../core/theme.dart';
+import '../machines/hub_store.dart';
 import 'push_service.dart';
 
 /// The app tab a notification points to.
@@ -21,8 +22,12 @@ class PushHost extends ConsumerStatefulWidget {
 
 class _PushHostState extends ConsumerState<PushHost> {
   VoidCallback? _stop;
+  StreamSubscription<HubNotice>? _notices;
   ForegroundPush? _banner;
   Timer? _hide;
+
+  /// Prompts already shown from the machines' own connection, so the push about the same one is not shown again.
+  final Set<String> _shownPrompts = {};
 
   @override
   void initState() {
@@ -30,19 +35,51 @@ class _PushHostState extends ConsumerState<PushHost> {
     // Register this phone again if they already allowed it (Android or Apple may have changed the address). Never asks.
     resumePush().catchError((_) {});
     _stop = listenPush(_go, _show);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      try {
+        // Claude on a machine asking for permission: a banner straight from the hub's connection, push or no push.
+        _notices = HubStore.instance.notices.listen((n) {
+          if (n.requestId != null) _shownPrompts.add(n.requestId!);
+          _show(ForegroundPush(
+            title: n.title,
+            body: n.body,
+            dest: PushDest.machines,
+            data: {'kind': 'machine_chats', 'vm_id': n.vmId, 'session_id': n.sessionId, 'request_id': n.requestId ?? ''},
+          ));
+        });
+      } catch (_) {}
+    });
   }
 
-  void _go(PushDest dest) {
+  void _go(PushDest dest, [Map<String, dynamic> data = const {}]) {
     if (!mounted) return;
     final tab = tabForDest(dest);
+    final chat = machineChatFor(data);
+    if (chat != null) machinesSegment.value = 0; // servers, where machine chats are
     tabNavigatorKeys[tab]?.currentState?.popUntil((r) => r.isFirst);
     final nav = ref.read(navProvider.notifier);
     if (ref.read(navProvider).tab != tab) nav.go(tab);
+    if (chat != null) unawaited(HubStore.instance.openChat(chat.vmId, chat.sessionId).catchError((_) {}));
+  }
+
+  /// Is this about the machine chat the person is looking at right now? Then the chat itself shows it.
+  bool _onScreen(Map<String, dynamic> data) {
+    final chat = machineChatFor(data);
+    if (chat == null || !HubStore.created) return false;
+    return ref.read(navProvider).tab == AppTab.machines && HubStore.instance.viewingSessionId == chat.sessionId;
   }
 
   /// Android and iOS show nothing themselves for a message that arrives while the app is open: show it here, for six seconds.
   void _show(ForegroundPush n) {
     if (!mounted) return;
+    if (_onScreen(n.data)) return;
+    final prompt = n.data['request_id'];
+    if (n.data['event'] == 'approval' && prompt is String) {
+      if (_shownPrompts.contains(prompt)) return; // already shown from the hub's connection
+      // Already answered (a chat that works on its own answers its prompts while the app is open).
+      if (HubStore.created && HubStore.instance.state.resolvedPermissionIds.contains(prompt)) return;
+    }
     _hide?.cancel();
     setState(() => _banner = n);
     _hide = Timer(const Duration(seconds: 6), () {
@@ -53,6 +90,7 @@ class _PushHostState extends ConsumerState<PushHost> {
   @override
   void dispose() {
     _stop?.call();
+    _notices?.cancel();
     _hide?.cancel();
     super.dispose();
   }
@@ -81,7 +119,7 @@ class _PushHostState extends ConsumerState<PushHost> {
                     onTap: () {
                       _hide?.cancel();
                       setState(() => _banner = null);
-                      _go(b.dest);
+                      _go(b.dest, b.data);
                     },
                   ),
                 ),

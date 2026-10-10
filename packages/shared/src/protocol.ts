@@ -41,6 +41,15 @@ export type AgentSdkMessage = {
   message: unknown; // raw SDKMessage from @anthropic-ai/claude-agent-sdk
 };
 
+// The reply as it is being written (the full text so far, not a delta), so a phone shows it without waiting for the whole
+// message. Not stored by the hub; the finished message arrives as an sdk_message like any other.
+export type AgentSdkPartial = {
+  type: 'sdk_partial';
+  sessionId: string;
+  tempId?: string;
+  text: string;
+};
+
 export type AgentSessionCreated = {
   type: 'session_created';
   tempId: string;
@@ -95,6 +104,7 @@ export type AgentMcpStatus = {
 export type AgentToHubMessage =
   | AgentHello
   | AgentSdkMessage
+  | AgentSdkPartial
   | AgentSessionCreated
   | AgentSessionEnded
   | AgentPermissionRequest
@@ -208,6 +218,13 @@ export type BrowserSdkMessage = {
   createdAt: string;
 };
 
+export type BrowserSdkPartial = {
+  type: 'sdk_partial';
+  vmId: string;
+  sessionId: string;
+  text: string;
+};
+
 export type BrowserSessionCreated = {
   type: 'session_created';
   vmId: string;
@@ -244,6 +261,7 @@ export type BrowserPermissionResolved = {
 export type HubToBrowserMessage =
   | BrowserVmStatus
   | BrowserSdkMessage
+  | BrowserSdkPartial
   | BrowserSessionCreated
   | BrowserSessionEnded
   | BrowserPermissionRequest
@@ -266,7 +284,8 @@ export type SessionDto = {
   title: string;
   createdAt: string;
   lastMessageAt: string;
-  status: 'active' | 'idle' | 'ended';
+  // 'waiting': Claude asked for permission and nobody has answered yet.
+  status: 'active' | 'idle' | 'ended' | 'waiting';
   accountId: string;
 };
 

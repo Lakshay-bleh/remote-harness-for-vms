@@ -154,4 +154,40 @@ describe('SessionManager', () => {
       release();
     }
   });
+
+  it('streams the reply as it is written (sdk_partial) without storing the stream events themselves', async () => {
+    const sent: AgentToHubMessage[] = [];
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'sm-test-')));
+    const events = [
+      { type: 'system', subtype: 'init', session_id: 'real-1', mcp_servers: [] },
+      { type: 'stream_event', parent_tool_use_id: null, event: { type: 'message_start' } },
+      { type: 'stream_event', parent_tool_use_id: null, event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Hello' } } },
+    ];
+    let options: any;
+    const query = ((args: any) => {
+      options = args.options;
+      return {
+        [Symbol.asyncIterator]: async function* () {
+          for (const e of events) yield e;
+          await new Promise((r) => setTimeout(r, 400)); // the throttle sends the text while the reply is still going
+          yield { type: 'assistant', uuid: 'u1', message: { content: [{ type: 'text', text: 'Hello there' }] } };
+          yield { type: 'result', subtype: 'success', uuid: 'u2' };
+        },
+        interrupt: async () => {}, setPermissionMode: async () => {}, setModel: async () => {}, applyFlagSettings: async () => {},
+        setMcpServers: async () => {}, mcpServerStatus: async () => [], close: () => {},
+      };
+    }) as never;
+    const m = new SessionManager(dir, join(dir, 'data'), [{ id: 'default', label: 'default' }], (x) => sent.push(x), { query } as never);
+    m.handleUserInput({ type: 'user_input', sessionId: 't1', tempId: 't1', text: 'hi' });
+    await new Promise((r) => setTimeout(r, 700));
+    assert.equal(options.includePartialMessages, true);
+    const partials = sent.filter((x) => x.type === 'sdk_partial') as { sessionId: string; text: string }[];
+    assert.deepEqual(partials.map((p) => [p.sessionId, p.text]), [['real-1', 'Hello']]);
+    const forwarded = sent.filter((x) => x.type === 'sdk_message').map((x) => (x as { message: { type: string } }).message.type);
+    assert.ok(!forwarded.includes('stream_event'), 'raw stream events never reach the hub');
+    assert.deepEqual(forwarded, ['system', 'assistant', 'result']);
+    const iPartial = sent.findIndex((x) => x.type === 'sdk_partial');
+    const iAssistant = sent.findIndex((x) => x.type === 'sdk_message' && (x as { message: { type: string } }).message.type === 'assistant');
+    assert.ok(iPartial < iAssistant);
+  });
 });
