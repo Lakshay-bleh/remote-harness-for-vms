@@ -1,5 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { PermissionMode } from '@remote-harness/shared';
 
 export type RegistryEntry = {
   sessionId: string;
@@ -13,6 +14,8 @@ export type RegistryEntry = {
   syncedUuid?: string;
   /** Transcript mtime at the last sync; an unchanged file is not re-read. */
   syncedMtime?: number;
+  /** The permission mode last chosen for this chat, so a resumed run keeps it instead of falling back to 'default'. */
+  permissionMode?: PermissionMode;
 };
 
 const isEntry = (e: unknown): e is RegistryEntry =>
@@ -85,6 +88,14 @@ export class SessionRegistry {
 
   get(sessionId: string): RegistryEntry | undefined {
     return this.entries.get(sessionId);
+  }
+
+  /** Change some fields of a known session; unknown ids are ignored. */
+  update(sessionId: string, fields: Partial<Omit<RegistryEntry, 'sessionId'>>): void {
+    const entry = this.entries.get(sessionId);
+    if (!entry) return;
+    this.entries.set(sessionId, { ...entry, ...fields });
+    this.persist();
   }
 
   upsert(entry: RegistryEntry): void {
