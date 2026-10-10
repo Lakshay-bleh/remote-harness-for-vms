@@ -38,7 +38,7 @@ function readGuide(): string {
   }
 }
 
-const manager = new SessionManager(config.workspaceRoot, config.dataDir, profiles, (msg) => connection.send(msg), { managed: config.managed, guide: readGuide(), mcpOverride: config.mcpOverride, protectedPaths: config.protectedPaths, fetchAllow: config.fetchAllow });
+const manager = new SessionManager(config.workspaceRoot, config.dataDir, profiles, (msg) => connection.send(msg), { managed: config.managed, defaultMode: config.defaultMode, guide: readGuide(), mcpOverride: config.mcpOverride, protectedPaths: config.protectedPaths, fetchAllow: config.fetchAllow });
 
 // Claude Code sessions run in a terminal here show up in the app too.
 const terminalSync = config.syncTerminalSessions

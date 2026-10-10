@@ -1,5 +1,5 @@
 import { query as sdkQuery, type McpServerConfig, type Options, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
-import { isValidMcpServerName } from '@remote-harness/shared';
+import { isPermissionMode, isValidMcpServerName } from '@remote-harness/shared';
 import { isSandboxAutoAllowed } from './sandboxPolicy.js';
 import { isAutoAllowedMcpTool } from './mcpApproval.js';
 import { childEnv } from './childEnv.js';
@@ -31,8 +31,13 @@ type LiveSession = {
   setMcpServers: (servers: Record<string, McpServerConfig>) => Promise<unknown>;
   mcpServerStatus: () => Promise<Array<{ name: string; status: string; error?: string }>>;
   close: () => void;
+  /** The mode the app picked for this chat (after effectiveMode), which decides how canUseTool answers. */
+  mode: PermissionMode;
   appliedMcp: string; // the MCP config this session was last given, so an unchanged re-push is a no-op
 };
+
+/** Claude Code will not run in bypass mode as root (it exits), so there the agent itself says yes to everything instead. */
+const runningAsRoot = (): boolean => typeof process.getuid === 'function' && process.getuid() === 0;
 
 // A wedged session must not stop the rest (or the status report) from converging.
 const MCP_APPLY_TIMEOUT_MS = 15_000;
@@ -101,6 +106,13 @@ export class SessionManager {
       fetchAllow?: string[];
       /** The SDK's query(); injectable so tests can see exactly what a session is started with. */
       query?: typeof sdkQuery;
+      /**
+       * The mode a chat starts in until the app picks one (DEFAULT_PERMISSION_MODE). 'bypassPermissions' is a machine that
+       * does everything itself: its chats never wait for the phone, and the app's "Autonomous" means the same thing there.
+       */
+      defaultMode?: PermissionMode;
+      /** Injectable for tests; otherwise whether this process runs as root. */
+      isRoot?: boolean;
     } = {},
   ) {
     this.registry = new SessionRegistry(dataDir);
@@ -258,10 +270,27 @@ export class SessionManager {
     this.startSession(input);
   }
 
+  /**
+   * On a machine set to do everything itself, the app's "Autonomous" ('auto') runs as bypass too. Handed to Claude Code as
+   * is, 'auto' is its own classifier mode, which refuses some commands and then asks the person to run them by hand.
+   */
+  private effectiveMode(mode: PermissionMode): PermissionMode {
+    return mode === 'auto' && this.opts.defaultMode === 'bypassPermissions' ? 'bypassPermissions' : mode;
+  }
+
+  /** The mode Claude Code itself runs in: as root, bypass is answered here instead (see runningAsRoot). */
+  private sdkMode(mode: PermissionMode): PermissionMode {
+    return mode === 'bypassPermissions' && (this.opts.isRoot ?? runningAsRoot()) ? 'default' : mode;
+  }
+
   private startSession(input: HubUserInput): void {
     const tempId = input.tempId;
     const existingEntry = this.registry.get(input.sessionId);
     const isResume = Boolean(existingEntry) && !tempId;
+    // A resumed chat keeps the mode it was last set to; a new one starts in the machine's default.
+    const saved = isResume && isPermissionMode(existingEntry?.mode) ? existingEntry.mode : undefined;
+    const mode = this.effectiveMode(saved ?? this.opts.defaultMode ?? 'default');
+    let session!: LiveSession;
     const cwd = this.resolveCwd(input.cwd ?? existingEntry?.cwd);
     const profile = this.resolveProfile(isResume ? existingEntry?.accountId : input.accountId);
 
@@ -269,7 +298,9 @@ export class SessionManager {
     const queue = new AsyncMessageQueue<SDKUserMessage>();
     const options: Options = {
       cwd,
-      permissionMode: 'default',
+      permissionMode: this.sdkMode(mode),
+      // Lets a chat be switched to bypass later (the app's "Bypass permissions"); it does not by itself skip anything.
+      allowDangerouslySkipPermissions: !(this.opts.isRoot ?? runningAsRoot()),
       // Ask for summarized thinking so the web UI can show it like the CLI's transcript view.
       thinking: { type: 'adaptive', display: 'summarized' },
       // Stream the reply as it is written, so the phone shows it live instead of all at once at the end (see PartialText).
@@ -282,6 +313,14 @@ export class SessionManager {
       strictMcpConfig: true,
       canUseTool: async (toolName, toolInput, opts) => {
         if (this.isAutoAllowedMcpTool(toolName, toolInput)) return { behavior: 'allow' as const, updatedInput: toolInput };
+        // Bypass: the person chose no limits, so nothing waits for the phone. What still reaches here (a question for the
+        // person, or anything at all when running as root) is answered on the spot.
+        if (session?.mode === 'bypassPermissions') {
+          if (toolName === 'AskUserQuestion') {
+            return { behavior: 'deny' as const, message: 'Nobody is watching this chat to answer. Do not ask: decide yourself and carry on.' };
+          }
+          return { behavior: 'allow' as const, updatedInput: toolInput };
+        }
         // A managed worker is a sandbox: local work runs freely, so the assistant can edit, run and fix in a loop.
         if (this.opts.managed && isSandboxAutoAllowed(toolName, toolInput, { root: this.workspaceRoot, protectedPaths: this.opts.protectedPaths, fetchAllow: this.opts.fetchAllow })) {
           return { behavior: 'allow' as const, updatedInput: toolInput };
@@ -307,11 +346,12 @@ export class SessionManager {
     queue.push(toUserMessage(input.text, input.images));
 
     const liveKey = tempId ?? input.sessionId;
-    const session: LiveSession = {
+    session = {
       queue,
       cwd,
+      mode,
       interrupt: () => q.interrupt(),
-      setPermissionMode: (mode) => q.setPermissionMode(mode),
+      setPermissionMode: (m) => q.setPermissionMode(this.sdkMode(m)),
       setModel: (model) => q.setModel(model),
       setEffort: (effort) => q.applyFlagSettings({ effortLevel: effort }),
       setMcpServers: (servers) => q.setMcpServers(servers),
@@ -372,7 +412,7 @@ export class SessionManager {
           const sessionId = msg.session_id;
           ctx.setSessionId(sessionId);
           const title = titleFrom(ctx.seedTitle);
-          this.registry.upsert({ sessionId, cwd: ctx.cwd, title, createdAt: new Date().toISOString(), accountId: ctx.accountId });
+          this.registry.upsert({ sessionId, cwd: ctx.cwd, title, createdAt: new Date().toISOString(), accountId: ctx.accountId, mode: ctx.session.mode });
           if (ctx.liveKey !== sessionId) {
             const entry = this.live.get(ctx.liveKey);
             if (entry) {
@@ -422,8 +462,14 @@ export class SessionManager {
     this.control(sessionId, 'Stop', (live) => live.interrupt());
   }
 
-  setPermissionMode(sessionId: string, mode: PermissionMode): void {
-    this.control(sessionId, 'Changing the permission mode', (live) => live.setPermissionMode(mode));
+  setPermissionMode(sessionId: string, requested: PermissionMode): void {
+    const mode = this.effectiveMode(requested);
+    // Remembered, so the chat comes back in it after it stops (or the agent restarts) and is resumed.
+    const entry = this.registry.get(sessionId);
+    if (entry && entry.mode !== mode) this.registry.upsert({ ...entry, mode });
+    const live = this.live.get(sessionId);
+    if (live) live.mode = mode;
+    this.control(sessionId, 'Changing the permission mode', (l) => l.setPermissionMode(mode));
   }
 
   setModel(sessionId: string, model: string | undefined): void {
