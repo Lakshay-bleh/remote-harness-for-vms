@@ -240,4 +240,10 @@ describe('yesOrNo', () => {
     for (const t of ['no', 'nope', 'don’t do that', 'cancel', 'yes, wait, no', 'not now']) assert.equal(yesOrNo(t), 'no', t);
     for (const t of ['what bucket is that', 'tell me more', '']) assert.equal(yesOrNo(t), null, t);
   });
+  it('only a whole-utterance answer counts', async () => {
+    const { yesOrNo } = await import('./assistant');
+    for (const t of ['yes please', 'go ahead', 'ok', 'Okay, thanks']) assert.equal(yesOrNo(t), 'yes', t);
+    for (const t of ['ok no', 'not now', 'yeah cancel that']) assert.equal(yesOrNo(t), 'no', t);
+    for (const t of ['why does it need to be approved?', 'yes but wait', 'is that allowed', 'wait']) assert.equal(yesOrNo(t), null, t);
+  });
 });

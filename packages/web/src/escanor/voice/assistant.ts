@@ -147,10 +147,11 @@ async function askComputer(text: string, computer: string | undefined, d: Assist
   return { ok: true, say: said || 'Done.', kind: 'computer' };
 }
 
-const NO = /\b(?:no|nope|nah|don'?t|do not|stop|cancel|deny|refuse|never ?mind|not now|negative|abort|reject|hold on|wait)\b/;
-const YES = /\b(?:yes|yeah|yep|yup|go ahead|do it|approve[ds]?|allow(?: it)?|confirm(?:ed)?|proceed|go for it|please do|affirmative)\b|^(?:sure|ok|okay|alright|all right|continue|correct|right|of course|absolutely)\b/;
+const NO = /\b(?:no|nope|nah|don'?t|do not|stop|cancel|deny|never ?mind|not now)\b/;
+const YES_WORD = '(?:yes|yeah|yep|yup|sure|ok|okay|go ahead|do it|approve(?: it)?|go for it|please do|affirmative|absolutely|of course)';
+const YES = new RegExp(`^${YES_WORD}(?: ${YES_WORD})*(?: (?:please|thanks|thank you))?$`);
 
-/** "yes", "go ahead", "no, don't": the answer to "should I go ahead?", or null when it is neither. A no wins over a yes. */
+/** "yes", "go ahead", "no, don't": the answer to "should I go ahead?", or null when it is neither. A no anywhere wins; a yes must be the whole sentence ("why does it need to be approved?" is a question, not a yes). */
 export function yesOrNo(text: string): 'yes' | 'no' | null {
   const t = stripWake(text).toLowerCase().replace(/[’']/g, "'").replace(/[.!?,]+/g, ' ').replace(/\s+/g, ' ').trim();
   if (!t) return null;
