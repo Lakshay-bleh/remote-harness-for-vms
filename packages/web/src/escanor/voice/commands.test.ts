@@ -36,6 +36,16 @@ describe('phone actions', () => {
     assert.deepEqual(parseVoiceCommand('volume up', ctx), { kind: 'phone', action: { type: 'volume', change: 'up' } });
     assert.deepEqual(parseVoiceCommand('mute', ctx), { kind: 'phone', action: { type: 'volume', change: 'mute' } });
   });
+  it('presses the media keys for "pause the music", "next song", "previous track", and nothing looser', () => {
+    const media = (t: string) => parseVoiceCommand(t, ctx);
+    assert.deepEqual(media('pause the music'), { kind: 'phone', action: { type: 'media', action: 'playpause' } });
+    assert.deepEqual(media('resume'), { kind: 'phone', action: { type: 'media', action: 'playpause' } });
+    assert.deepEqual(media('next song'), { kind: 'phone', action: { type: 'media', action: 'next' } });
+    assert.deepEqual(media('skip this track'), { kind: 'phone', action: { type: 'media', action: 'next' } });
+    assert.deepEqual(media('previous track'), { kind: 'phone', action: { type: 'media', action: 'previous' } });
+    assert.equal(media('play despacito on spotify').kind, 'assistant');
+    assert.deepEqual(media('stop'), { kind: 'stop' });
+  });
   it('searches the web and opens a settings screen', () => {
     assert.deepEqual(parseVoiceCommand('search for best pizza near me', ctx), { kind: 'phone', action: { type: 'web_search', query: 'best pizza near me' } });
     assert.deepEqual(parseVoiceCommand('open wifi settings', ctx), { kind: 'phone', action: { type: 'settings', screen: 'wifi' } });
@@ -84,6 +94,14 @@ describe('using the phone itself', () => {
 });
 
 describe('the computer', () => {
+  it('goes to the computer named in the sentence (its name on this phone, or its own)', () => {
+    const named = { hasComputer: true, computerNames: ['Work Laptop', 'Lakshay’s MacBook Pro', 'pc'] };
+    assert.deepEqual(parseVoiceCommand('on work laptop, open youtube', named), { kind: 'computer', text: 'open youtube', computer: 'Work Laptop' });
+    assert.deepEqual(parseVoiceCommand("tell lakshay's macbook pro to lock the screen", named), { kind: 'computer', text: 'lock the screen', computer: 'Lakshay’s MacBook Pro' });
+    assert.deepEqual(parseVoiceCommand('show my containers on my work laptop', named), { kind: 'computer', text: 'show my containers', computer: 'Work Laptop' });
+    assert.deepEqual(parseVoiceCommand('on my computer open youtube', named), { kind: 'computer', text: 'open youtube' });
+    assert.deepEqual(parseVoiceCommand('open youtube', named), { kind: 'phone', action: { type: 'open_app', name: 'youtube' } });
+  });
   it('goes to the computer when asked to, and sends the rest of the sentence', () => {
     assert.deepEqual(parseVoiceCommand('on my computer open youtube', ctx), { kind: 'computer', text: 'open youtube' });
     assert.deepEqual(parseVoiceCommand('tell my laptop to show my containers', ctx), { kind: 'computer', text: 'show my containers' });

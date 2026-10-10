@@ -1,14 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isIOS, isNative } from '../../api';
+import { getComputerPrefs } from '../computer/computerPrefs';
 import { loadComputers } from '../computer/storage';
-import { handleUtterance, type Reply } from './assistant';
+import { handleUtterance, type AssistantTurn, type Reply } from './assistant';
 import type { VoiceTab } from './commands';
 import { forSpeech } from './assistantAnswer';
 import { chatWithComputer } from './computerChat';
+import { pickComputer } from './computerTarget';
 import { deviceOrNull } from './device';
 import { resolveOnServer } from './resolve';
 import { ensureMic, listen, speak, stopSpeaking } from './speech';
 import { getVoicePrefs } from './voicePrefs';
+
+const LAST_COMPUTER = 'escanor.voice.lastComputer.v1';
+const lastComputer = (): string | null => {
+  try {
+    return localStorage.getItem(LAST_COMPUTER);
+  } catch {
+    return null;
+  }
+};
+const rememberComputer = (id: string) => {
+  try {
+    localStorage.setItem(LAST_COMPUTER, id);
+  } catch {
+    // not remembered: the next request without a name goes to the first computer
+  }
+};
 
 export type VoicePhase = 'idle' | 'listening' | 'thinking' | 'speaking';
 
@@ -19,7 +37,7 @@ export type TurnOutcome = 'spoke' | 'silent' | 'stop' | 'cancelled' | 'error';
  * One conversation turn with Escanor: listen, understand, do it, say what happened. `start` runs a whole turn; `cancel` stops
  * listening or talking at once.
  */
-export function useVoiceSession({ go, onAssistant }: { go: (tab: VoiceTab) => void; onAssistant: (text: string, signal: AbortSignal) => Promise<string | void> }) {
+export function useVoiceSession({ go, onAssistant }: { go: (tab: VoiceTab) => void; onAssistant: (text: string, signal: AbortSignal) => Promise<string | void | AssistantTurn> }) {
   const [phase, setPhase] = useState<VoicePhase>('idle');
   const [heard, setHeard] = useState('');
   const [reply, setReply] = useState<Reply | null>(null);
@@ -72,17 +90,26 @@ export function useVoiceSession({ go, onAssistant }: { go: (tab: VoiceTab) => vo
     setHeard(said);
     setPhase('thinking');
 
-    const computers = loadComputers();
+    // Each paired computer by the name given on this phone and its own; a request goes to the one named, else the one used last.
+    const computers = loadComputers().map((c) => ({ ...c, alias: getComputerPrefs(c.id).alias }));
+    const signal = abort.current.signal;
     const r = await handleUtterance(said, {
       device: deviceOrNull(),
       hasComputer: computers.length > 0,
-      toComputer: (text) => chatWithComputer(computers[0], text),
-      toAssistant: (text) => latest.current.onAssistant(text, abort.current?.signal ?? new AbortController().signal),
+      computerNames: computers.flatMap((c) => (c.alias ? [c.alias, c.name] : [c.name])),
+      toComputer: (text, name) => {
+        const target = pickComputer(computers, name, lastComputer());
+        if (!target) return Promise.reject(new Error('You have not paired a computer yet.'));
+        rememberComputer(target.id);
+        return chatWithComputer(target, text);
+      },
+      toAssistant: (text) => latest.current.onAssistant(text, signal),
+      signal,
       go: (tab) => latest.current.go(tab),
       phone: { directCalls: getVoicePrefs().directCalls },
       ack: (t) => speak(forSpeech(t)),
       interim: (t) => alive() && setReply({ ok: true, say: t }),
-      resolve: (text) => resolveOnServer(text, deviceOrNull()),
+      resolve: (text) => resolveOnServer(text, deviceOrNull(), { signal }),
     });
     if (!alive()) return 'cancelled';
     setReply(r);

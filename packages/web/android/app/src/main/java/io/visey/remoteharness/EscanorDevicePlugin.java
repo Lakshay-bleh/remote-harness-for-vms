@@ -16,6 +16,7 @@ import android.net.Uri;
 import android.provider.AlarmClock;
 import android.provider.ContactsContract;
 import android.provider.Settings;
+import android.view.KeyEvent;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -382,6 +383,28 @@ public class EscanorDevicePlugin extends Plugin {
             return;
         }
         am.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, AudioManager.FLAG_SHOW_UI);
+        call.resolve(result(true, null));
+    }
+
+    /** The media keys, as a headset button would press them: whatever app is playing (music, a video, a podcast) answers. */
+    @PluginMethod
+    public void media(PluginCall call) {
+        String action = call.getString("action", "");
+        int key;
+        if ("playpause".equals(action)) key = KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE;
+        else if ("next".equals(action)) key = KeyEvent.KEYCODE_MEDIA_NEXT;
+        else if ("previous".equals(action)) key = KeyEvent.KEYCODE_MEDIA_PREVIOUS;
+        else {
+            call.resolve(result(false, "Say pause, next song or previous song."));
+            return;
+        }
+        AudioManager am = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+        if (am == null) {
+            call.resolve(result(false, "I could not reach the music controls on this phone."));
+            return;
+        }
+        am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, key));
+        am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, key));
         call.resolve(result(true, null));
     }
 
