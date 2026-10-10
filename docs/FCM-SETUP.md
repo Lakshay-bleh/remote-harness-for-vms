@@ -7,8 +7,8 @@ You will end up with two secrets:
 
 | File | Where it goes | What it does |
 | --- | --- | --- |
-| `google-services.json` | GitHub secret `GOOGLE_SERVICES_JSON` (and, for a local build, `packages/web/android/app/`) | Lets the **app** register with Firebase |
-| service account JSON | Render env var `FIREBASE_SERVICE_ACCOUNT_JSON` on the `mongo-backend` service | Lets the **backend** send messages |
+| `google-services.json` | GitHub secret `GOOGLE_SERVICES_JSON` (and, for a local build, `packages/mobile/android/app/`). It must contain the app `com.escanorlabs.escanor`, or CI builds the APK without push | Lets the **app** register with Firebase |
+| service account JSON | `FIREBASE_SERVICE_ACCOUNT_JSON` in the API server's environment | Lets the **backend** send messages |
 
 ## 1. Create the Firebase project
 1. Go to <https://console.firebase.google.com> and sign in with the Google account that should own this.
@@ -17,7 +17,7 @@ You will end up with two secrets:
 
 ## 2. Register the Android app
 1. On the project home page click the **Android** icon (**Add app**).
-2. **Android package name:** `io.visey.remoteharness` (exactly; it is the app's id).
+2. **Android package name:** `com.escanorlabs.escanor` (exactly; it is the Flutter app's id). The old Capacitor app was `io.visey.remoteharness`; a `google-services.json` with only that id gives an APK with no push.
 3. App nickname: `Escanor` (optional). Leave the SHA-1 box empty (it is not needed for push).
 4. Click **Register app**.
 5. **Download `google-services.json`.** Skip the remaining steps in the wizard (the project is already set up for it) and click **Continue to console**.
@@ -47,7 +47,7 @@ You will end up with two secrets:
 3. Run the **Android APK** workflow as usual. The log should say "Firebase config added".
    Without the secret the workflow still builds, but prints a warning and that APK cannot receive push.
 
-For a build on your own machine, put the file at `packages/web/android/app/google-services.json` (it is git-ignored) and run `npm run android:apk` in `packages/web`.
+For a build on your own machine, put the file at `packages/mobile/android/app/google-services.json` (it is git-ignored) and run `flutter build apk` in `packages/mobile`.
 
 ## 7. Try it
 1. Install the new APK. Sign in.

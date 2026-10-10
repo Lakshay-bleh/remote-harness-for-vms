@@ -68,7 +68,7 @@ function toUserMessage(text: string, images: ImageAttachment[] | undefined): SDK
   };
 }
 
-function titleFrom(text: string): string {
+export function titleFrom(text: string): string {
   const oneLine = text.trim().replace(/\s+/g, ' ');
   return oneLine.length > 60 ? `${oneLine.slice(0, 57)}...` : oneLine || 'New session';
 }
@@ -82,6 +82,8 @@ export class SessionManager {
   // What each running session's own MCP client last reported, so the hub can show real connection state.
   private mcpSessionStatus = new Map<LiveSession, Map<string, { status: string; error?: string }>>();
   private lastMcpReport = '';
+  /** Called after each turn of a session this agent runs, and when it stops (TerminalSessionSync records where its transcript ends). */
+  onTurnEnded: ((sessionId: string, cwd: string) => void) | null = null;
 
   constructor(
     private workspaceRoot: string,
@@ -108,6 +110,14 @@ export class SessionManager {
 
   private resolveProfile(accountId: string | undefined): ClaudeProfile {
     return this.profiles.find((p) => p.id === accountId) ?? this.profiles[0];
+  }
+
+  get sessionRegistry(): SessionRegistry {
+    return this.registry;
+  }
+
+  isLive(sessionId: string): boolean {
+    return this.live.has(sessionId);
   }
 
   summaries(): AgentSessionSummary[] {
@@ -370,6 +380,7 @@ export class SessionManager {
           tempId: ctx.tempId,
           message,
         });
+        if (msg.type === 'result' && ctx.getSessionId()) this.onTurnEnded?.(ctx.getSessionId(), ctx.cwd);
       }
     } catch (err) {
       this.send({
@@ -387,6 +398,7 @@ export class SessionManager {
       this.mcpSessionStatus.delete(ctx.session);
       this.reportMcpStatus();
       this.send({ type: 'session_ended', sessionId: sessionId || ctx.tempId || ctx.liveKey });
+      if (sessionId) this.onTurnEnded?.(sessionId, ctx.cwd);
     }
   }
 
@@ -395,18 +407,28 @@ export class SessionManager {
   }
 
   interrupt(sessionId: string): void {
-    void this.live.get(sessionId)?.interrupt();
+    this.control(sessionId, 'Stop', (live) => live.interrupt());
   }
 
   setPermissionMode(sessionId: string, mode: PermissionMode): void {
-    void this.live.get(sessionId)?.setPermissionMode(mode);
+    this.control(sessionId, 'Changing the permission mode', (live) => live.setPermissionMode(mode));
   }
 
   setModel(sessionId: string, model: string | undefined): void {
-    void this.live.get(sessionId)?.setModel(model);
+    this.control(sessionId, 'Switching the model', (live) => live.setModel(model));
   }
 
   setEffort(sessionId: string, effort: EffortLevel | null): void {
-    void this.live.get(sessionId)?.setEffort(effort);
+    this.control(sessionId, 'Changing the effort', (live) => live.setEffort(effort));
+  }
+
+  // The SDK rejects control requests it can't honour (e.g. a model id its catalog doesn't know). Left unhandled, that
+  // rejection kills the whole agent and every session on it, so report it on the session instead.
+  private control(sessionId: string, what: string, run: (live: LiveSession) => Promise<unknown>): void {
+    const live = this.live.get(sessionId);
+    if (!live) return;
+    run(live).catch((err) => {
+      this.send({ type: 'error', sessionId, message: `${what} failed: ${err instanceof Error ? err.message : String(err)}` });
+    });
   }
 }

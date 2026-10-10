@@ -1,64 +1,140 @@
-# Builds the Android app and publishes it as a GitHub release, so it can be done from the GitHub mobile app:
-# Actions → "Android APK" → Run workflow → enter a version (for example 1.5).
+# Builds the Android app (the Flutter app in packages/mobile) and, when asked, publishes it as a GitHub release, so it can be done
+# from the GitHub mobile app: Actions → "Android APK" → Run workflow → enter a version (for example 1.24).
+#
+# - Pushes and pull requests that touch the phone app only BUILD the APKs and keep them as a build artifact (download them from the run).
+# - Run workflow with a version, or push a tag v<version>, to also PUBLISH a release. A release is only published when the signing
+#   secrets exist, so an APK signed with a throwaway debug key never replaces a properly signed one.
 name: Android APK
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version, without the v (for example 1.5)'
+        description: 'Release version, without the v (for example 1.24)'
         required: true
         type: string
   push:
     tags: ['v*']
+    branches: [main, 'claude/**']
+    paths:
+      - 'packages/mobile/**'
+      - '.github/workflows/android-apk.yml'
+  pull_request:
+    paths:
+      - 'packages/mobile/**'
+      - '.github/workflows/android-apk.yml'
 
 permissions:
   contents: write
 
+env:
+  FLUTTER_VERSION: 3.47.6
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  apk:
+  test:
+    name: Analyze and test
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: packages/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+  apk:
+    name: Build the APKs
+    runs-on: ubuntu-latest
+    needs: test
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
       - id: v
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then v="${{ inputs.version }}"; else v="${GITHUB_REF_NAME#v}"; fi
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then v="${{ inputs.version }}"
+          elif [ "${GITHUB_REF_TYPE}" = "tag" ]; then v="${GITHUB_REF_NAME#v}"
+          else v="$(sed -n 's/^version: *\([0-9][0-9.]*\).*/\1/p' packages/mobile/pubspec.yaml | head -1)"; fi
           v="${v#v}"
           case "$v" in (*[!0-9A-Za-z._-]*|'') echo "bad version"; exit 1;; esac
           echo "version=$v" >> "$GITHUB_OUTPUT"
-          # Monotonic across releases, and above the 4 that the early builds shipped with.
+          # Monotonic across releases (the Capacitor app used the same scheme; this is a separate app id, so they never collide).
           echo "code=$((100 + GITHUB_RUN_NUMBER))" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${GITHUB_REF_TYPE}" = "tag" ]; then echo "publish=true" >> "$GITHUB_OUTPUT"; else echo "publish=false" >> "$GITHUB_OUTPUT"; fi
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
+      # Every release carries its own news: the notes for this version come from the same file the app shows (What's new), and a version
+      # with no entry does not build.
+      - name: Release notes for this version
+        id: notes
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, sys
+          def norm(v):
+              v = v.strip().split('+')[0].split(' ')[0]
+              while v.endswith('.0') and v.count('.') > 1:
+                  v = v[:-2]
+              return v
+          want = norm(os.environ['VERSION'])
+          notes = json.load(open('packages/mobile/assets/whats_new.json'))
+          entry = next((n for n in notes if norm(str(n.get('version', ''))) == want), None)
+          items = [i for i in (entry or {}).get('items', []) if isinstance(i, str) and i.strip()]
+          if not entry or not items:
+              print(f"::error::No release notes for {want}. Add an entry with at least one item to packages/mobile/assets/whats_new.json.")
+              sys.exit(1)
+          body = f"## {entry.get('title') or 'Escanor ' + want}\n\n" + "\n".join(f"- {i}" for i in items) + "\n"
+          open(os.path.join(os.environ['RUNNER_TEMP'], 'notes.md'), 'w').write(body)
+          print(body)
+          PY
+          echo "path=$RUNNER_TEMP/notes.md" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
 
-      - run: npm ci
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
 
-      # Push notifications: Firebase's app config comes from a repository secret, never from git. Without the secret the APK still
-      # builds; it just cannot receive push (the google-services plugin is only applied when the file exists).
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Push notifications: Firebase's app config comes from a repository secret, never from git. It is used only if it holds this
+      # app's id (com.escanorlabs.escanor); otherwise the APK still builds, just without push (the google-services plugin is only
+      # applied when the file exists).
       - name: Add the Firebase app config
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
           if [ -n "$GOOGLE_SERVICES_JSON" ]; then
-            printf '%s' "$GOOGLE_SERVICES_JSON" > packages/web/android/app/google-services.json
-            echo "Firebase config added: push notifications will work in this build."
+            printf '%s' "$GOOGLE_SERVICES_JSON" > packages/mobile/android/app/google-services.json
+            if grep -q '"com.escanorlabs.escanor"' packages/mobile/android/app/google-services.json; then
+              echo "Firebase config added: push notifications will work in this build."
+            else
+              rm packages/mobile/android/app/google-services.json
+              echo "::warning::GOOGLE_SERVICES_JSON has no app com.escanorlabs.escanor: this APK will not receive push notifications."
+            fi
           else
             echo "::warning::GOOGLE_SERVICES_JSON secret is not set: this APK will not receive push notifications."
           fi
 
-      # Play Protect distrusts debuggable apps signed with a throwaway debug key, and every machine's debug key differs (so an update
-      # will not install over the last one). With the signing secrets set, the APK is a release build signed with the app's own key.
+      # With the signing secrets set the APKs are signed with the app's own key (so updates install over each other). Without them,
+      # Gradle falls back to the debug key: fine to install and try, but never published.
       - name: Add the signing key
         id: sign
         env:
@@ -72,40 +148,48 @@ jobs:
             printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' "$RUNNER_TEMP/release.jks" "$ANDROID_KEYSTORE_PASSWORD" "$ANDROID_KEY_ALIAS" "$ANDROID_KEY_PASSWORD" > "$RUNNER_TEMP/signing.properties"
             echo "props=$RUNNER_TEMP/signing.properties" >> "$GITHUB_OUTPUT"
             echo "signed=true" >> "$GITHUB_OUTPUT"
-            echo "script=android:apk:release" >> "$GITHUB_OUTPUT"
-            echo "apk=release/app-release.apk" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::ANDROID_KEYSTORE_BASE64 is not set: this is a debug-signed APK (kept as a build artifact only, never published to the release)."
-            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::ANDROID_KEYSTORE_BASE64 is not set: these APKs are signed with the debug key (kept as a build artifact only, never published)."
             echo "props=$RUNNER_TEMP/none.properties" >> "$GITHUB_OUTPUT"
-            echo "script=android:apk" >> "$GITHUB_OUTPUT"
-            echo "apk=debug/app-debug.apk" >> "$GITHUB_OUTPUT"
+            echo "signed=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build the APK
-        working-directory: packages/web
+      - name: Build the normal APK and the one with phone control
+        working-directory: packages/mobile
         env:
-          RH_VERSION_NAME: ${{ steps.v.outputs.version }}
-          RH_VERSION_CODE: ${{ steps.v.outputs.code }}
           RH_SIGNING_PROPERTIES: ${{ steps.sign.outputs.props }}
-        run: npm run ${{ steps.sign.outputs.script }}
+          VERSION: ${{ steps.v.outputs.version }}
+          CODE: ${{ steps.v.outputs.code }}
+        run: |
+          flutter pub get
+          flutter build apk --release --build-name="$VERSION" --build-number="$CODE"
+          cp build/app/outputs/flutter-apk/app-release.apk "$GITHUB_WORKSPACE/remote-harness-$VERSION.apk"
+          flutter build apk --release --build-name="$VERSION" --build-number="$CODE" -P phoneControl=true
+          cp build/app/outputs/flutter-apk/app-release.apk "$GITHUB_WORKSPACE/remote-harness-$VERSION-phone-control.apk"
 
-      - name: Name the file
-        run: cp packages/web/android/app/build/outputs/apk/${{ steps.sign.outputs.apk }} "remote-harness-${{ steps.v.outputs.version }}.apk"
+      - name: Check the APKs
+        run: |
+          for f in remote-harness-${{ steps.v.outputs.version }}*.apk; do
+            ls -l "$f"
+            # An APK is a zip with a manifest and a classes.dex; a truncated or empty one is not worth uploading.
+            unzip -l "$f" | grep -q AndroidManifest.xml
+            unzip -l "$f" | grep -q classes.dex
+          done
 
       - uses: actions/upload-artifact@v4
         with:
           name: remote-harness-${{ steps.v.outputs.version }}-apk
-          path: remote-harness-${{ steps.v.outputs.version }}.apk
+          path: remote-harness-${{ steps.v.outputs.version }}*.apk
+          if-no-files-found: error
 
-      # Only a release-signed APK goes on the release page. A debug build would replace the signed one attached by hand (same file
-      # name) and users could no longer update over it.
+      # Only a release-signed APK goes on the release page, and only when someone asked for a release: a debug-signed build would
+      # replace the signed one (same file name) and users could no longer update over it.
       - name: Publish the release
-        if: steps.sign.outputs.signed == 'true'
+        if: steps.sign.outputs.signed == 'true' && steps.v.outputs.publish == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.v.outputs.version }}
           target_commitish: ${{ github.sha }}
-          name: Remote Harness ${{ steps.v.outputs.version }} (Android)
-          generate_release_notes: true
-          files: remote-harness-${{ steps.v.outputs.version }}.apk
+          name: Escanor ${{ steps.v.outputs.version }} (Android)
+          body_path: ${{ steps.notes.outputs.path }}
+          files: remote-harness-${{ steps.v.outputs.version }}*.apk

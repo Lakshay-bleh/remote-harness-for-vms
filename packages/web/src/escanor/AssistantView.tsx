@@ -9,6 +9,7 @@ import { useConversation, useLoad } from './hooks';
 import MachineSheet, { machineLabel, machineTone } from './MachineSheet';
 import ModelChip from './ModelChip';
 import { modelToSend, rememberModels, useModelPick } from './modelPicker';
+import { assistantReach } from './reach';
 import { MenuButton, Md, Notice, Spinner } from './ui';
 
 const SUGGESTIONS = ['What can you help me with?', 'Check my latest deployments and tell me if anything is wrong', 'Look at the errors from the last day and find the cause', 'Fix the failing build in my repository'];
@@ -49,7 +50,7 @@ export default function AssistantView({ conversationId, title, onConversation, o
   if (status.loading && !status.data) return <Centered><Spinner /></Centered>;
   if (!ready) return <Setup message={status.data?.message ?? status.error ?? 'Getting your assistant ready…'} state={status.data?.state} />;
 
-  const usable = (caps.data?.integrations ?? []).filter((i) => i.available_to_assistant);
+  const { usable, invite } = assistantReach(caps.data?.integrations);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -97,7 +98,7 @@ export default function AssistantView({ conversationId, title, onConversation, o
             {usable.length > 5 && <span>+{usable.length - 5}</span>}
           </button>
         ) : (
-          caps.data && <button onClick={onOpenIntegrations} className="mb-2 text-left text-[12px] text-primary underline underline-offset-2">Connect a service so I can work on it</button>
+          invite && <button onClick={onOpenIntegrations} className="mb-2 text-left text-[12px] text-primary underline underline-offset-2">Connect a service so I can work on it</button>
         )}
         <ChatComposer
           placeholder="Message your assistant"

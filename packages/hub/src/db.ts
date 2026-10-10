@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { AgentMcpStatus, ApiTokenDto, ApiTokenScope, ClaudeAccount, ManagedMcpServer, MessageDto, SessionDto, VmDto } from '@remote-harness/shared';
 import { redactSecrets } from '@remote-harness/shared/validate';
 import { deriveKey, isSealed, open as unseal, seal } from './secretbox.js';
+import { likePattern, parseQuery, rankSessions, readableText, type SearchCandidate, type SessionSearchHit } from './search.js';
 
 // Everything a hub stores belongs to a tenant. A hub run the classic way has exactly one, 'default',
 // whose credentials are HUB_AGENT_TOKEN and APP_PASSWORD. A hub that also sets HUB_ADMIN_TOKEN can
@@ -19,6 +20,7 @@ const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 // but not forever: it expires unless the caller picks another lifetime.
 export const DEFAULT_API_TOKEN_TTL_SECONDS = 365 * 24 * 60 * 60;
 export const DEFAULT_MESSAGE_LIMIT = 2000;
+const SEARCH_MESSAGES_PER_SESSION = 40;
 const newSecret = () => randomBytes(32).toString('base64url');
 
 /** Who a bearer token is: a browser login, or a purpose-built API token (with the scope it was issued for). */
@@ -182,6 +184,9 @@ export function openDb(dataDir: string, opts: DbOptions = {}) {
   if (!hasColumn(db, 'api_tokens', 'scope')) db.exec("ALTER TABLE api_tokens ADD COLUMN scope TEXT NOT NULL DEFAULT 'full'");
   // NULL = no expiry: tokens issued before expiry existed keep working until revoked.
   if (!hasColumn(db, 'api_tokens', 'expires_at')) db.exec('ALTER TABLE api_tokens ADD COLUMN expires_at TEXT');
+  // What chat search reads: the user's and the assistant's words, without tool output. NULL = not extracted yet (rows
+  // from before search existed); they are filled in the first time their VM is searched.
+  if (!hasColumn(db, 'messages', 'search_text')) db.exec('ALTER TABLE messages ADD COLUMN search_text TEXT');
   if (key) {
     for (const row of db.prepare('SELECT tenant_id, name, config_json FROM mcp_servers').all() as { tenant_id: string; name: string; config_json: string }[]) {
       if (!isSealed(row.config_json)) db.prepare('UPDATE mcp_servers SET config_json = ? WHERE tenant_id = ? AND name = ?').run(seal(key, row.config_json), row.tenant_id, row.name);
@@ -278,9 +283,10 @@ export function openDb(dataDir: string, opts: DbOptions = {}) {
 
       insertMessage(m: { sessionId: string; vmId: string; message: unknown }): MessageDto {
         const createdAt = new Date().toISOString();
+        const stored = redactSecrets(m.message);
         const result = db
-          .prepare('INSERT INTO messages (tenant_id, session_id, vm_id, payload, created_at) VALUES (?, ?, ?, ?, ?)')
-          .run(t, m.sessionId, m.vmId, JSON.stringify(redactSecrets(m.message)), createdAt);
+          .prepare('INSERT INTO messages (tenant_id, session_id, vm_id, payload, created_at, search_text) VALUES (?, ?, ?, ?, ?, ?)')
+          .run(t, m.sessionId, m.vmId, JSON.stringify(stored), createdAt, readableText(stored));
         return { id: Number(result.lastInsertRowid), sessionId: m.sessionId, vmId: m.vmId, message: m.message, createdAt };
       },
 
@@ -315,6 +321,51 @@ export function openDb(dataDir: string, opts: DbOptions = {}) {
           )
           .all(...params) as { id: number; sessionId: string; vmId: string; payload: string; createdAt: string }[];
         return rows.map((r) => ({ id: r.id, sessionId: r.sessionId, vmId: r.vmId, createdAt: r.createdAt, message: JSON.parse(r.payload) }));
+      },
+
+      // Chats on one VM whose title or messages contain every word of `query`. SQLite narrows the sessions with one
+      // LIKE pass per word over the messages' readable text; only messages that contain some word are read back and scored.
+      searchSessions(vmId: string, query: string, limit: number): SessionSearchHit[] {
+        const q = parseQuery(query);
+        if (!q) return [];
+        const pending = db.prepare('SELECT id, payload FROM messages WHERE tenant_id = ? AND vm_id = ? AND search_text IS NULL').all(t, vmId) as { id: number; payload: string }[];
+        if (pending.length) {
+          const fill = db.prepare('UPDATE messages SET search_text = ? WHERE id = ?');
+          db.exec('BEGIN');
+          try {
+            for (const r of pending) fill.run(readableText(JSON.parse(r.payload)), r.id);
+            db.exec('COMMIT');
+          } catch (err) {
+            db.exec('ROLLBACK');
+            throw err;
+          }
+        }
+        const patterns = q.stems.map(likePattern);
+        const anyWord = patterns.map(() => 'search_text LIKE ?').join(' OR ');
+        const perWord = patterns.map((_, i) => `MAX(s.title LIKE ?${i + 1} OR m.search_text LIKE ?${i + 1}) AS w${i}`).join(', ');
+        const rows = db
+          .prepare(
+            `SELECT s.id, s.title, s.last_message_at as lastMessageAt, ${perWord}
+             FROM sessions s LEFT JOIN messages m ON m.tenant_id = s.tenant_id AND m.session_id = s.id AND m.vm_id = s.vm_id
+             WHERE s.tenant_id = ?${patterns.length + 1} AND s.vm_id = ?${patterns.length + 2}
+             GROUP BY s.id`,
+          )
+          .all(...patterns, t, vmId) as Record<string, string | number | null>[];
+        // A long chat that mentions the words everywhere is scored on its newest SEARCH_MESSAGES_PER_SESSION mentions.
+        const readTexts = db.prepare(
+          `SELECT text FROM (
+             SELECT id, search_text as text FROM messages WHERE tenant_id = ? AND session_id = ? AND vm_id = ? AND (${anyWord}) ORDER BY id DESC LIMIT ${SEARCH_MESSAGES_PER_SESSION}
+           ) ORDER BY id`,
+        );
+        const candidates: SearchCandidate[] = rows
+          .filter((r) => patterns.every((_, i) => r[`w${i}`] === 1))
+          .map((r) => ({
+            sessionId: String(r.id),
+            title: String(r.title),
+            lastMessageAt: String(r.lastMessageAt),
+            texts: (readTexts.all(t, String(r.id), vmId, ...patterns) as { text: string }[]).map((m) => m.text),
+          }));
+        return rankSessions(q, candidates, limit);
       },
 
       createAuthToken(): string {

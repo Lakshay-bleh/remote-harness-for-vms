@@ -1,0 +1,233 @@
+{
+ "b64u": [
+  {
+   "hex": "",
+   "b64u": ""
+  },
+  {
+   "hex": "03",
+   "b64u": "Aw"
+  },
+  {
+   "hex": "0338",
+   "b64u": "Azg"
+  },
+  {
+   "hex": "03386d",
+   "b64u": "Azht"
+  },
+  {
+   "hex": "03386da2",
+   "b64u": "Azhtog"
+  },
+  {
+   "hex": "03386da2d7",
+   "b64u": "Azhtotc"
+  },
+  {
+   "hex": "03386da2d70c4176abe0154a7fb4e91e",
+   "b64u": "AzhtotcMQXar4BVKf7TpHg"
+  },
+  {
+   "hex": "03386da2d70c4176abe0154a7fb4e91e5388bdf2275c91c6fb30659acf0439",
+   "b64u": "AzhtotcMQXar4BVKf7TpHlOIvfInXJHG-zBlms8EOQ"
+  },
+  {
+   "hex": "03386da2d70c4176abe0154a7fb4e91e5388bdf2275c91c6fb30659acf04396e",
+   "b64u": "AzhtotcMQXar4BVKf7TpHlOIvfInXJHG-zBlms8EOW4"
+  },
+  {
+   "hex": "03386da2d70c4176abe0154a7fb4e91e5388bdf2275c91c6fb30659acf04396ea3d80d4277ace1164b80b5ea1f5489bef3285d92c7fc31669bd0053a6fa4d90e43",
+   "b64u": "AzhtotcMQXar4BVKf7TpHlOIvfInXJHG-zBlms8EOW6j2A1Cd6zhFkuAteofVIm-8yhdksf8MWab0AU6b6TZDkM"
+  }
+ ],
+ "code": {
+  "secretHex": "030a11181f262d343b424950575e656c737a8188",
+  "code": "AMFB-CGA7-EYWT-IO2C-JFIF-OXTF-NRZX-VAMI",
+  "parsedHex": "030a11181f262d343b424950575e656c737a8188"
+ },
+ "hmac": [
+  {
+   "keyHex": "030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122",
+   "parts": [
+    "pair",
+    "abc",
+    "Pixel"
+   ],
+   "outHex": "a4579dc4154f55c7ee99a817c20bbc636a48fe833d9580c8074b897eb59c068a"
+  },
+  {
+   "keyHex": "030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122",
+   "parts": [
+    "ab",
+    "c"
+   ],
+   "outHex": "b9ee7b401dc45a26541f1ebdf44f444a84940146db8c106b10b9e6f898ca7ae6"
+  },
+  {
+   "keyHex": "030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122",
+   "parts": [
+    "a",
+    "bc"
+   ],
+   "outHex": "0c687d6ba6007ce8b4ac207fed5c34075754cf0bc80e3a67ff0e1a054a9f32e8"
+  },
+  {
+   "keyHex": "030a11181f262d343b424950575e656c737a8188",
+   "parts": [
+    "sel"
+   ],
+   "outHex": "98a449df08387fe2582470c6f6b8df56a35a50740363f21f8093faa69dfd8a05"
+  },
+  {
+   "keyHex": "030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122",
+   "parts": [
+    "“Open apps” ünïcode ✓"
+   ],
+   "outHex": "99976f91ca2dde779745aafc98b77c7f38380a4172842985cabf2154a82f5cda"
+  }
+ ],
+ "hkdf": [
+  {
+   "secretHex": "030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122",
+   "salt": "escanor-relay-v1",
+   "info": "relay key",
+   "outHex": "d5acc16c4676c278b11787a97a35cc2e9a796b4863f55ad835d9f86bca779d00"
+  },
+  {
+   "secretHex": "030a11181f262d343b424950575e656c737a8188",
+   "salt": "escanor-pair-v1",
+   "info": "pairing key",
+   "outHex": "6f971e4ab3080157f8ff039dd4689478a1393fff2ac0ac60cb181567a681d1d8"
+  },
+  {
+   "secretHex": "0306090c0f1215181b1e2124272a2d303336393c3f4245484b4e5154575a5d60",
+   "saltHex": "030c151e273039424b545d666f78818a939ca5aeb7c0c9d2dbe4edf6ff08111a232c353e475059626b747d868f98a1aab3bcc5ced7e0e9f2fb040d161f28313a434c555e677079828b949da6afb8c1cad3dce5eef70009121b242d363f48515a636c757e879099a2abb4bdc6cfd8e1eaf3fc050e172029323b444d565f68717a838c",
+   "info": "escanor-approve-v1 key",
+   "outHex": "9445e342e39adf213fc61ac77e45da171bc6881f84ec580a2fdf95b82e288575"
+  }
+ ],
+ "derive": {
+  "secretHex": "030a11181f262d343b424950575e656c737a8188",
+  "deviceKeyHex": "03101d2a3744515e6b7885929facb9c6d3e0edfa0714212e3b4855626f7c8996",
+  "deviceKeyB64u": "AxAdKjdEUV5reIWSn6y5xtPg7foHFCEuO0hVYm98iZY",
+  "nonceC": "bm9uY2UtY2xpZW50LTE2",
+  "nonceS": "c2VydmVyLW5vbmNlLTE2",
+  "pairNonce": "cGFpci1ub25jZQ",
+  "deviceName": "Android phone",
+  "pairingKeyHex": "6f971e4ab3080157f8ff039dd4689478a1393fff2ac0ac60cb181567a681d1d8",
+  "pairProofB64u": "Jq4tZv25USfIMgHcMikSkpsZx_k88S8BO62LGLfl1N8",
+  "pairSelector": "mKRJ3w",
+  "relayKeyHex": "23fc5f0ee565c5a19c2dceeda8f8936eb1018958e8d9d1b1b895d9e09f04a63d",
+  "serverProofB64u": "tTa3K2yntFMiNLRjn_hmtkaMOh6yUZAtfpRUqVLxq-M",
+  "clientProofB64u": "igbqpkl9Zb_bjiKZFHa2_cjXqS8FwtwY9Se8sSQVKMk",
+  "sessionKeyHex": "d2d2b36761a0cb43481d4fc8243ae205993d2517439978a5150fc52107526374"
+ },
+ "seal": [
+  {
+   "keyHex": "03203d5a7794b1ceeb0825425f7c99b6d3f00d2a4764819ebbd8f5122f4c6986",
+   "plain": "hello",
+   "aad": "",
+   "ivHex": "0b30557a9fc4e90e33587da2",
+   "sealed": "CzBVep_E6Q4zWH2i6AOJL5nLR60HQRqCMl7AV88Nuy6x"
+  },
+  {
+   "keyHex": "03203d5a7794b1ceeb0825425f7c99b6d3f00d2a4764819ebbd8f5122f4c6986",
+   "plain": "",
+   "aad": "aad-only",
+   "ivHex": "c7ec11365b80a5caef14395e",
+   "sealed": "x-wRNluApcrvFDle6lOmI8QoXOckrJ58MoOLQg"
+  },
+  {
+   "keyHex": "03203d5a7794b1ceeb0825425f7c99b6d3f00d2a4764819ebbd8f5122f4c6986",
+   "plain": "{\"s\":1,\"m\":{\"t\":\"ping\"}}",
+   "aad": "lan:dev-1:c2s",
+   "ivHex": "83a8cdf2173c6186abd0f51a",
+   "sealed": "g6jN8hc8YYar0PUar1i0xC7umLDljTTCbbMiCk3XMBV4MsRmjXMd0de6vH6kZP4dhtHm1A"
+  },
+  {
+   "keyHex": "03203d5a7794b1ceeb0825425f7c99b6d3f00d2a4764819ebbd8f5122f4c6986",
+   "plain": "“Open apps and websites” is turned off for phones. ✓ ünïcode",
+   "aad": "relay:dev-1:res",
+   "ivHex": "3f6489aed3f81d42678cb1d6",
+   "sealed": "P2SJrtP4HUJnjLHW09haa89ryVBB8A8CdShGrmue61uO8ny2bXRCn-kgEeZt_77iqUGJb3QFxx1AwDVSrG2dVpqvNKRgBuv0dNwHdcty14EpQVtfBNuvDOhPIkq57SHg"
+  },
+  {
+   "keyHex": "03203d5a7794b1ceeb0825425f7c99b6d3f00d2a4764819ebbd8f5122f4c6986",
+   "plain": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "aad": "long",
+   "ivHex": "fb20456a8fb4d9fe23486d92",
+   "sealed": "-yBFao-02f4jSG2SX4tthIlMD671XP-yzRob3tXoVq4vySl8LxHmrsjwHVyoRsc1I5wbZnEM2iIQQF9elwetkqLprFGGHMLAegozKxdCrmWVJLsdmNVDH_QWABxB9kkurmfK0bnNgdJCZ70dcOxnd2F_EHCB7kDVnkTwgvL6RNE47N_9V9WDgsyzwC6Fat_JSSKjANgkE4IJ2sY_6ju8ViJMNSUNBkfMQYMydUQH5Id84cCSfD_pXdM7rhlPhN92BWHFGneioXKHdP98RQ7wCczT9nKuoTWo5h43GfOZaEWQOLJ7bvdcnGzESnASqNkO05pW8Rb-qRrnKwrN5umXOr_AH0JBXrEn__hf9NwUREEIzyB_0c-hH4vVX9sSgqnc4hiepx4fbkQ4Ag0QX17yQ_j2rO51jvnCkU9YGHQIS_rlp-Udylwu1AEjjBwQtgEd3B8blv6_psrkt0VYsFx6IOGNZaSO-GPfTxfKvj5kBiI73PQOSXacOO9R4DoEUbQqCJYfvTRfCeGPEAnnIEbGz95VdcW7CBFFNWvZc4Z94yxhIyIQqxTUoo73QvaWUIr0sxXiPisClJjCyobDgMejJJBhplSUvl5VNzZHlbFFOUVC7CL_B498UJvo4N3NpLW2hy-ZiVFOFPlzV3oMRIx7bHaG20eWlbCmHFVx7o8lEiVPHvQTJSAD8boLjQzqJsfOSqgZiWFC6pQfbT_97Df1Sa7TX4sZ2RobunYTRoDkK-6ueVpsf3FOpVUfbWevptUt91sYO5OpUoMmxYNRwY99va10AYZIMdeXupadZyIdWdS-9CoV5Na4sYTZOaCzUCGFK_UwHoROEQ72Qe5AgR2vHhKfEOvQ4M0or4-vo-GGi77m2MizJS1t-jYnqqHG0-SJO_bPcwaq1qIobFKoPDltX1hFOq_TwhYKXKpaHqJ3bvpOCWYPtqgF8wTo0jewvaWwpipG0QDjOTtJfvWd1qUcULowWyJuWosHF06oWAGrTugbP8_nHLkmq7BpheiuWjRQDGLeK2GjKjzgtMJHkBbdIL-cNm568vUAKGGQ3l31ak_BEJcuLhz01gE-TLNHL5sJ-oEXvZOMa6WGIhjlXMBaZ9H-A2t0eiy02MqWUaNey7QaKFpjngAYRmOTSokXUVpCdxBs3gzLVRHqSji1s491VIk5TG1uW8KGN63Mot4NLXMnGj9R7xtAXQSJ95zJxcebCN28YgFF9AVOC48260tK6xzut0EsjOocvoc4EceXR4BLbwqjXNSjWUcDxLYId7TDJ2dtClb2dxLumq0biHAZqEWqaLuYnH0eQnlX7qKbvVyMk-7xHq8rOHrjtPofAdCenZtdyyR5V6PwMdKGuV5PjM3sBH4"
+  }
+ ],
+ "sealedDeviceKey": {
+  "secretHex": "030a11181f262d343b424950575e656c737a8188",
+  "deviceId": "dev-1",
+  "ivHex": "b7dc01264b7095badf04294e",
+  "sealed": "t9wBJktwlbrfBClO8qQ6Qeu4KlkH4_am1xBhQmlRXVz57X6KKdWVP1dws4WWJZIPOY20Twal7T3RREU9",
+  "deviceKeyHex": "03101d2a3744515e6b7885929facb9c6d3e0edfa0714212e3b4855626f7c8996"
+ },
+ "lan": {
+  "deviceId": "dev-1",
+  "s2c": {
+   "plain": "{\"s\":1,\"m\":{\"t\":\"hello\",\"machine\":{\"name\":\"Work Laptop\",\"hostname\":\"box\",\"os\":\"linux\",\"appVersion\":\"0.4.0\"}}}",
+   "ivHex": "7398bde2072c51769bc0e50a",
+   "sealed": "c5i94gcsUXabwOUKe36mc7tbwIlX8AQqvx51TMsmH4x8O1FRK2N8ojYhE7FQNF7K6c7Bx7ZS4FXnBCC9icuQksvPbGODMad_W7z_H1xjw_LZ8QtSAZ7lB3NNujsB5TZmKA2Sz9qb78K7_OyFx9_bTXAsi3_uhG_tmlBCdVkDVL_3HjEQsLZojtU"
+  },
+  "c2s": {
+   "plain": "{\"s\":1,\"m\":{\"t\":\"chat\",\"id\":\"abc\",\"text\":\"What is using my memory?\",\"fresh\":true}}",
+   "ivHex": "2f54799ec3e80d32577ca1c6",
+   "sealed": "L1R5nsPoDTJXfKHGTLTgwyipA09Bod5bWvLoh5dhwMzWsQMQAUDG0R-6xMvTzlHZZHbQ6Z2VMz8-4DKcmB_B7xUWQ8GdOPt4OOwPLzIfb6zrAXHamns_V8VxPMj4TlliRld63RshFZd3qXR-ghk"
+  }
+ },
+ "relay": {
+  "deviceId": "dev-1",
+  "deviceKeyHex": "03101d2a3744515e6b7885929facb9c6d3e0edfa0714212e3b4855626f7c8996",
+  "request": {
+   "id": "6xA1Wn-kye4TOF2C",
+   "idHex": "eb10355a7fa4c9ee13385d82",
+   "ivHex": "a7ccf1163b6085aacff4193e",
+   "ts": 1790000000000,
+   "m": {
+    "t": "ping"
+   },
+   "plain": "{\"id\":\"6xA1Wn-kye4TOF2C\",\"ts\":1790000000000,\"m\":{\"t\":\"ping\"}}",
+   "sealed": "p8zxFjtgharP9Bk-W5TebKqREbRZUIwKcZUMbG8OSfqiQDlxiG_iVTosmcDqE1bePo9W9GyZRNaT0tGNFUDF7qTjXF58rUIE713mLeHuVcx5vZnLXN05unI"
+  },
+  "response": {
+   "id": "6xA1Wn-kye4TOF2C",
+   "ts": 1790000001000,
+   "replies": [
+    {
+     "t": "pong"
+    },
+    {
+     "t": "reply",
+     "id": "x",
+     "reply": "Chrome ✓",
+     "listenAgain": false
+    }
+   ],
+   "ivHex": "6388add2f71c41668bb0d5fa",
+   "plain": "{\"id\":\"6xA1Wn-kye4TOF2C\",\"ts\":1790000001000,\"replies\":[{\"t\":\"pong\"},{\"t\":\"reply\",\"id\":\"x\",\"reply\":\"Chrome ✓\",\"listenAgain\":false}]}",
+   "sealed": "Y4it0vccQWaLsNX6ixsPPl5FmgaLEjN8RAvuV2cugp-5xu6FBKW_3SXV_btCffFdDi3P9LkAA_UM2kkKgaLmDIBQ7i0b7HimIYTgZqwVJZkdovub7l3EdnFSsQiPWzTzHgMKgJA9Qb1uGCMGD0tTHeaa3SzewbzEIgTCPmGhMLRIJ2afvbk0vQ0q8mxt3mpI3jlWfnNoNPr0EOG4FSHjtrs"
+  }
+ },
+ "ecdh": {
+  "phone": {
+   "dHex": "ef749554490f553bbd1a666d8f5e263859e3f666460956535aca4de5c23d0500",
+   "pubB64u": "BBgrb41Db--sh2MyB0BKbQxvanpLfloXs-cojLURdrVmNxbCYfMhe3iBKBLRMADoF41J2CBcgsWE7DA2wvm8Zg0"
+  },
+  "machine": {
+   "dHex": "c410ecf3ab415962dc6582e22fadcf7596c50d5ca35eb3b12ed39d4523957b3a",
+   "pubB64u": "BOmkziCd0ARHxnd16Sk_MNQYJ-Ilrjjn84PwDlpuQjxxlekaXyjh8E-jWWylq0wzJuh5HriMhtWNlIUYjnwukbY"
+  },
+  "sharedHex": "a86f3a9365ab983b96b905c2f58a83f943408c1015675f4a649161402b163793",
+  "keyHex": "258fab1adc58f4b23d94325b6920547502aaba74f82b84db21176e8d05ffac1c",
+  "confirm": "100 669",
+  "sealedKey": "H0RpjrPY_SJHbJG25KYSoWgenCAo9u9ycqx-Jab4efNiC1-Vn_NHGZsJnPrTTtKm9oVnUcpu3jdI6O2Y",
+  "sealedKeyIvHex": "1f44698eb3d8fd22476c91b6",
+  "deviceId": "dev-9",
+  "deviceKeyHex": "03101d2a3744515e6b7885929facb9c6d3e0edfa0714212e3b4855626f7c8996"
+ }
+}
