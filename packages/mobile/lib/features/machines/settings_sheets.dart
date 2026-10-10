@@ -76,7 +76,7 @@ class _TextBodyState extends State<_TextBody> {
   }
 }
 
-String _when(String iso) => iso.isEmpty ? '—' : '${relativeTime(iso)} ago';
+String _when(String iso) => iso.isEmpty ? '—' : timeAgo(iso);
 
 // ---------------------------------------------------------------------------------------------- one chat
 

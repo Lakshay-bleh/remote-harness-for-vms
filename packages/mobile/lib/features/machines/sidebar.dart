@@ -415,7 +415,7 @@ class _SessionRow extends StatelessWidget {
               Text(snippet!, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: c.muted)),
             ],
             const SizedBox(height: 2),
-            Text('${relativeTime(session.lastMessageAt)} ago · ${session.cwd}',
+            Text('${timeAgo(session.lastMessageAt)} · ${session.cwd}',
                 maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: c.mutedSoft)),
           ]),
         ),

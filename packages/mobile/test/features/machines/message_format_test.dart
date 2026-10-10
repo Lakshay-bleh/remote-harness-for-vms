@@ -134,5 +134,8 @@ void main() {
     expect(relativeTime('2026-10-07T11:59:30Z', now: now), 'now');
     expect(relativeTime('2026-10-07T11:55:00Z', now: now), '5m');
     expect(relativeTime('2026-10-05T12:00:00Z', now: now), '2d');
+    // As a phrase: never "now ago".
+    expect(timeAgo('2026-10-07T11:59:30Z', now: now), 'just now');
+    expect(timeAgo('2026-10-07T11:55:00Z', now: now), '5m ago');
   });
 }

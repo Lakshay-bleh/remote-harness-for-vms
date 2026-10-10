@@ -265,7 +265,7 @@ String? inlineText(String message, List<({String name, String text})> files, int
 /// "Online", or when it was last seen: the same plain status a computer card gives.
 String machineStatus(bool connected, String? lastSeenAt, {DateTime? now}) {
   if (connected) return 'Online';
-  return lastSeenAt != null && lastSeenAt.isNotEmpty ? 'Offline · seen ${relativeTime(lastSeenAt, now: now)} ago' : 'Offline';
+  return lastSeenAt != null && lastSeenAt.isNotEmpty ? 'Offline · seen ${timeAgo(lastSeenAt, now: now)}' : 'Offline';
 }
 
 /// "now", "5m", "3h", "2d".
@@ -278,4 +278,10 @@ String relativeTime(String iso, {DateTime? now}) {
   final hours = mins ~/ 60;
   if (hours < 24) return '${hours}h';
   return '${hours ~/ 24}d';
+}
+
+/// [relativeTime] as a phrase: "just now", "5m ago". (Appending " ago" to [relativeTime] read "now ago" for the first minute.)
+String timeAgo(String iso, {DateTime? now}) {
+  final r = relativeTime(iso, now: now);
+  return r == 'now' ? 'just now' : '$r ago';
 }
