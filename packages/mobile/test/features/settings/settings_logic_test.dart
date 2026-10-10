@@ -92,8 +92,8 @@ void main() {
       expect(legalLabel('dpa'), 'Data processing');
       expect(legalLabel('about'), 'Legal'); // a website page, not stored in the app
       expect(legalLabel('nope'), 'Legal');
-      expect(policyVersion, '2026-10-08');
-      expect(policyDate, '8 October 2026');
+      expect(policyVersion, '2026-10-10');
+      expect(policyDate, '10 October 2026');
     });
   });
 }

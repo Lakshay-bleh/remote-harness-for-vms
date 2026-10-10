@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:escanor/features/settings/about_page.dart';
 import 'package:escanor/features/settings/info_pages.dart';
 import 'package:escanor/features/settings/legal_content.dart';
 import 'package:escanor/features/settings/legal_rich.dart';
@@ -83,8 +84,8 @@ void main() {
       }
     });
     test('the policy version, and the phone-control consent refers to it', () async {
-      expect(policyVersion, '2026-10-08');
-      expect(policyDate, '8 October 2026');
+      expect(policyVersion, '2026-10-10');
+      expect(policyDate, '10 October 2026');
       final backend = await setUpBackend({'POST /compliance/consents': (_) => {'ok': true}});
       await consent.recordPhoneControlConsent(true);
       final sent = jsonDecode(backend.calls.single.body) as Map<String, dynamic>;
@@ -130,6 +131,27 @@ void main() {
     await t.pumpWidget(host(const Scaffold(body: LegalBody(docKey: 'about'))));
     await settle(t);
     expect(find.text('This document is not available.'), findsOneWidget);
+  });
+
+  testWidgets('About names the legal owner and opens the open-source licences', (t) async {
+    tallPhone(t);
+    await setUpBackend();
+    await t.pumpWidget(host(const AboutEscanorPage()));
+    await settle(t);
+    expect(find.textContaining('Lakshay Jain, sole proprietor, trading as Escanor Labs'), findsOneWidget);
+    await t.tap(find.text('Open-source licences'));
+    await settle(t);
+    expect(find.byType(LicensePage), findsOneWidget);
+  });
+
+  test('the policies name the sole proprietor, never a company', () {
+    final all = [
+      for (final d in legalDocuments.values)
+        for (final s in d.sections) ...[...s.paragraphs, ...s.items]
+    ].join('\n');
+    expect(all, contains('Lakshay Jain, a sole proprietor trading as Escanor Labs'));
+    expect(all.replaceAll('Razorpay Software Private Limited', 'Razorpay'), isNot(contains('Private Limited')));
+    expect(all, isNot(contains('Lakshya')));
   });
 
   test('the policy version is the website\'s (the copy in packages/web): one version behind re-asks "I am 18 or older…" forever', () {

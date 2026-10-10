@@ -17,7 +17,9 @@ runners are the Mac (`.github/workflows/ios.yml`):
 
 ### One-time setup for the signed build
 
-1. Join the Apple Developer Program (Escanor Labs; organisation enrolment needs a D-U-N-S number, an individual one does not).
+1. Join the Apple Developer Program **as an individual, Lakshay Jain**. Escanor Labs is the trading name of his sole
+   proprietorship, not a company, and Apple enrols sole proprietors as individuals (organisation enrolment needs a legal
+   entity with a D-U-N-S number). The App Store then shows the seller as Lakshay Jain.
 2. App Store Connect > Users and Access > Integrations > App Store Connect API > generate a key with role **App Manager**
    (or Admin). Note the Key ID and Issuer ID and download `AuthKey_<id>.p8` (it can be downloaded once).
 3. Note the Team ID (developer.apple.com > Membership).

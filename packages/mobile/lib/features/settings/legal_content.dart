@@ -2,8 +2,8 @@
 // The legal documents, stored in the app so they read without a connection.
 // Plain text with two inline marks (see legal_rich.dart): [label](/path or https://…) for links and **bold**.
 
-const policyVersion = '2026-10-08';
-const policyDate = '8 October 2026';
+const policyVersion = '2026-10-10';
+const policyDate = '10 October 2026';
 
 class LegalSection {
   const LegalSection(this.heading, {this.id, this.paragraphs = const [], this.items = const []});
@@ -27,7 +27,7 @@ const legalDocuments = <String, LegalDocument>{
     sections: [
       LegalSection('Who we are',
         paragraphs: [
-          'Escanor is provided by Escanor Labs, ATF-39, Gaur World Smart Street, Sector-16B, Greater Noida West, Uttar Pradesh 201308, India ("Escanor", "we"). We decide why and how your personal data is processed for the service, and we are responsible for it under the Information Technology Act, 2000, the rules made under it, and the Digital Personal Data Protection Act, 2023.',
+          'Escanor is provided by Lakshay Jain, a sole proprietor trading as Escanor Labs, ATF-39, Gaur World Smart Street, Sector-16B, Greater Noida West, Uttar Pradesh 201308, India ("Escanor", "we"). Escanor Labs is a trading name, not a separate company. As the Data Fiduciary we decide why and how your personal data is processed for the service, and we are responsible for it under the Information Technology Act, 2000, the rules made under it, and the Digital Personal Data Protection Act, 2023.',
           'Where your organisation adds you to its workspace, it decides what its workspace is used for; we process that workspace content on its behalf. Questions about it can go to your workspace administrator or to us.',
         ],
       ),
@@ -79,7 +79,7 @@ const legalDocuments = <String, LegalDocument>{
           '**Sign-in:** Google and GitHub, when you choose to sign in with them.',
           '**Email and notifications:** Zoho (email delivery, India) and Google Firebase Cloud Messaging for app notifications.',
           '**Services you connect:** when you ask Escanor to act on GitHub, AWS or another connected service, we send that service what the action needs, under your own account with it.',
-          '**Authorities:** a government agency or court, when a valid legal order requires it. We check every request and disclose only what it requires.',
+          '**Authorities:** a government agency or court, when a valid legal order requires it. We check every request and disclose only what it requires. We also report to the police where the law makes reporting mandatory, such as sexual material involving a child.',
         ],
       ),
       LegalSection('Where it is processed',
@@ -107,7 +107,7 @@ const legalDocuments = <String, LegalDocument>{
       LegalSection('Your rights', id: 'rights',
         paragraphs: [
           'You can ask us for a summary of your data and how it is used, to correct or update it, to erase it, to withdraw a consent, or to nominate someone to act for you if you die or cannot act. You can also complain to us about how we handle your data. Withdrawing consent is as easy as giving it, and stops processing that relied on it from then on.',
-          'Make a request on [Privacy requests](/privacy/requests), in Settings → Privacy & data when signed in, or by email to support@escanor.in from your account email. We acknowledge within 24 hours and respond within 30 days. If you are not satisfied, you may complain to the Data Protection Board of India, or use any other remedy available to you. You may also give, manage or withdraw your consent through a Consent Manager registered with the Board, once registration opens.',
+          'Make a request on [Privacy requests](/privacy/requests), in Settings → Privacy & data when signed in, or by email to support@escanor.in from your account email. We acknowledge within 24 hours and respond within 30 days. If you are not satisfied, you may complain to the Data Protection Board of India, or use any other remedy available to you. From 13 November 2026, you may also give, manage or withdraw your consent through a Consent Manager registered with the Board.',
           'The short [consent notice](/privacy/notice) lists, item by item, what we collect and why, in one place.',
         ],
       ),
@@ -130,11 +130,11 @@ const legalDocuments = <String, LegalDocument>{
   ),
   'terms': LegalDocument(
     title: 'Terms of service',
-    description: 'The agreement between you and Escanor Labs for using Escanor.',
+    description: 'The agreement between you and Lakshay Jain, trading as Escanor Labs, for using Escanor.',
     sections: [
       LegalSection('This agreement',
         paragraphs: [
-          'These terms are a contract between you and Escanor Labs, Greater Noida, Uttar Pradesh ("Escanor", "we") for the Escanor website, web app, desktop app, Android app and API (the "service"). You accept them when you create an account or tick "I agree"; we record the version you accepted. If you use Escanor for an organisation, you confirm you have its authority, and these terms bind it too.',
+          'These terms are a contract between you and Lakshay Jain, a sole proprietor trading as Escanor Labs, of ATF-39, Gaur World Smart Street, Sector-16B, Greater Noida West, Uttar Pradesh 201308, India ("Escanor", "we") for the Escanor website, web app, desktop app, Android app and API (the "service"). You accept them when you create an account or tick "I agree"; we record the version you accepted. If you use Escanor for an organisation, you confirm you have its authority, and these terms bind it too.',
         ],
       ),
       LegalSection('Who can use Escanor',
@@ -183,7 +183,7 @@ const legalDocuments = <String, LegalDocument>{
       ),
       LegalSection('Changes, law and disputes',
         paragraphs: [
-          'We will tell you about material changes to these terms before they apply and ask you to accept them in the app. These terms are governed by the laws of India. Please raise any problem with us first through [Support](/support) or [Grievances](/grievances); we aim to resolve it quickly. Subject to that, the courts at Gautam Buddh Nagar, Uttar Pradesh have jurisdiction, and you may also use a consumer commission or the National Consumer Helpline (1915) where the law allows.',
+          'We will tell you about material changes to these terms before they apply and ask you to accept them in the app. These terms are governed by the laws of India. Please raise any problem with us first through [Support](/support) or [Grievances](/grievances): we acknowledge a complaint within 24 hours and resolve it within 7 days. Subject to that, the courts at Gautam Buddh Nagar, Uttar Pradesh have jurisdiction, and you may also use a consumer commission or the National Consumer Helpline (1915) where the law allows.',
         ],
       ),
     ],
@@ -218,6 +218,7 @@ const legalDocuments = <String, LegalDocument>{
       LegalSection('What happens if you do',
         paragraphs: [
           'We may remove the content, disable an integration, or suspend or close the account, and we keep removed content and records for 180 days where the law requires it for an investigation. We may report offences to the authorities as the law requires. You will be told why and can contest the decision through [Grievances](/grievances).',
+          'Sexual material involving a child is removed at once and reported to the police or the National Cyber Crime Reporting Portal, with the details of where it came from, as the Protection of Children from Sexual Offences Act, 2012 requires. The account is closed.',
         ],
       ),
       LegalSection('Reporting misuse',
@@ -343,7 +344,7 @@ const legalDocuments = <String, LegalDocument>{
     sections: [
       LegalSection('Grievance Officer',
         paragraphs: [
-          '**Lakshay Jain**, Grievance Officer, Escanor Labs, ATF-39, Gaur World Smart Street, Sector-16B, Greater Noida West, Uttar Pradesh 201308, India. Email: support@escanor.in.',
+          '**Lakshay Jain**, proprietor of Escanor Labs and its Grievance Officer, ATF-39, Gaur World Smart Street, Sector-16B, Greater Noida West, Uttar Pradesh 201308, India. Email: support@escanor.in.',
           'Use the form below, or email the Grievance Officer. You do not need an account. You get a reference number and an emailed receipt straight away.',
         ],
       ),
@@ -430,7 +431,7 @@ const legalDocuments = <String, LegalDocument>{
     sections: [
       LegalSection('Who is asking',
         paragraphs: [
-          'Escanor Labs, ATF-39, Gaur World Smart Street, Sector-16B, Greater Noida West, Uttar Pradesh 201308, India. Contact for anything about your data: Lakshay Jain, support@escanor.in.',
+          'Lakshay Jain, a sole proprietor trading as Escanor Labs, ATF-39, Gaur World Smart Street, Sector-16B, Greater Noida West, Uttar Pradesh 201308, India, is the Data Fiduciary. Contact for anything about your data: Lakshay Jain, support@escanor.in.',
         ],
       ),
       LegalSection('The personal data, and what each item is for',
@@ -466,7 +467,7 @@ const legalDocuments = <String, LegalDocument>{
     sections: [
       LegalSection('Roles',
         paragraphs: [
-          'For personal data that a business customer puts into its workspace (for example its staff\'s accounts, its repositories, logs and AI conversations), the customer is the Data Fiduciary and Escanor Labs processes it on the customer\'s behalf as its Data Processor under the Digital Personal Data Protection Act, 2023. This agreement applies automatically to every workspace; Enterprise customers can sign a copy by writing to support@escanor.in or on [a call](/book-a-call).',
+          'For personal data that a business customer puts into its workspace (for example its staff\'s accounts, its repositories, logs and AI conversations), the customer is the Data Fiduciary and Lakshay Jain, a sole proprietor trading as Escanor Labs ("Escanor"), processes it on the customer\'s behalf as its Data Processor under the Digital Personal Data Protection Act, 2023. This agreement applies automatically to every workspace; Enterprise customers can sign a copy by writing to support@escanor.in or on [a call](/book-a-call).',
         ],
       ),
       LegalSection('What we process',
@@ -512,7 +513,7 @@ const legalDocuments = <String, LegalDocument>{
     sections: [
       LegalSection('Declaration',
         paragraphs: [
-          'Escanor Labs has audited its website, web app, desktop app and Android app against the Guidelines for Prevention and Regulation of Dark Patterns, 2023 issued by the Central Consumer Protection Authority. We declare that, as of 8 October 2026, Escanor does not use any of the dark patterns listed in those guidelines. Signed for Escanor Labs by Lakshay Jain, Co-founder and Grievance Officer. Next audit due by 8 October 2027.',
+          'Lakshay Jain, trading as Escanor Labs, has audited Escanor\'s website, web app, desktop app and Android app against the Guidelines for Prevention and Regulation of Dark Patterns, 2023 issued by the Central Consumer Protection Authority. We declare that, as of 8 October 2026, Escanor does not use any of the dark patterns listed in those guidelines. Signed by Lakshay Jain, sole proprietor of Escanor Labs and its Grievance Officer. Next audit due by 8 October 2027.',
         ],
       ),
       LegalSection('What we checked',
@@ -551,16 +552,16 @@ const legalDocuments = <String, LegalDocument>{
       LegalSection('Conformance', id: 'conformance',
         paragraphs: [
           '**Standard:** WCAG 2.1 level AA, and IS 17802 Parts 1 and 2, which align with it.',
-          '**Evaluated:** public pages on 8 October 2026 and the signed-in app on 10 October 2026, by Escanor Labs.',
+          '**Evaluated:** public pages on 8 October 2026 and the signed-in app on 10 October 2026, by Escanor Labs (Lakshay Jain, sole proprietor).',
           '**Pages:** home, Pricing, Product demo, Book a call, About, Legal, Privacy, Terms, Grievances, Delete account, Accessibility, Docs, Docs quickstart, Use cases, Compare, Releases, Sign in and MCP server; and, signed in: the dashboard home, Assistant, Integrations, Deployments, Incidents, Monitoring, Automations, Projects, Activity, MCP, Settings (every section), Billing, onboarding, and the Terms acceptance dialog.',
           '**Method:** automated axe-core checks of every WCAG 2.1 A and AA rule on each page, at desktop (1366 px) and phone (390 px) widths, in the dark theme and, where a page has one, the light theme. Plus manual keyboard testing of the booking scheduler, grievance form, product tour, sign-in form and the app\'s dialogs: tab order, visible focus, focus kept inside dialogs and returned afterwards, labels and error announcements.',
-          '**Result:** partially conforms. No failures remain on the pages tested: during this evaluation we fixed text and status-colour contrast, form error announcements, keyboard support in the time picker, labels, and focus handling in dialogs. It stays partial until the limitations below are closed.',
+          '**Result:** every page tested has no WCAG 2.1 AA failures, in the automated and keyboard checks above. During this evaluation we fixed text and status-colour contrast, form error announcements, keyboard support in the time picker, labels, and focus handling in dialogs. This is a result for the pages and checks listed, not a claim that all of Escanor fully conforms.',
           'Read the [machine-readable report (JSON)](/accessibility-conformance.json).',
         ],
       ),
       LegalSection('Known limitations', id: 'limitations',
         items: [
-          '**Screen readers:** we have not yet tested with NVDA, VoiceOver and TalkBack. We will by 31 December 2026.',
+          '**Screen readers:** testing with NVDA, VoiceOver and TalkBack will be done by 31 December 2026, and this report updated with the result.',
           '**Other companies\' pages:** signing in with Google or GitHub, and paying through Razorpay, happen on their pages, which this report does not cover.',
         ],
       ),
@@ -577,7 +578,17 @@ const legalDocuments = <String, LegalDocument>{
     sections: [
       LegalSection('Your rights',
         paragraphs: [
-          'Depending on your state, you may have the right to know what personal information we hold about you, get a copy, correct it, delete it, and opt out of its sale, sharing for targeted advertising, or profiling. You can appeal if we decline a request. We will not treat you differently for exercising these rights.',
+          'These rights come from the consumer privacy laws of California, Colorado, Connecticut, Delaware, Indiana, Iowa, Kentucky, Maryland, Minnesota, Montana, Nebraska, New Hampshire, New Jersey, Oregon, Rhode Island, Tennessee, Texas, Utah and Virginia. We give them to every person in the United States, whichever state you live in:',
+        ],
+        items: [
+          '**Know and access:** what personal information we hold about you, where it came from, why we use it and who we disclose it to, and a copy of it in a portable format.',
+          '**Correct:** information that is inaccurate.',
+          '**Delete:** personal information we hold about you, subject to the records the law requires us to keep.',
+          '**Opt out:** of the sale of your personal information, its sharing for cross-context behavioural or targeted advertising, and profiling that produces legal or similarly significant effects. We do none of these, so there is nothing to opt out of today; the right stands if that ever changes.',
+          '**Limit sensitive information:** we use sensitive personal information, such as the account credentials you store, only to provide the service you asked for.',
+          '**List of recipients:** the third parties we disclose personal information to, as listed in the [Privacy policy](/privacy#recipients).',
+          '**Appeal:** a decision to decline your request.',
+          '**No discrimination:** we will not deny you the service, charge you differently or give you a different quality of service for using these rights.',
         ],
       ),
       LegalSection('What we collect, and from where',
