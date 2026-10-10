@@ -370,6 +370,7 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
   /// What was picked for a new chat before it existed is sent once the machine has named it, and remembered for the chat.
   void _applyChoices(String vmId, String sessionId, ChatChoices c) {
     choicesStore.write(vmId, sessionId, SavedChoices(mode: c.mode, model: c.model, effort: c.effort));
+    if (isPermissionMode(c.mode)) _keepModeForNewChats(vmId, c.mode);
     unawaited(_pushChoices(vmId, sessionId, SavedChoices(mode: c.mode, model: c.model, effort: c.effort)).catchError((_) {}));
   }
 
@@ -580,7 +581,17 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> setPermissionMode(String vmId, String sessionId, String mode) async {
     final saved = choicesStore.read(vmId, sessionId) ?? const SavedChoices();
     choicesStore.write(vmId, sessionId, SavedChoices(mode: mode, model: saved.model, effort: saved.effort));
+    _keepModeForNewChats(vmId, mode);
     await api.setPermissionMode(vmId, sessionId, mode);
+  }
+
+  /// A mode picked in a chat is what the person wants on this machine: new chats here start in it too, instead of
+  /// making them pick it again every time (Settings for this machine shows it, and can go back to the app's default).
+  void _keepModeForNewChats(String vmId, String mode) {
+    final d = defaultChoicesFor(vmId);
+    if (d.mode == mode) return;
+    final o = overlay.machine(vmId);
+    setMachineSettings(vmId, o.copyWith(defaults: () => SavedChoices(mode: mode, model: d.model, effort: d.effort)));
   }
 
   Future<void> setModel(String vmId, String sessionId, String model) async {

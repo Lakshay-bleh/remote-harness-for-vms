@@ -273,11 +273,13 @@ export class SessionManager {
       model: input.model !== undefined ? input.model : existingEntry?.model,
       effort: input.effort !== undefined ? input.effort : existingEntry?.effort,
     };
-    // Bypass needs the SDK's explicit opt-in at start, so it is switched to once running, as a live change always was.
-    const startMode: PermissionMode = choices.permissionMode && choices.permissionMode !== 'bypassPermissions' ? choices.permissionMode : 'default';
+    // The run starts in the chosen mode. Bypass is only possible with the SDK's explicit opt-in at start (Claude Code refuses
+    // a later switch to it in a run launched without it), so the opt-in is passed exactly when bypass is the chosen mode.
+    const startMode: PermissionMode = choices.permissionMode ?? 'default';
     const options: Options = {
       cwd,
       permissionMode: startMode,
+      ...(startMode === 'bypassPermissions' ? { allowDangerouslySkipPermissions: true } : {}),
       ...(choices.effort ? { effort: choices.effort } : {}),
       // Ask for summarized thinking so the web UI can show it like the CLI's transcript view.
       thinking: { type: 'adaptive', display: 'summarized' },
@@ -332,7 +334,6 @@ export class SessionManager {
     // A model id this Claude Code does not know must not stop the chat from starting: it is switched to once running, and a
     // refusal shows on the chat (see control()).
     if (choices.model) this.control(liveKey, 'Switching the model', (live) => live.setModel(choices.model || undefined));
-    if (choices.permissionMode === 'bypassPermissions') this.control(liveKey, 'Changing the permission mode', (live) => live.setPermissionMode('bypassPermissions'));
     if (isResume) this.remember(input.sessionId, choices);
     else this.pendingChoices.set(liveKey, choices);
 

@@ -15,6 +15,13 @@ void main() {
         reason: 'withdrawn is not accepted');
   });
 
+  test('a newer version accepted elsewhere (website, desktop) counts: an app one version behind must not ask again', () {
+    // Every app writes the same consent records. Asking whenever the version differs made two apps on different versions take
+    // turns overwriting each other, so "I am 18 or older…" came back every time the person switched between them.
+    expect(needsAcceptance([s('terms', '2026-10-08'), s('privacy_notice', '2026-10-08')], '2026-10-07'), false);
+    expect(needsAcceptance([s('terms', '2026-10-08'), s('privacy_notice', '2026-10-06')], '2026-10-07'), true);
+  });
+
   test('the rules reminder comes back after 90 days', () {
     final now = DateTime.parse('2026-10-07T00:00:00Z');
     expect(needsRulesNotice([], now), true);

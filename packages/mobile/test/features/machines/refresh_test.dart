@@ -247,6 +247,27 @@ void main() {
       store.logout();
     });
 
+    test('a mode picked in a chat is where new chats on that machine start, so it is not picked again every time', () async {
+      final store = make();
+      expect(store.defaultChoicesFor('v9').mode, 'auto', reason: 'the app default');
+      await store.setPermissionMode('v9', 's', 'acceptEdits');
+      expect(store.defaultChoicesFor('v9').mode, 'acceptEdits');
+      expect(store.defaultChoicesFor('other').mode, 'auto', reason: 'only that machine');
+      store.logout();
+    });
+
+    test('a new chat in a chosen mode starts in it: the mode goes with the request that starts the chat', () async {
+      final store = make();
+      answer = (req) => req.url.path.endsWith('/sessions') && req.method == 'POST' ? http.Response('{"tempId":"tmp-1"}', 202) : http.Response('{}', 200);
+      await store.startNewChat('v', const NewSessionInput(text: 'hi'), choices: const ChatChoices(mode: 'auto'));
+      await pumpEventQueue();
+      final create = sent.firstWhere((r) => r.url.path == '/api/vms/v/sessions' && r.method == 'POST');
+      expect((jsonDecode(create.body) as Map)['permissionMode'], 'auto');
+      // so the first tools the machine reaches for are not asked about, with no separate switch while it waits to be named
+      expect(sent.where((r) => r.url.path.endsWith('/permission-mode')), isEmpty);
+      store.logout();
+    });
+
     test('a sent message is shown at once and taken back if it did not reach the hub', () async {
       final store = make();
       answer = (_) => http.Response('{"error":"nope"}', 500);

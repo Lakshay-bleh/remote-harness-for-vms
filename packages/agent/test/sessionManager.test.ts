@@ -154,6 +154,90 @@ describe('SessionManager', () => {
       release();
     }
   });
+  // A stand-in that reports a session id like the real SDK, then stays running until released.
+  function initQuery(sessionId: string) {
+    const calls: any[] = [];
+    const modes: string[] = [];
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    const query = ((args: any) => {
+      calls.push(args.options);
+      return {
+        [Symbol.asyncIterator]: async function* () {
+          yield { type: 'system', subtype: 'init', session_id: sessionId };
+          await held;
+        },
+        interrupt: async () => {}, setPermissionMode: async (m: string) => { modes.push(m); }, setModel: async () => {},
+        applyFlagSettings: async () => {}, setMcpServers: async () => {}, mcpServerStatus: async () => [], close: () => {},
+      };
+    }) as never;
+    return { calls, modes, query, release: () => release() };
+  }
+  const tick = () => new Promise((r) => setTimeout(r, 20));
+
+  it('a chat resumed after its run ended keeps the permission mode the phone chose (it used to restart in default)', async () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'sm-test-')));
+    const first = initQuery('s-1');
+    const sent: AgentToHubMessage[] = [];
+    const m1 = new SessionManager(dir, join(dir, 'data'), [{ id: 'default', label: 'default' }], (x) => sent.push(x), { query: first.query } as never);
+    start(m1);
+    await tick();
+    m1.setPermissionMode('s-1', 'auto');
+    await tick();
+    assert.deepEqual(first.modes, ['auto'], 'the running chat is switched at once');
+    first.release();
+    await tick();
+
+    // The agent restarts (or the run ends); the phone's next message resumes the chat.
+    const second = initQuery('s-1');
+    const m2 = new SessionManager(dir, join(dir, 'data'), [{ id: 'default', label: 'default' }], () => {}, { query: second.query } as never);
+    m2.handleUserInput({ type: 'user_input', sessionId: 's-1', text: 'go on' });
+    assert.equal(second.calls[0].permissionMode, 'auto');
+    assert.equal(second.calls[0].resume, 's-1');
+    second.release();
+  });
+
+  it('a mode sent while the chat is not running is kept for the run the next message starts', async () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'sm-test-')));
+    const q = initQuery('s-2');
+    const m = new SessionManager(dir, join(dir, 'data'), [{ id: 'default', label: 'default' }], () => {}, { query: q.query } as never);
+    start(m);
+    await tick();
+    q.release();
+    await tick();
+    assert.equal(m.isLive('s-2'), false);
+    m.setPermissionMode('s-2', 'acceptEdits'); // what the phone sends just before the message
+    m.handleUserInput({ type: 'user_input', sessionId: 's-2', text: 'next' });
+    assert.equal(q.calls[1].permissionMode, 'acceptEdits');
+  });
+
+  it('a mode picked before the machine named a new chat is saved with it', async () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'sm-test-')));
+    const q = initQuery('s-3');
+    const m = new SessionManager(dir, join(dir, 'data'), [{ id: 'default', label: 'default' }], () => {}, { query: q.query } as never);
+    start(m);
+    m.setPermissionMode('t1', 'auto'); // still under its temporary id
+    await tick();
+    q.release();
+    await tick();
+    assert.equal(m.sessionRegistry.get('s-3')?.permissionMode, 'auto');
+  });
+
+  it('a new chat starts in default, and bypass is only passed with its explicit opt-in', async () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'sm-test-')));
+    const q = initQuery('s-4');
+    const m = new SessionManager(dir, join(dir, 'data'), [{ id: 'default', label: 'default' }], () => {}, { query: q.query } as never);
+    start(m);
+    assert.equal(q.calls[0].permissionMode, 'default');
+    assert.equal('allowDangerouslySkipPermissions' in q.calls[0], false);
+    await tick();
+    m.setPermissionMode('s-4', 'bypassPermissions');
+    q.release();
+    await tick();
+    m.handleUserInput({ type: 'user_input', sessionId: 's-4', text: 'x' });
+    assert.equal(q.calls[1].permissionMode, 'bypassPermissions');
+    assert.equal(q.calls[1].allowDangerouslySkipPermissions, true);
+  });
 
   describe('a chat keeps its mode, model and effort', () => {
     // A query that says who it is (init), records what was asked of it, and stays open until released.
@@ -216,7 +300,7 @@ describe('SessionManager', () => {
       q.release();
     });
 
-    it('what comes with a message wins over what was kept; bypass is switched to once running', async () => {
+    it('what comes with a message wins over what was kept; bypass starts with its explicit opt-in', async () => {
       const dir = realpathSync(mkdtempSync(join(tmpdir(), 'sm-choices-')));
       mkdirSync(join(dir, 'data'), { recursive: true });
       writeFileSync(join(dir, 'data', 'sessions.json'), JSON.stringify([{ sessionId: 's1', cwd: dir, title: 'x', createdAt: 'now', accountId: 'default', permissionMode: 'plan', model: 'claude-x', effort: 'low' }]));
@@ -224,9 +308,11 @@ describe('SessionManager', () => {
       const m = managerWith(dir, q.query);
       m.handleUserInput({ type: 'user_input', sessionId: 's1', text: 'go', permissionMode: 'bypassPermissions', model: '', effort: null });
       await tick();
-      assert.equal(q.calls[0].permissionMode, 'default', 'bypass needs the opt-in, so it is not a start option');
+      // Claude Code refuses a later switch to bypass in a run launched without the opt-in, so the run starts in it.
+      assert.equal(q.calls[0].permissionMode, 'bypassPermissions');
+      assert.equal(q.calls[0].allowDangerouslySkipPermissions, true);
       assert.equal('effort' in q.calls[0], false);
-      assert.deepEqual(q.controls, ['mode:bypassPermissions']);
+      assert.deepEqual(q.controls, []);
       const saved = JSON.parse(readFileSync(join(dir, 'data', 'sessions.json'), 'utf-8'))[0];
       assert.deepEqual([saved.permissionMode, saved.model, saved.effort], ['bypassPermissions', '', null]);
       q.release();
