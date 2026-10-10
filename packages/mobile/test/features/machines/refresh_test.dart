@@ -126,6 +126,24 @@ void main() {
       store.logout();
     });
 
+    test('a mode picked in a chat is where new chats on that machine start, so it is not picked again every time', () async {
+      final store = make();
+      expect(store.defaultChoicesFor('v9').mode, 'auto', reason: 'the app default');
+      await store.setPermissionMode('v9', 's', 'acceptEdits');
+      expect(store.defaultChoicesFor('v9').mode, 'acceptEdits');
+      expect(store.defaultChoicesFor('other').mode, 'auto', reason: 'only that machine');
+      store.logout();
+    });
+
+    test('a new chat in a chosen mode is switched under its temporary id at once, before the machine names it', () async {
+      final store = make();
+      answer = (req) => req.url.path.endsWith('/sessions') && req.method == 'POST' ? http.Response('{"tempId":"tmp-1"}', 202) : http.Response('{}', 200);
+      await store.startNewChat('v', const NewSessionInput(text: 'hi'), choices: const ChatChoices(mode: 'auto'));
+      await pumpEventQueue();
+      expect(sent.where((r) => r.url.path.endsWith('/permission-mode')).map((r) => r.url.path), ['/api/vms/v/sessions/tmp-1/permission-mode']);
+      store.logout();
+    });
+
     test('a sent message is shown at once and taken back if it did not reach the hub', () async {
       final store = make();
       answer = (_) => http.Response('{"error":"nope"}', 500);

@@ -64,14 +64,15 @@ void main() {
     await store.startNewChat('v', input, choices: const ChatChoices(mode: 'plan', model: 'claude-opus-5-5', effort: 'high'));
     expect(store.state.selectedSessionId, 't1');
     expect(store.isTemporary('t1'), isTrue);
-    expect(sent.length, 1);
-    expect(jsonDecode(sent.single.body), {'text': 'hi', 'accountId': 'a'});
+    expect(jsonDecode(sent.first.body), {'text': 'hi', 'accountId': 'a'});
     store.dispatch(const SessionCreated(vmId: 'v', tempId: 't1', sessionId: 's1', cwd: '/w', title: 'T', accountId: 'a'));
     await pumpEventQueue();
     expect(store.state.selectedSessionId, 's1');
     expect(store.namedAs('t1'), 's1');
     final paths = sent.skip(1).map((r) => '${r.url.path} ${r.body}').toList();
     expect(paths, [
+      // the machine is told the mode at once under the temporary id, so the first tools are not asked about
+      '/api/vms/v/sessions/t1/permission-mode {"mode":"plan"}',
       '/api/vms/v/sessions/s1/permission-mode {"mode":"plan"}',
       '/api/vms/v/sessions/s1/model {"model":"claude-opus-5-5"}',
       '/api/vms/v/sessions/s1/effort {"effort":"high"}',

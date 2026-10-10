@@ -22,6 +22,8 @@ import type { ClaudeProfile } from './profiles.js';
 
 type LiveSession = {
   queue: AsyncMessageQueue<SDKUserMessage>;
+  /** The mode this run is in (or was last switched to), saved with the session once it has an id. */
+  permissionMode: PermissionMode;
   cwd: string;
   interrupt: () => Promise<unknown>;
   setPermissionMode: (mode: PermissionMode) => Promise<void>;
@@ -266,9 +268,13 @@ export class SessionManager {
 
     let resolvedSessionId = isResume ? input.sessionId : '';
     const queue = new AsyncMessageQueue<SDKUserMessage>();
+    // A resumed chat keeps the mode it was last given. Every chat used to restart in 'default', so a phone that had picked
+    // 'auto' got a permission card for every tool again after the run ended (agent restart, laptop sleep, idle exit).
+    const permissionMode: PermissionMode = (isResume && existingEntry?.permissionMode) || 'default';
     const options: Options = {
       cwd,
-      permissionMode: 'default',
+      permissionMode,
+      ...(permissionMode === 'bypassPermissions' ? { allowDangerouslySkipPermissions: true } : {}),
       // Ask for summarized thinking so the web UI can show it like the CLI's transcript view.
       thinking: { type: 'adaptive', display: 'summarized' },
       // Session config is built from the *current* managed set, so a chat opened after the hub
@@ -306,6 +312,7 @@ export class SessionManager {
     const liveKey = tempId ?? input.sessionId;
     const session: LiveSession = {
       queue,
+      permissionMode,
       cwd,
       interrupt: () => q.interrupt(),
       setPermissionMode: (mode) => q.setPermissionMode(mode),
@@ -362,7 +369,15 @@ export class SessionManager {
           const sessionId = msg.session_id;
           ctx.setSessionId(sessionId);
           const title = titleFrom(ctx.seedTitle);
-          this.registry.upsert({ sessionId, cwd: ctx.cwd, title, createdAt: new Date().toISOString(), accountId: ctx.accountId });
+          this.registry.upsert({
+            ...this.registry.get(sessionId),
+            sessionId,
+            cwd: ctx.cwd,
+            title,
+            createdAt: this.registry.get(sessionId)?.createdAt ?? new Date().toISOString(),
+            accountId: ctx.accountId,
+            ...(ctx.session.permissionMode !== 'default' ? { permissionMode: ctx.session.permissionMode } : {}),
+          });
           if (ctx.liveKey !== sessionId) {
             const entry = this.live.get(ctx.liveKey);
             if (entry) {
@@ -411,7 +426,12 @@ export class SessionManager {
   }
 
   setPermissionMode(sessionId: string, mode: PermissionMode): void {
-    this.control(sessionId, 'Changing the permission mode', (live) => live.setPermissionMode(mode));
+    // Remembered even when the chat is not running: the phone sends the mode just before a message that resumes it, and
+    // that run must start in it. (This used to be dropped, so a resumed chat always asked for every tool.)
+    if (this.registry.get(sessionId)) this.registry.update(sessionId, { permissionMode: mode });
+    const live = this.live.get(sessionId);
+    if (live) live.permissionMode = mode;
+    this.control(sessionId, 'Changing the permission mode', (l) => l.setPermissionMode(mode));
   }
 
   setModel(sessionId: string, model: string | undefined): void {
