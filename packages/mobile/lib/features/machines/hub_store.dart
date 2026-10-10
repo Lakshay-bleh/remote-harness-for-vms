@@ -73,6 +73,19 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
   /// Temporary ids the machine has already named (the event can beat the answer that started the chat).
   final Map<String, String> _named = {};
 
+  /// New chats whose start request is still on its way (their first rows can arrive before its answer).
+  int _creating = 0;
+
+  /// Chats whose first page did not reach back to the start: the chat offers "Show earlier messages".
+  final Set<String> _hasEarlier = {};
+
+  /// How many messages a chat shows at first, and per "Show earlier messages". A long chat used to come whole, megabytes
+  /// at a time, and again every few seconds while it ran.
+  static const pageSize = 300;
+
+  /// Does this chat have older messages than the ones shown?
+  bool hasEarlier(String sessionId) => _hasEarlier.contains(sessionId);
+
   num _nextLocalId() => localRowBase + (++_localIds);
   num _nextOptimisticId() => optimisticRowBase + (++_optimisticIds);
 
@@ -99,9 +112,55 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
     _state = reduceHub(_state, action);
     if (action is SessionCreated) _onSessionCreated(action);
     if (action is AppendMessage) _noticeTurnEnd(action);
+    if (action is SetSessions) _adoptNamed(action.vmId, action.sessions);
     if (!was && _state.authed) _start();
     if (was && !_state.authed) _stop();
+    _cancelBatchedNotify();
     notifyListeners();
+  }
+
+  /// A socket event: the state changes at once, but the screen is told at most once a frame, so a burst (a machine sending
+  /// a long chat) does not rebuild every chat and list hundreds of times.
+  void _dispatchBatched(HubAction action) {
+    final was = _state.authed;
+    _state = reduceHub(_state, action);
+    if (action is SessionCreated) _onSessionCreated(action);
+    if (action is AppendMessage) _noticeTurnEnd(action);
+    if (was != _state.authed) {
+      // never happens for socket events, but keep the sign-in rules in one place
+      if (_state.authed) _start();
+      if (!_state.authed) _stop();
+      notifyListeners();
+      return;
+    }
+    _batchedNotify ??= Timer(batchEvery, () {
+      _batchedNotify = null;
+      notifyListeners();
+    });
+  }
+
+  static const batchEvery = Duration(milliseconds: 16);
+  Timer? _batchedNotify;
+
+  void _cancelBatchedNotify() {
+    _batchedNotify?.cancel();
+    _batchedNotify = null;
+  }
+
+  /// Rows for a chat nobody has open are not kept: the chat is fetched when it is opened. (Every chat a machine runs, its
+  /// terminal ones included, streams through the same socket; keeping them all made the app slow down over time.)
+  bool _wantsRows(String sessionId) =>
+      _state.messagesBySession.containsKey(sessionId) || _state.selectedSessionId == sessionId || _pendingChoices.containsKey(sessionId) || _creating > 0;
+
+  /// The machine named a new chat while this phone was not listening: the hub's list says which chat it became.
+  void _adoptNamed(String vmId, List<SessionDto> sessions) {
+    for (final s in sessions) {
+      final t = s.tempId;
+      if (t == null || t == s.id || _named.containsKey(t)) continue;
+      if (_pendingChoices.containsKey(t) || _state.selectedSessionId == t) {
+        dispatch(SessionCreated(vmId: vmId, tempId: t, sessionId: s.id, cwd: s.cwd, title: s.title, accountId: s.accountId));
+      }
+    }
   }
 
   void _start() {
@@ -109,7 +168,13 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
     socket.connect();
     _unsubscribe = socket.subscribe((msg) {
       final a = actionForEvent(msg, _nextLocalId);
-      if (a != null) dispatch(a);
+      if (a is AppendMessage && !_wantsRows(a.sessionId) && msg is! PermissionRequestEvent) {
+        // not open here: nothing to show (a permission prompt is still kept: it is something waiting for the person)
+      } else if (a is AppendMessage) {
+        _dispatchBatched(a);
+      } else if (a != null) {
+        dispatch(a);
+      }
       if (msg is PermissionRequestEvent) _autoAnswer(msg.vmId, msg.sessionId, msg.requestId, msg.toolName, msg.input);
     });
     if (!_observing) {
@@ -149,6 +214,8 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
     }
     _timers.clear();
     socket.stop();
+    _cancelBatchedNotify();
+    _hasEarlier.clear();
     choicesStore.clear();
     overlay.clear();
     _autoAnswered.clear();
@@ -272,40 +339,90 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> loadMessages(String vmId, String sessionId) => refreshSession(vmId, sessionId);
 
   /// Ask the hub for the chat as it stands now, keeping what only this phone has seen. What is already on screen stays
-  /// until the answer comes.
-  Future<void> refreshSession(String vmId, String sessionId) async {
-    final first = _state.messagesBySession[sessionId] == null;
-    if (first) {
+  /// until the answer comes. A chat already here asks only for what is newer than its last row; [full] starts it over
+  /// (its newest page).
+  Future<void> refreshSession(String vmId, String sessionId, {bool full = false}) async {
+    final existing = _state.messagesBySession[sessionId];
+    if (existing == null) {
       _loading.add(sessionId);
       notifyListeners();
     }
     final horizon = _localHorizon;
+    final tail = existing == null || full ? 0 : hubTail(existing);
     try {
-      final rows = await api.listMessages(vmId, sessionId);
-      dispatch(SetMessages(sessionId, rows, seenLocalUpTo: horizon));
+      if (tail > 0) {
+        final fetched = await api.listMessages(vmId, sessionId, after: tail);
+        // A hub from before paging sends the whole chat: only what is newer counts.
+        final newer = [for (final m in fetched) if (m.id > tail) m];
+        final now = _state.messagesBySession[sessionId] ?? const <MessageDto>[];
+        final kept = [for (final r in now) if (!isLocalRow(r) && r.id >= 0 && r.id <= tail) r];
+        dispatch(SetMessages(sessionId, [...kept, ...newer], seenLocalUpTo: horizon, newSince: tail));
+      } else {
+        final rows = await api.listMessages(vmId, sessionId, limit: pageSize);
+        // Exactly a page: there may be more before it. (A hub from before paging sends everything, so more than a page.)
+        if (rows.length == pageSize) {
+          _hasEarlier.add(sessionId);
+        } else {
+          _hasEarlier.remove(sessionId);
+        }
+        dispatch(SetMessages(sessionId, rows, seenLocalUpTo: horizon));
+      }
       _afterRefresh(vmId, sessionId);
     } finally {
       if (_loading.remove(sessionId)) notifyListeners();
     }
   }
 
+  /// The page of messages before the oldest one shown.
+  Future<void> loadEarlier(String vmId, String sessionId) async {
+    num? oldest;
+    for (final r in _state.messagesBySession[sessionId] ?? const <MessageDto>[]) {
+      if (!isLocalRow(r) && r.id >= 0 && (oldest == null || r.id < oldest)) oldest = r.id;
+    }
+    if (oldest == null) {
+      _hasEarlier.remove(sessionId);
+      notifyListeners();
+      return;
+    }
+    final older = await api.listMessages(vmId, sessionId, limit: pageSize, before: oldest);
+    // Fewer than a page means this reached the start; a row that is not older means the hub ignored `before` and sent it all.
+    if (older.length < pageSize || older.any((m) => m.id >= oldest!)) _hasEarlier.remove(sessionId);
+    dispatch(PrependMessages(sessionId, older));
+  }
+
   /// Open a chat: show what is here, ask the hub for what is new, and make sure the machine runs it with the mode,
   /// model and effort chosen for it.
   Future<void> openSession(String vmId, SessionDto s) async {
     dispatch(Select(vmId: vmId, sessionId: s.id, accountId: s.accountId));
-    // A chat that was never given its own choices runs as new chats do on this machine, and keeps that from now on.
+    // What was chosen when it started (kept under its temporary id, in case the machine named it while this phone was
+    // not listening), else a chat never given its own choices runs as new chats do on this machine, and keeps that.
     var saved = choicesStore.read(vmId, s.id);
-    if (saved == null) {
-      saved = defaultChoicesFor(vmId);
-      choicesStore.write(vmId, s.id, saved);
+    final t = s.tempId;
+    if (saved == null && t != null) {
+      saved = choicesStore.read(vmId, t);
+      if (saved != null) choicesStore.write(vmId, s.id, saved);
     }
-    unawaited(_pushChoices(vmId, s.id, saved).catchError((_) {}));
+    if (saved != null) {
+      unawaited(_pushChoices(vmId, s.id, saved).catchError((_) {}));
+    } else {
+      // Not sent now (a chat started elsewhere may be running as it was told); they go with the next message.
+      choicesStore.write(vmId, s.id, defaultChoicesFor(vmId));
+    }
     await refreshSession(vmId, s.id);
   }
 
   /// Start a chat: the hub answers with a temporary id until the machine names the session.
   Future<String> startNewChat(String vmId, NewSessionInput input, {ChatChoices choices = const ChatChoices()}) async {
-    final tempId = await api.createSession(vmId, input);
+    final picked = SavedChoices(mode: choices.mode, model: choices.model, effort: choices.effort);
+    final String tempId;
+    _creating++;
+    try {
+      tempId = await api.createSession(vmId, input, choices: picked);
+    } finally {
+      _creating--;
+    }
+    // Kept under the temporary id too: if the app is closed before the machine names the chat, the list still links them.
+    choicesStore.write(vmId, tempId, picked);
     final named = _named[tempId];
     if (named != null) {
       _applyChoices(vmId, named, choices);
@@ -325,18 +442,10 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
     final rows = _state.messagesBySession[sessionId] ?? const <MessageDto>[];
     final shown = optimisticPrompt(_nextOptimisticId(), sessionId, vmId, input.text, rows);
     dispatch(AppendMessage(sessionId, shown));
-    // The mode chosen for the chat goes with it, so a run that started fresh since the last message still obeys it.
+    // The mode, model and effort chosen for the chat go with it, so a chat the machine has to resume runs with them.
     final saved = choicesStore.read(vmId, sessionId) ?? defaultChoicesFor(vmId);
-    if (saved.mode != 'default' && isPermissionMode(saved.mode)) {
-      try {
-        // A few seconds at most: the message matters more than the reminder.
-        await api.setPermissionMode(vmId, sessionId, saved.mode).timeout(const Duration(seconds: 3));
-      } catch (_) {
-        // sent anyway
-      }
-    }
     try {
-      await api.sendMessage(vmId, sessionId, input);
+      await api.sendMessage(vmId, sessionId, input, choices: saved);
     } catch (_) {
       dispatch(RemoveMessage(sessionId, shown.id));
       rethrow;
@@ -399,7 +508,10 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
 
   /// A choice changed on a new chat the machine has not named yet: send it once it has.
   void updatePendingChoices(String tempId, ChatChoices choices) {
-    if (_pendingChoices.containsKey(tempId)) _pendingChoices[tempId] = choices;
+    if (!_pendingChoices.containsKey(tempId)) return;
+    _pendingChoices[tempId] = choices;
+    final vm = _state.selectedVmId;
+    if (vm != null) choicesStore.write(vm, tempId, SavedChoices(mode: choices.mode, model: choices.model, effort: choices.effort));
   }
 
   /// The real id a new chat's temporary id became, once the machine named it.

@@ -91,7 +91,10 @@ num hubTail(List<MessageDto> rows) {
 /// A fresh list from the hub, with what only this phone knows kept: prompts still waiting for an answer, a prompt just
 /// sent, rows that arrived over the socket while the list was on its way, and "stopped" markers for a stop the hub's
 /// list does not show yet.
-List<MessageDto> mergeFetched(List<MessageDto> existing, List<MessageDto> fetched, {num? seenLocalUpTo}) {
+///
+/// [newSince]: the hub rows up to this id were already on the phone before (an incremental fetch), so a socket row can only
+/// match a newer one; only those are compared, which keeps a long chat cheap to refresh.
+List<MessageDto> mergeFetched(List<MessageDto> existing, List<MessageDto> fetched, {num? seenLocalUpTo, num? newSince}) {
   final keep = <MessageDto>[];
   final fetchedPermissions = <String>{};
   for (final m in fetched) {
@@ -121,7 +124,7 @@ List<MessageDto> mergeFetched(List<MessageDto> existing, List<MessageDto> fetche
     }
     if (seenLocalUpTo != null && m.id > seenLocalUpTo) {
       // Arrived after the list was asked for: keep it unless the list already has it.
-      fetchedJson ??= fetched.map((f) => jsonEncode(f.message)).join('\u0000');
+      fetchedJson ??= [for (final f in fetched) if (newSince == null || f.id > newSince) jsonEncode(f.message)].join('\u0000');
       if (!fetchedJson.contains(jsonEncode(m.message))) keep.add(m);
     }
   }
@@ -204,12 +207,22 @@ class SetSessions extends HubAction {
 }
 
 class SetMessages extends HubAction {
-  const SetMessages(this.sessionId, this.messages, {this.seenLocalUpTo});
+  const SetMessages(this.sessionId, this.messages, {this.seenLocalUpTo, this.newSince});
   final String sessionId;
   final List<MessageDto> messages;
 
+  /// Set when [messages] is what the phone had plus what was new after this id (see [mergeFetched]).
+  final num? newSince;
+
   /// The newest socket row that existed when the list was asked for; later ones are kept (see [mergeFetched]).
   final num? seenLocalUpTo;
+}
+
+/// An older page of a chat (scrolling back): goes in front of what is shown.
+class PrependMessages extends HubAction {
+  const PrependMessages(this.sessionId, this.messages);
+  final String sessionId;
+  final List<MessageDto> messages;
 }
 
 /// A prompt that did not reach the hub: it is no longer shown as sent.
@@ -292,9 +305,19 @@ HubState reduceHub(HubState state, HubAction action) {
       return state.copyWith(vms: vms);
     case SetSessions(:final vmId, :final sessions):
       return state.copyWith(sessionsByVm: {...state.sessionsByVm, vmId: sessions});
-    case SetMessages(:final sessionId, :final messages, :final seenLocalUpTo):
+    case SetMessages(:final sessionId, :final messages, :final seenLocalUpTo, :final newSince):
       final existing = state.messagesBySession[sessionId] ?? const <MessageDto>[];
-      return state.copyWith(messagesBySession: {...state.messagesBySession, sessionId: mergeFetched(existing, messages, seenLocalUpTo: seenLocalUpTo)});
+      return state.copyWith(
+          messagesBySession: {...state.messagesBySession, sessionId: mergeFetched(existing, messages, seenLocalUpTo: seenLocalUpTo, newSince: newSince)});
+    case PrependMessages(:final sessionId, :final messages):
+      final existing = state.messagesBySession[sessionId] ?? const <MessageDto>[];
+      num? oldest;
+      for (final r in existing) {
+        if (!isLocalRow(r) && r.id >= 0 && (oldest == null || r.id < oldest)) oldest = r.id;
+      }
+      final older = [for (final m in messages) if (oldest == null || m.id < oldest) m];
+      if (older.isEmpty) return state;
+      return state.copyWith(messagesBySession: {...state.messagesBySession, sessionId: [...older, ...existing]});
     case AppendMessage(:final sessionId, :final message):
       final existing = state.messagesBySession[sessionId] ?? const <MessageDto>[];
       final next = _isUserPrompt(message) && !isOptimisticRow(message) ? settleOptimistic([...existing, message]) : [...existing, message];

@@ -65,7 +65,7 @@ void main() {
     expect(store.state.selectedSessionId, 't1');
     expect(store.isTemporary('t1'), isTrue);
     expect(sent.length, 1);
-    expect(jsonDecode(sent.single.body), {'text': 'hi', 'accountId': 'a'});
+    expect(jsonDecode(sent.single.body), {'text': 'hi', 'accountId': 'a', 'permissionMode': 'plan', 'model': 'claude-opus-5-5', 'effort': 'high'});
     store.dispatch(const SessionCreated(vmId: 'v', tempId: 't1', sessionId: 's1', cwd: '/w', title: 'T', accountId: 'a'));
     await pumpEventQueue();
     expect(store.state.selectedSessionId, 's1');

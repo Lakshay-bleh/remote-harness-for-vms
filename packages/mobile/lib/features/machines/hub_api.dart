@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:http/http.dart' as http;
 
 import '../../core/storage.dart';
+import 'chat_choices.dart';
 import 'hub_url.dart';
 import 'protocol.dart';
 import 'session_search.dart';
@@ -155,7 +157,7 @@ class HubApi {
       throw HubError(message ?? 'Request failed: ${res.statusCode}', res.statusCode);
     }
     if (res.statusCode == 204 || res.bodyBytes.isEmpty) return null;
-    final result = jsonDecode(utf8.decode(res.bodyBytes));
+    final result = await decodeJson(res.bodyBytes);
     assertCurrentSession();
     return result;
   }
@@ -200,24 +202,37 @@ class HubApi {
     return r is List ? [for (final p in r) if (p is String) p] : const [];
   }
 
-  Future<List<MessageDto>> listMessages(String vmId, String sessionId) async =>
-      MessageDto.listFrom(await request('/vms/${_e(vmId)}/sessions/${_e(sessionId)}/messages'));
+  /// A chat's messages, oldest first: the newest [limit], or only those after [after] (what is new since the last look), or
+  /// the [limit] before [before] (scrolling back). A hub from before paging ignores these and sends the whole chat.
+  Future<List<MessageDto>> listMessages(String vmId, String sessionId, {int? limit, num? after, num? before}) async {
+    final q = [
+      if (limit != null) 'limit=$limit',
+      if (after != null) 'after=${after.toInt()}',
+      if (before != null) 'before=${before.toInt()}',
+    ];
+    return MessageDto.listFrom(await request('/vms/${_e(vmId)}/sessions/${_e(sessionId)}/messages${q.isEmpty ? '' : '?${q.join('&')}'}'));
+  }
 
-  Future<String> createSession(String vmId, NewSessionInput input) async {
+  /// [choices] go with the message so the machine starts the chat with them (a hub or machine from before ignores them).
+  Future<String> createSession(String vmId, NewSessionInput input, {SavedChoices? choices}) async {
     final r = await _post('/vms/${_e(vmId)}/sessions', {
       'text': input.text,
       if (input.images != null) 'images': [for (final i in input.images!) i.toJson()],
       'cwd': ?input.cwd,
       'accountId': ?input.accountId,
+      ...?choices?.toRunJson(),
     });
     final tempId = r is Map ? r['tempId'] : null;
     if (!isIdString(tempId)) throw HubError('The hub did not start the chat.');
     return tempId as String;
   }
 
-  Future<void> sendMessage(String vmId, String sessionId, UserInput input) => _post('/vms/${_e(vmId)}/sessions/${_e(sessionId)}/messages', {
+  /// [choices] go with the message, so a chat the machine has to resume for it runs with them, not with the defaults.
+  Future<void> sendMessage(String vmId, String sessionId, UserInput input, {SavedChoices? choices}) =>
+      _post('/vms/${_e(vmId)}/sessions/${_e(sessionId)}/messages', {
         'text': input.text,
         if (input.images != null) 'images': [for (final i in input.images!) i.toJson()],
+        ...?choices?.toRunJson(),
       });
 
   Future<void> _control(String path, [Object? body, bool Function(HubError)? okIf]) =>
@@ -248,4 +263,12 @@ class HubApi {
   Future<void> resolvePermission(String vmId, String sessionId, String requestId, String behavior) =>
       _control('/vms/${_e(vmId)}/sessions/${_e(sessionId)}/permission-response', {'requestId': requestId, 'behavior': behavior},
           (e) => e.status == 404 || e.status == 409 || e.status == 410);
+}
+
+/// Bodies this big are decoded away from the screen's thread, so a long chat never freezes scrolling while it loads.
+const backgroundDecodeBytes = 64 * 1024;
+
+Future<dynamic> decodeJson(List<int> bytes) {
+  if (bytes.length < backgroundDecodeBytes) return Future.value(jsonDecode(utf8.decode(bytes)));
+  return Isolate.run(() => jsonDecode(utf8.decode(bytes)));
 }

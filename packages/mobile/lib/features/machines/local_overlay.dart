@@ -59,17 +59,37 @@ class LocalOverlay {
 
   static String _sid(String vmId, String sessionId) => '$vmId::$sessionId';
 
-  Map<String, dynamic> _all() {
+  /// Bumped on every change, so a list can tell whether what it shows from here may have changed.
+  static int version = 0;
+
+  // Every chat row reads its name and hidden flag from here on every build: decode the stored JSON once per change, not per read.
+  static String? _cachedRaw;
+  static Map<String, dynamic> _cached = const {};
+
+  Map<String, dynamic> _decoded() {
     try {
       final raw = Storage.instance.getString(_key);
+      if (identical(raw, _cachedRaw) || raw == _cachedRaw) return _cached;
       final v = raw == null ? null : jsonDecode(raw);
-      return v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{};
+      _cachedRaw = raw;
+      _cached = v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{};
+      return _cached;
     } catch (_) {
-      return <String, dynamic>{};
+      return const {};
     }
   }
 
+  /// A copy, for changing.
+  Map<String, dynamic> _all() => Map<String, dynamic>.from(_decoded());
+
+  /// One section as stored, for reading only.
+  Map<dynamic, dynamic> _read(String name) {
+    final v = _decoded()[name];
+    return v is Map ? v : const {};
+  }
+
   void _save(Map<String, dynamic> all) {
+    version++;
     try {
       Storage.instance.setString(_key, all.isEmpty ? null : jsonEncode(all));
     } catch (_) {}
@@ -77,7 +97,7 @@ class LocalOverlay {
 
   Map<String, dynamic> _section(Map<String, dynamic> all, String name) => all[name] is Map ? Map<String, dynamic>.from(all[name] as Map) : <String, dynamic>{};
 
-  SessionOverlay session(String vmId, String sessionId) => SessionOverlay.from(_section(_all(), 's')[_sid(vmId, sessionId)]);
+  SessionOverlay session(String vmId, String sessionId) => SessionOverlay.from(_read('s')[_sid(vmId, sessionId)]);
 
   void setSession(String vmId, String sessionId, SessionOverlay o) {
     final all = _all();
@@ -91,7 +111,7 @@ class LocalOverlay {
     _save(all);
   }
 
-  MachineOverlay machine(String vmId) => MachineOverlay.from(_section(_all(), 'm')[vmId]);
+  MachineOverlay machine(String vmId) => MachineOverlay.from(_read('m')[vmId]);
 
   void setMachine(String vmId, MachineOverlay o) {
     final all = _all();
@@ -104,7 +124,7 @@ class LocalOverlay {
   /// Chats of one machine that are hidden on this phone.
   List<String> hiddenSessions(String vmId) {
     final prefix = '$vmId::';
-    final s = _section(_all(), 's');
+    final s = _read('s');
     return [
       for (final e in s.entries)
         if (e.key.startsWith(prefix) && SessionOverlay.from(e.value).hidden) e.key.substring(prefix.length),
@@ -112,6 +132,7 @@ class LocalOverlay {
   }
 
   void clear() {
+    version++;
     try {
       Storage.instance.remove(_key);
     } catch (_) {}

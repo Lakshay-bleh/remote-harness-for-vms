@@ -12,6 +12,7 @@ import 'escanor_connect.dart';
 import 'hub_app.dart' show hubWideWidth;
 import 'hub_scope.dart';
 import 'hub_store.dart';
+import 'local_overlay.dart';
 import 'machines_home.dart';
 import 'message_format.dart';
 import 'protocol.dart';
@@ -94,7 +95,14 @@ class _HubSidebarState extends State<HubSidebar> {
     });
   }
 
+  // What the list shows. Messages streaming into a chat change none of it, so they no longer rebuild the whole list.
+  Object? _shown;
+
   void _changed() {
+    final st = store.state;
+    final shown = (st.vms, st.sessionsByVm, st.selectedVmId, st.selectedSessionId, st.authed, LocalOverlay.version);
+    if (shown == _shown && _expandedVmId != null) return;
+    _shown = shown;
     final vms = store.state.vms;
     if (_expandedVmId == null && vms.isNotEmpty) {
       // Open the machine already picked (coming back to the list), else the first.

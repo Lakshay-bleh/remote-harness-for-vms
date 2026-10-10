@@ -45,8 +45,8 @@ const MAX_SEARCH_LIMIT = 100;
 const MIN_TOKEN_TTL_SECONDS = 60;
 const MAX_TOKEN_TTL_SECONDS = 2 * 365 * 24 * 60 * 60;
 
-/** `?after=<message id>`: a whole number, else nothing (the newest messages). */
-function afterCursor(v: unknown): number | undefined {
+/** `?after=` / `?before=` a message id: a whole number, else nothing (the newest messages). */
+function idCursor(v: unknown): number | undefined {
   const n = typeof v === 'string' && /^\d{1,15}$/.test(v) ? Number(v) : NaN;
   return Number.isSafeInteger(n) ? n : undefined;
 }
@@ -280,8 +280,7 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
 
   router.get('/vms/:vmId/sessions/:sessionId/messages', (req, res) => {
     const limit = clampLimit(req.query.limit, DEFAULT_MESSAGE_LIMIT, MAX_MESSAGE_LIMIT);
-    const after = afterCursor(req.query.after);
-    res.json(T(res).listMessages(T(res).resolveSession(req.params.sessionId), limit, req.params.vmId, after));
+    res.json(T(res).listMessages(T(res).resolveSession(req.params.sessionId), limit, req.params.vmId, idCursor(req.query.after), idCursor(req.query.before)));
   });
 
   router.patch('/vms/:vmId/sessions/:sessionId', (req, res) => {

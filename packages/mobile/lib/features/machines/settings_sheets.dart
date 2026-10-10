@@ -145,7 +145,7 @@ class _ChatSettingsState extends State<_ChatSettings> {
 
   Future<void> _reload(SessionDto s) async {
     try {
-      await store.refreshSession(widget.vmId, s.id);
+      await store.refreshSession(widget.vmId, s.id, full: true);
       if (mounted) toast(context, 'Up to date.');
     } catch (e) {
       if (mounted) toast(context, errorText(e));
@@ -155,7 +155,10 @@ class _ChatSettingsState extends State<_ChatSettings> {
   Future<void> _delete() async {
     final s = _session;
     final ok = await confirm(context,
-        title: 'Delete this chat?', message: '“${store.titleOf(s)}” is removed from the list. If your hub keeps chats, it stays there but is hidden on this phone.', ok: 'Delete', danger: true);
+        title: 'Delete this chat?',
+        message: '“${store.titleOf(s)}” and everything said in it are deleted from your hub, for every device. Claude Code\'s own copy on the machine stays there. (A hub too old to delete chats only hides it on this phone.)',
+        ok: 'Delete',
+        danger: true);
     if (!ok || !mounted) return;
     try {
       final onHub = await store.deleteSession(widget.vmId, s);

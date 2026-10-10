@@ -689,7 +689,7 @@ var Hub = class extends DurableObject {
 var CORS2 = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, content-type",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+  "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS"
 };
 var json2 = /* @__PURE__ */ __name((body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...CORS2 } }), "json");
 var unauthorized = /* @__PURE__ */ __name(() => new Response("Unauthorized", { status: 401, headers: CORS2 }), "unauthorized");

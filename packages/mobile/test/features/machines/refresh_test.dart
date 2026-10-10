@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:escanor/core/storage.dart';
+import 'package:escanor/features/machines/chat_choices.dart';
 import 'package:escanor/features/machines/hub_api.dart';
 import 'package:escanor/features/machines/hub_socket.dart';
 import 'package:escanor/features/machines/hub_state.dart';
@@ -122,7 +124,105 @@ void main() {
       expect(sent.any((r) => r.method == 'GET' && r.url.path.endsWith('/messages')), isTrue, reason: 'opening a chat always asks the hub for what is new');
       sent.clear();
       await store.sendMessage('v', 's', const UserInput(text: 'hi'));
-      expect(sent.map((r) => r.url.path.split('/').last), ['permission-mode', 'messages']);
+      // One request: the mode, model and effort go with the message, so a chat the machine resumes for it keeps them.
+      expect(sent.map((r) => r.url.path.split('/').last), ['messages']);
+      expect(jsonDecode(sent.single.body), {'text': 'hi', 'permissionMode': 'auto', 'model': '', 'effort': null});
+      store.logout();
+    });
+
+    test('a chat opened for the first time on this phone is not switched to the defaults behind its back', () async {
+      final store = make();
+      answer = (req) => req.method == 'GET' ? http.Response('[]', 200) : http.Response('{}', 200);
+      await store.openSession('v', session);
+      await pumpEventQueue();
+      expect(sent.where((r) => r.method == 'POST'), isEmpty, reason: 'nothing chosen here yet: nothing to send until a message goes out');
+      expect(store.savedChoices('v', 's'), isNotNull);
+      store.logout();
+    });
+
+    test('a chat started here and named while the phone was away keeps what was chosen for it', () async {
+      final store = make();
+      answer = (req) => req.url.path.endsWith('/sessions') && req.method == 'POST'
+          ? http.Response(jsonEncode({'tempId': 't1'}), 202)
+          : (req.method == 'GET' ? http.Response('[]', 200) : http.Response('{}', 200));
+      await store.startNewChat('v', const NewSessionInput(text: 'hi'), choices: const ChatChoices(mode: 'auto', model: 'claude-opus-4-8', effort: 'high'));
+      expect(jsonDecode(sent.first.body), {'text': 'hi', 'permissionMode': 'auto', 'model': 'claude-opus-4-8', 'effort': 'high'});
+      // The session_created event never arrived; the hub's list says which chat t1 became.
+      const named = SessionDto(id: 's9', tempId: 't1', vmId: 'v', cwd: '/w', title: 'hi', createdAt: '2026-10-10T10:00:00.000Z', lastMessageAt: '2026-10-10T10:00:00.000Z', status: 'active', accountId: 'a');
+      store.dispatch(const SetSessions('v', [named]));
+      expect(store.state.selectedSessionId, 's9');
+      expect(store.savedChoices('v', 's9')!.mode, 'auto');
+      expect(store.isTemporary('t1'), isFalse);
+      store.logout();
+    });
+
+    test('even after the app was closed, the temporary id links a chat to what was chosen for it', () async {
+      final store = make();
+      answer = (req) => req.method == 'POST' && req.url.path.endsWith('/sessions')
+          ? http.Response(jsonEncode({'tempId': 't1'}), 202)
+          : (req.method == 'GET' ? http.Response('[]', 200) : http.Response('{}', 200));
+      await store.startNewChat('v', const NewSessionInput(text: 'hi'), choices: const ChatChoices(mode: 'acceptEdits'));
+      store.logout(); // forgets everything in memory... and signing out clears the phone's choices too, so put one back
+      final again = make();
+      const ChatChoicesProbe().keep('v', 't1', 'plan');
+      const named = SessionDto(id: 's9', tempId: 't1', vmId: 'v', cwd: '/w', title: 'hi', createdAt: '2026-10-10T10:00:00.000Z', lastMessageAt: '2026-10-10T10:00:00.000Z', status: 'idle', accountId: 'a');
+      await again.openSession('v', named);
+      expect(again.savedChoices('v', 's9')!.mode, 'plan');
+      again.logout();
+    });
+
+    test('a long chat comes a page at a time; then only what is new; earlier pages on request', () async {
+      final store = make();
+      final page = [for (var i = 701; i <= 1000; i++) {'id': i, 'sessionId': 's', 'vmId': 'v', 'createdAt': 'now', 'message': {'type': 'assistant', 'n': i}}];
+      answer = (req) {
+        final q = req.url.queryParameters;
+        if (q['after'] == '1000') return http.Response(jsonEncode([{'id': 1001, 'sessionId': 's', 'vmId': 'v', 'createdAt': 'now', 'message': {'type': 'assistant', 'n': 1001}}]), 200);
+        if (q['before'] == '701') return http.Response(jsonEncode([for (var i = 690; i <= 700; i++) {'id': i, 'sessionId': 's', 'vmId': 'v', 'createdAt': 'now', 'message': {'type': 'assistant'}}]), 200);
+        return http.Response(jsonEncode(page), 200);
+      };
+      await store.refreshSession('v', 's');
+      expect(sent.single.url.queryParameters, {'limit': '${HubStore.pageSize}'});
+      expect(store.state.messagesBySession['s']!.length, 300);
+      expect(store.hasEarlier('s'), isTrue);
+      sent.clear();
+      await store.refreshSession('v', 's');
+      expect(sent.single.url.queryParameters, {'after': '1000'});
+      expect(store.state.messagesBySession['s']!.last.id, 1001);
+      expect(store.state.messagesBySession['s']!.length, 301);
+      await store.loadEarlier('v', 's');
+      expect(store.state.messagesBySession['s']!.first.id, 690);
+      expect(store.hasEarlier('s'), isFalse, reason: 'fewer than a page came back: that was the start');
+      sent.clear();
+      await store.refreshSession('v', 's', full: true);
+      expect(sent.single.url.queryParameters, {'limit': '${HubStore.pageSize}'});
+      store.logout();
+    });
+
+    test('a hub from before paging (whole chat every time) still works', () async {
+      final store = make();
+      final all = [for (var i = 1; i <= 5; i++) {'id': i, 'sessionId': 's', 'vmId': 'v', 'createdAt': 'now', 'message': {'type': 'assistant', 'n': i}}];
+      answer = (_) => http.Response(jsonEncode(all), 200);
+      await store.refreshSession('v', 's');
+      expect(store.hasEarlier('s'), isFalse);
+      all.add({'id': 6, 'sessionId': 's', 'vmId': 'v', 'createdAt': 'now', 'message': {'type': 'assistant', 'n': 6}});
+      await store.refreshSession('v', 's');
+      expect(store.state.messagesBySession['s']!.map((r) => r.id), [1, 2, 3, 4, 5, 6]);
+      store.logout();
+    });
+
+    test('rows for a chat nobody has open are not kept (they are fetched when it is opened)', () async {
+      final store = make();
+      sockets.single.open();
+      sockets.single.message(jsonEncode({'type': 'sdk_message', 'vmId': 'v', 'sessionId': 'elsewhere', 'message': {'type': 'assistant'}, 'createdAt': 'now'}));
+      await pumpEventQueue();
+      expect(store.state.messagesBySession.containsKey('elsewhere'), isFalse);
+      sockets.single.message(jsonEncode({'type': 'permission_request', 'vmId': 'v', 'sessionId': 'asks', 'requestId': 'r1', 'toolName': 'Bash', 'input': {'command': 'ls'}}));
+      await pumpEventQueue();
+      expect(store.state.messagesBySession['asks']!.length, 1, reason: 'a prompt waiting for the person is kept wherever it is');
+      store.dispatch(const Select(vmId: 'v', sessionId: 'open'));
+      sockets.single.message(jsonEncode({'type': 'sdk_message', 'vmId': 'v', 'sessionId': 'open', 'message': {'type': 'assistant'}, 'createdAt': 'now'}));
+      await pumpEventQueue();
+      expect(store.state.messagesBySession['open']!.length, 1);
       store.logout();
     });
 
@@ -214,4 +314,10 @@ void main() {
       s.stop();
     });
   });
+}
+
+/// Puts a choice on the phone as an earlier run of the app would have left it.
+class ChatChoicesProbe {
+  const ChatChoicesProbe();
+  void keep(String vmId, String sessionId, String mode) => const ChatChoicesStore().write(vmId, sessionId, SavedChoices(mode: mode));
 }

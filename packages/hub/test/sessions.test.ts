@@ -92,6 +92,8 @@ test('a chat: choices reach the machine, the temp id is listed, pages of message
   assert.equal(all.length, 5); // hi, 3 replies, more
   const newer = await (await api(`/vms/${vm}/sessions/real-1/messages?after=${all[2].id}`)).json();
   assert.deepEqual(newer.map((m: { id: number }) => m.id), all.slice(3).map((m: { id: number }) => m.id));
+  const before = await (await api(`/vms/${vm}/sessions/real-1/messages?before=${all[3].id}&limit=2`)).json();
+  assert.deepEqual(before.map((m: { id: number }) => m.id), all.slice(1, 3).map((m: { id: number }) => m.id));
   const viaTemp = await (await api(`/vms/${vm}/sessions/${tempId}/messages?limit=2`)).json();
   assert.deepEqual(viaTemp.map((m: { id: number }) => m.id), all.slice(3).map((m: { id: number }) => m.id));
 

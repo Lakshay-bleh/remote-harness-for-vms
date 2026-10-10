@@ -331,10 +331,11 @@ export function openDb(dataDir: string, opts: DbOptions = {}) {
 
       // The most recent `limit` messages, oldest first. Scoped to the VM when given, so a session id that belongs to
       // another machine yields nothing.
-      // With `after`, only the messages newer than that id (what an app that already has the chat asks for).
-      listMessages(sessionId: string, limit = DEFAULT_MESSAGE_LIMIT, vmId?: string, after?: number): MessageDto[] {
-        const scope = (vmId ? ' AND vm_id = ?' : '') + (after !== undefined ? ' AND id > ?' : '');
-        const params: (string | number)[] = [t, sessionId, ...(vmId ? [vmId] : []), ...(after !== undefined ? [after] : []), limit];
+      // With `after`, only the messages newer than that id (what an app that already has the chat asks for); with `before`,
+      // the page before that id (scrolling back).
+      listMessages(sessionId: string, limit = DEFAULT_MESSAGE_LIMIT, vmId?: string, after?: number, before?: number): MessageDto[] {
+        const scope = (vmId ? ' AND vm_id = ?' : '') + (after !== undefined ? ' AND id > ?' : '') + (before !== undefined ? ' AND id < ?' : '');
+        const params: (string | number)[] = [t, sessionId, ...(vmId ? [vmId] : []), ...(after !== undefined ? [after] : []), ...(before !== undefined ? [before] : []), limit];
         const rows = db
           .prepare(
             `SELECT id, session_id as sessionId, vm_id as vmId, payload, created_at as createdAt FROM (
