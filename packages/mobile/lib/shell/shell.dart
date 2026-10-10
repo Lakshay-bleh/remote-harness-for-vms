@@ -14,6 +14,7 @@ import '../features/assistant/chat_drawer.dart';
 import '../features/companion/buddy.dart';
 import '../features/automations/automations_screen.dart';
 import '../features/connections/connections_screen.dart';
+import '../features/machines/hub_store.dart';
 import '../features/machines/machines_home.dart';
 import '../features/push/push_host.dart';
 import '../features/settings/whats_new.dart';
@@ -52,6 +53,12 @@ class _ShellState extends ConsumerState<Shell> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       openChatDrawer.value = () => _scaffold.currentState?.openDrawer();
+      // The machines' hub is listened to from the start, not only once Machines is opened: a chat waiting for the
+      // person's OK shows on the tab (and as a banner) wherever they are in the app.
+      try {
+        HubStore.instance;
+        if (mounted) setState(() {});
+      } catch (_) {}
       if (mounted) unawaited(maybeShowWhatsNew(context)); // once, after an update
     });
   }
@@ -202,7 +209,7 @@ class _TabBar extends StatelessWidget {
                           color: tab == t ? c.primary.withValues(alpha: 0.15) : Colors.transparent,
                           borderRadius: BorderRadius.circular(Radii.pill),
                         ),
-                        child: Icon(tab == t ? active : icon, size: 22, color: tab == t ? c.primary : c.muted),
+                        child: TabIcon(tab: t, child: Icon(tab == t ? active : icon, size: 22, color: tab == t ? c.primary : c.muted)),
                       ),
                       const SizedBox(height: 2),
                       Text(label,
@@ -246,11 +253,35 @@ class _Rail extends StatelessWidget {
           unselectedLabelTextStyle: TextStyle(color: c.muted, fontSize: 12),
           leading: Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Image.asset('assets/images/brand-mark.png', width: 34, height: 34)),
           destinations: [
-            for (final (_, label, icon, active) in _tabs)
-              NavigationRailDestination(icon: Icon(icon), selectedIcon: Icon(active), label: Text(label)),
+            for (final (t, label, icon, active) in _tabs)
+              NavigationRailDestination(icon: TabIcon(tab: t, child: Icon(icon)), selectedIcon: TabIcon(tab: t, child: Icon(active)), label: Text(label)),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// A tab's icon, with a count on Machines while chats there wait for the person's OK.
+class TabIcon extends StatelessWidget {
+  const TabIcon({super.key, required this.tab, required this.child});
+  final AppTab tab;
+  final Widget child;
+  @override
+  Widget build(BuildContext context) {
+    if (tab != AppTab.machines || !HubStore.created) return child;
+    final c = context.c;
+    return ListenableBuilder(
+      listenable: HubStore.instance,
+      builder: (context, _) {
+        final n = HubStore.instance.waitingCount;
+        return Badge(
+          isLabelVisible: n > 0,
+          backgroundColor: c.permission,
+          label: Text('$n', semanticsLabel: n == 1 ? '1 chat needs your OK' : '$n chats need your OK'),
+          child: child,
+        );
+      },
     );
   }
 }

@@ -16,3 +16,8 @@ class_name = "Hub"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Hub"]
+
+# Where the hub tells Escanor's backend about things the person should hear on their phone (Claude is waiting for their OK,
+# or finished). Authenticated with HUB_ADMIN_TOKEN, the secret Escanor already shares with the hub.
+[vars]
+EVENTS_URL = "https://api.escanor.in/api/v1/hub/events"

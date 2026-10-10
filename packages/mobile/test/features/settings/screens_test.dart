@@ -141,11 +141,11 @@ void main() {
     var fail = false;
     final backend = await setUpBackend({
       'GET /users/me/notification-preferences': (_) =>
-          {'push_enabled': true, 'emergency_alerts': true, 'server_down': true, 'deployment_approvals': true, 'team_pings': true, 'checks': true},
+          {'push_enabled': true, 'emergency_alerts': true, 'server_down': true, 'deployment_approvals': true, 'team_pings': true, 'checks': true, 'machine_chats': true},
       'GET /users/me/push-status': (_) => {'configured': true, 'devices': 1},
       'PATCH /users/me/notification-preferences': (r) => fail
           ? null
-          : {'push_enabled': true, 'emergency_alerts': true, 'server_down': true, 'deployment_approvals': true, 'team_pings': true, 'checks': false},
+          : {'push_enabled': true, 'emergency_alerts': true, 'server_down': true, 'deployment_approvals': true, 'team_pings': true, 'checks': true, 'machine_chats': false},
     });
     await t.pumpWidget(host(const NotificationsPage()));
     await settle(t);
@@ -153,9 +153,10 @@ void main() {
     expect(find.textContaining('Alerts on a phone need the Escanor Android app'), findsOneWidget);
     expect(find.text('Team messages'), findsOneWidget);
     expect(find.text('Automatic checks'), findsOneWidget);
+    expect(find.text('Claude on your machines'), findsOneWidget);
     await t.tap(find.byType(Switch).last);
     await settle(t);
-    expect(jsonDecode(backend.calls.lastWhere((r) => r.method == 'PATCH').body), {'checks': false});
+    expect(jsonDecode(backend.calls.lastWhere((r) => r.method == 'PATCH').body), {'machine_chats': false});
     expect(t.widget<Switch>(find.byType(Switch).last).value, false);
     fail = true;
     await t.tap(find.byType(Switch).first);

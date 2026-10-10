@@ -13,6 +13,7 @@ const { createBrowserServer } = await import('./browserServer.js');
 const { createApiRouter } = await import('./api.js');
 const { createAdminRouter } = await import('./admin.js');
 const { securityHeaders } = await import('./headers.js');
+const { agentMessageUid } = await import('@remote-harness/shared/validate');
 
 const db = openDb(config.dataDir, { encryptionKey: config.encryptionKey ?? config.hubAgentToken });
 
@@ -58,8 +59,13 @@ const agentServer = createAgentServer(db, config.hubAgentToken, {
     const broadcast = (m: Parameters<typeof browserServer.broadcast>[1]) => browserServer.broadcast(tenantId, m);
     const now = new Date().toISOString();
     switch (msg.type) {
+      case 'sdk_partial': {
+        // The reply as it is being written: shown live, never stored (the finished message is).
+        broadcast({ type: 'sdk_partial', vmId, sessionId: msg.sessionId, text: msg.text });
+        break;
+      }
       case 'sdk_message': {
-        t.insertMessage({ sessionId: msg.sessionId, vmId, message: msg.message });
+        if (!t.insertAgentMessage({ sessionId: msg.sessionId, vmId, message: msg.message, uid: agentMessageUid(msg) })) break; // resent copy
         t.touchSession(msg.sessionId, 'active', vmId);
         broadcast({ type: 'sdk_message', vmId, sessionId: msg.sessionId, tempId: msg.tempId, message: msg.message, createdAt: now });
         break;
@@ -88,9 +94,10 @@ const agentServer = createAgentServer(db, config.hubAgentToken, {
         break;
       }
       case 'permission_request': {
-        t.insertMessage({
+        const fresh = t.insertAgentMessage({
           sessionId: msg.sessionId,
           vmId,
+          uid: agentMessageUid(msg),
           message: {
             type: 'permission_request',
             requestId: msg.requestId,
@@ -99,6 +106,9 @@ const agentServer = createAgentServer(db, config.hubAgentToken, {
             blockedPath: msg.blockedPath,
           },
         });
+        if (!fresh) break; // resent copy
+        // The chat is waiting for the person: lists show it until they answer.
+        t.touchSession(msg.sessionId, 'waiting', vmId);
         broadcast({
           type: 'permission_request',
           vmId,

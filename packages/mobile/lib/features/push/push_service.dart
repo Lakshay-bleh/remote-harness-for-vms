@@ -231,28 +231,32 @@ Future<void> forgetPush() async {
 
 /// A notification that arrived while the app is open.
 class ForegroundPush {
-  ForegroundPush({required this.title, required this.body, required this.dest});
+  ForegroundPush({required this.title, required this.body, required this.dest, this.data = const {}});
   final String title;
   final String body;
   final PushDest dest;
+
+  /// What the notification carried (which chat it is about, for one from a machine).
+  final Map<String, dynamic> data;
 }
 
 bool _launchHandled = false;
 
 /// Tapping a notification, and one arriving while the app is open. Returns how to stop listening.
-VoidCallback listenPush(void Function(PushDest dest) onOpen, void Function(ForegroundPush n) onForeground) {
+VoidCallback listenPush(void Function(PushDest dest, Map<String, dynamic> data) onOpen, void Function(ForegroundPush n) onForeground) {
   if (!_firebaseReady) return () {};
   final subs = <StreamSubscription<RemoteMessage>>[];
   try {
-    subs.add(FirebaseMessaging.onMessageOpenedApp.listen((m) => onOpen(routeFor(m.data)), onError: (_) {}));
+    subs.add(FirebaseMessaging.onMessageOpenedApp.listen((m) => onOpen(routeFor(m.data), m.data), onError: (_) {}));
     subs.add(FirebaseMessaging.onMessage.listen(
-      (m) => onForeground(ForegroundPush(title: m.notification?.title ?? 'Escanor', body: m.notification?.body ?? '', dest: routeFor(m.data))),
+      (m) => onForeground(
+          ForegroundPush(title: m.notification?.title ?? 'Escanor', body: m.notification?.body ?? '', dest: routeFor(m.data), data: m.data)),
       onError: (_) {},
     ));
     if (!_launchHandled) {
       _launchHandled = true; // the notification that opened the app counts once, not again after signing back in
       FirebaseMessaging.instance.getInitialMessage().then((m) {
-        if (m != null) onOpen(routeFor(m.data));
+        if (m != null) onOpen(routeFor(m.data), m.data);
       }).catchError((_) {});
     }
   } catch (_) {}
