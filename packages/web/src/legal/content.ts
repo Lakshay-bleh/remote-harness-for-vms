@@ -427,14 +427,13 @@ export const legalDocuments: Record<string, LegalDocument> = {
       ] },
       { heading: 'Conformance', id: 'conformance', paragraphs: [
         '**Standard:** WCAG 2.1 level AA, and IS 17802 Parts 1 and 2, which align with it.',
-        '**Evaluated:** 8 October 2026, by Escanor Labs.',
-        '**Pages:** home, Pricing, Product demo, Book a call, About, Legal, Privacy, Terms, Grievances, Delete account, Accessibility, Docs, Docs quickstart, Use cases, Compare, Releases, Sign in and MCP server.',
-        '**Method:** automated axe-core checks of every WCAG 2.1 A and AA rule on each page, at desktop (1366 px) and phone (390 px) widths, in the dark theme and, where a page has one, the light theme. Plus manual keyboard testing of the booking scheduler, grievance form, product tour and sign-in form: tab order, visible focus, labels and error announcements.',
-        '**Result:** partially conforms. No failures remain on the pages tested: during this evaluation we fixed text contrast, form error announcements, keyboard support in the time picker and focus handling. It stays partial until the limitations below are closed.',
+        '**Evaluated:** public pages on 8 October 2026 and the signed-in app on 10 October 2026, by Escanor Labs.',
+        '**Pages:** home, Pricing, Product demo, Book a call, About, Legal, Privacy, Terms, Grievances, Delete account, Accessibility, Docs, Docs quickstart, Use cases, Compare, Releases, Sign in and MCP server; and, signed in: the dashboard home, Assistant, Integrations, Deployments, Incidents, Monitoring, Automations, Projects, Activity, MCP, Settings (every section), Billing, onboarding, and the Terms acceptance dialog.',
+        '**Method:** automated axe-core checks of every WCAG 2.1 A and AA rule on each page, at desktop (1366 px) and phone (390 px) widths, in the dark theme and, where a page has one, the light theme. Plus manual keyboard testing of the booking scheduler, grievance form, product tour, sign-in form and the app\'s dialogs: tab order, visible focus, focus kept inside dialogs and returned afterwards, labels and error announcements.',
+        '**Result:** partially conforms. No failures remain on the pages tested: during this evaluation we fixed text and status-colour contrast, form error announcements, keyboard support in the time picker, labels, and focus handling in dialogs. It stays partial until the limitations below are closed.',
         'Read the [machine-readable report (JSON)](/accessibility-conformance.json).',
       ] },
       { heading: 'Known limitations', id: 'limitations', items: [
-        '**Signed-in app:** the dashboard, onboarding and settings are not yet covered by this report. We will evaluate and fix them by 31 December 2026.',
         '**Screen readers:** we have not yet tested with NVDA, VoiceOver and TalkBack. We will by 31 December 2026.',
         '**Other companies\' pages:** signing in with Google or GitHub, and paying through Razorpay, happen on their pages, which this report does not cover.',
       ] },
