@@ -3,7 +3,10 @@
 export interface ConsentState {
   purpose: string;
   granted: boolean;
+  /** The latest event's version (what clients released before 10 October 2026 compare exactly). */
   notice_version: string;
+  /** terms and privacy_notice: the highest version accepted since the last withdrawal. Absent from older APIs. */
+  accepted_version?: string | null;
   recorded_at: string;
 }
 
