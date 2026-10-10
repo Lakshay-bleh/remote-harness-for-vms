@@ -19,6 +19,19 @@ const isOptId = (v: unknown): boolean => v === undefined || isId(v);
 
 // ---------- agent -> hub frames ----------
 
+/** Live text longer than this is not sent as it is written (the finished message still arrives). */
+export const MAX_PARTIAL_CHARS = 20_000;
+
+/**
+ * What identifies a stored agent message, so a copy sent again after a dropped connection is recognised: an SDK message
+ * by its uuid, a permission prompt by its request id. Undefined when there is nothing to tell copies apart by.
+ */
+export function agentMessageUid(msg: AgentToHubMessage): string | undefined {
+  if (msg.type === 'permission_request') return `perm:${msg.requestId}`;
+  if (msg.type === 'sdk_message' && isObject(msg.message) && isId(msg.message.uuid)) return `sdk:${msg.message.uuid}`;
+  return undefined;
+}
+
 // Agent frames come from a network peer holding a (tenant-shared) token, so they
 // are untrusted: reject anything that doesn't match the protocol shape instead of
 // letting undefined/odd types reach SQLite binds or handlers.
@@ -37,6 +50,8 @@ export function parseAgentFrame(raw: string): AgentToHubMessage | null {
       return ok(isId(m.vmName) && Array.isArray(m.accounts) && Array.isArray(m.sessions));
     case 'sdk_message':
       return ok(isId(m.sessionId) && isOptId(m.tempId));
+    case 'sdk_partial':
+      return ok(isId(m.sessionId) && isOptId(m.tempId) && isString(m.text) && m.text.length <= MAX_PARTIAL_CHARS);
     case 'session_created':
       return ok(isId(m.tempId) && isId(m.sessionId) && isString(m.cwd) && isString(m.title) && isString(m.accountId));
     case 'session_ended':

@@ -8,7 +8,10 @@
  *  - everything else is a question or a task for the Escanor assistant.
  */
 
+import { namePattern } from './computerTarget';
+
 export type VoiceTab = 'assistant' | 'computers' | 'connections' | 'machines' | 'settings';
+export type MediaKey = 'playpause' | 'next' | 'previous';
 export type SettingsScreen = 'wifi' | 'bluetooth' | 'display' | 'sound' | 'battery' | 'apps' | 'location';
 
 /** The buttons and gestures of the phone itself, done through Android's Accessibility permission. */
@@ -28,12 +31,15 @@ export type PhoneAction =
   | { type: 'timer'; seconds: number }
   | { type: 'torch'; on: boolean }
   | { type: 'volume'; change: 'up' | 'down' | 'mute' | 'unmute' }
+  /** Whatever is playing on the phone (music, a video, a podcast): the media keys. */
+  | { type: 'media'; action: MediaKey }
   | { type: 'web_search'; query: string }
   | { type: 'settings'; screen: SettingsScreen };
 
 export type VoiceCommand =
   | { kind: 'phone'; action: PhoneAction }
-  | { kind: 'computer'; text: string }
+  /** `computer`: the paired computer named in the sentence, as it is listed (absent for "my computer"). */
+  | { kind: 'computer'; text: string; computer?: string }
   | { kind: 'no_computer'; text: string }
   | { kind: 'assistant'; text: string }
   | { kind: 'go'; tab: VoiceTab }
@@ -43,6 +49,8 @@ export type VoiceCommand =
 export interface VoiceContext {
   /** At least one computer is paired, so "on my computer" has somewhere to go. */
   hasComputer: boolean;
+  /** The paired computers' names (on this phone and their own), so "on Work Laptop, …" reaches that one. */
+  computerNames?: string[];
 }
 
 // ---- the name
@@ -128,6 +136,19 @@ const CONTROL_WORDS: Array<[RegExp, ControlOp]> = [
   [/^scroll up(?: a bit| more)?$|^page up$/, 'scroll_up'],
 ];
 
+const MEDIA_NOUN = '(?:music|song|track|video|podcast|playback|audio)';
+const MEDIA_WORDS: Array<[RegExp, MediaKey]> = [
+  [new RegExp(`^(?:pause|resume|play|unpause|stop)(?: the| my)? ${MEDIA_NOUN}$|^(?:pause|resume|unpause)(?: it)?$`), 'playpause'],
+  [new RegExp(`^(?:next|skip)(?: this| the)? ${MEDIA_NOUN}$|^(?:play |go to )?(?:the )?next ${MEDIA_NOUN}$`), 'next'],
+  [new RegExp(`^(?:play |go to |go back to )?(?:the )?(?:previous|last) ${MEDIA_NOUN}$|^go back a ${MEDIA_NOUN}$`), 'previous'],
+];
+
+/** "pause the music", "next song", "previous track": the phone's media keys. Only these exact shapes, so "play X on Spotify" is not taken. */
+export function parseMedia(t: string): MediaKey | null {
+  for (const [re, key] of MEDIA_WORDS) if (re.test(t)) return key;
+  return null;
+}
+
 export function parseControl(t: string): PhoneAction | null {
   for (const [re, op] of CONTROL_WORDS) if (re.test(t)) return { type: 'control', op };
   return null;
@@ -138,6 +159,20 @@ export function parseVoiceCommand(raw: string, ctx: VoiceContext): VoiceCommand 
   const t = clean(heard);
   if (!t) return { kind: 'empty' };
   if (/^(?:cancel|never ?mind|stop|stop listening|forget it|that'?s all|be quiet)$/.test(t)) return { kind: 'stop' };
+
+  // A paired computer, by its name. Longest names first, so "Work Laptop 2" is not taken for "Work Laptop".
+  if (ctx.hasComputer) {
+    const names = [...(ctx.computerNames ?? [])].sort((a, b) => b.length - a.length);
+    for (const name of names) {
+      const n = namePattern(name);
+      if (!n) continue;
+      const text =
+        new RegExp(`^(?:on|in|at) (?:my |the )?${n}[, ]+(.+)$`).exec(t)?.[1] ??
+        new RegExp(`^(?:tell|ask|have|get) (?:my |the )?${n}(?: to)? (.+)$`).exec(t)?.[1] ??
+        new RegExp(`^(.+?) on (?:my |the )?${n}$`).exec(t)?.[1];
+      if (text) return { kind: 'computer', text, computer: name };
+    }
+  }
 
   // The computer, when asked for by name.
   const toComputer =
@@ -162,6 +197,8 @@ export function parseVoiceCommand(raw: string, ctx: VoiceContext): VoiceCommand 
   const volume = /^(?:turn )?(?:the )?volume (up|down)$|^turn (?:it )?(up|down)$/.exec(t);
   if (volume) return { kind: 'phone', action: { type: 'volume', change: (volume[1] ?? volume[2]) as 'up' | 'down' } };
   if (t === 'mute' || t === 'unmute') return { kind: 'phone', action: { type: 'volume', change: t } };
+  const media = parseMedia(t);
+  if (media) return { kind: 'phone', action: { type: 'media', action: media } };
   const call = /^(?:call|dial|phone|ring) (.+)$/.exec(t)?.[1];
   if (call) {
     const digits = call.replace(/[\s-]/g, '');

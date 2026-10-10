@@ -30,7 +30,16 @@ const _routes = <String, PushDest>{
   'team_pings': PushDest.assistant,
   'server_down': PushDest.machines,
   'checks': PushDest.automations,
+  'machine_chats': PushDest.machines,
 };
+
+/// The machine chat a notification is about (Claude waiting for an OK, or done), so tapping it opens that chat.
+({String vmId, String sessionId})? machineChatFor(Object? data) {
+  if (data is! Map || data['kind'] != 'machine_chats') return null;
+  final vm = data['vm_id'], session = data['session_id'];
+  if (vm is! String || vm.isEmpty || session is! String || session.isEmpty) return null;
+  return (vmId: vm, sessionId: session);
+}
 
 /// Where tapping a notification should land. Anything unexpected opens the main screen. Whatever an automation or an automatic
 /// check sent (it names a run or a check) opens Automations, where the run and the finding are.

@@ -38,9 +38,10 @@ const isHttps = (u: unknown): u is string => typeof u === 'string' && /^https:\/
  * Turn the server's actions into things this phone can do. Anything the phone cannot do, or that does not look right, is dropped
  * and counted (the server is trusted to decide, not to be obeyed blindly: an unknown shape never reaches the phone's plugin).
  */
-export function planToActions(plan: Pick<ServerPlan, 'actions'>): { actions: PhoneAction[]; skipped: number } {
+export function planToActions(plan: Pick<ServerPlan, 'actions'>): { actions: PhoneAction[]; skipped: number; stop: boolean } {
   const out: PhoneAction[] = [];
   let skipped = 0;
+  let stop = false;
   for (const a of Array.isArray(plan.actions) ? plan.actions : []) {
     switch (a?.type) {
       case 'open_app':
@@ -74,11 +75,17 @@ export function planToActions(plan: Pick<ServerPlan, 'actions'>): { actions: Pho
       case 'settings':
         typeof a.screen === 'string' ? out.push({ type: 'settings', screen: a.screen }) : (skipped += 1);
         break;
+      case 'media':
+        ['playpause', 'next', 'previous'].includes(a.action) ? out.push({ type: 'media', action: a.action }) : (skipped += 1);
+        break;
+      case 'stop':
+        stop = true; // "stop", "that's all": end the conversation, nothing to run
+        break;
       default:
-        skipped += 1; // media and anything new: this phone has no way to do it yet
+        skipped += 1; // anything new: this phone has no way to do it yet
     }
   }
-  return { actions: out.slice(0, 3), skipped };
+  return { actions: out.slice(0, 3), skipped, stop };
 }
 
 /** The phone's apps, as the server wants them. */

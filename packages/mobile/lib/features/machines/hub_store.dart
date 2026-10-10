@@ -14,6 +14,40 @@ import 'message_format.dart' show busySince, livePermissions;
 import 'protocol.dart';
 import 'session_search.dart';
 
+/// A chat to open: from a notification, or the in-app banner.
+typedef ChatTarget = ({String vmId, String sessionId});
+
+/// Something on a machine the person should know about while the app is open (shown as a banner unless that chat is
+/// already on screen).
+class HubNotice {
+  const HubNotice({required this.vmId, required this.sessionId, required this.title, required this.body, this.requestId});
+  final String vmId;
+  final String sessionId;
+  final String title;
+  final String body;
+  final String? requestId;
+}
+
+/// A few words for what Claude wants to do ("Run: npm test"), as the push notification says it.
+String describeTool(String toolName, Map<String, dynamic> input) {
+  String one(Object? v, int max) {
+    final line = '${v ?? ''}'.split('\n').map((l) => l.trim()).firstWhere((l) => l.isNotEmpty, orElse: () => '');
+    return line.length > max ? '${line.substring(0, max - 1)}…' : line;
+  }
+
+  switch (toolName) {
+    case 'Bash':
+      return 'Run: ${one(input['command'], 100)}';
+    case 'Edit' || 'MultiEdit' || 'Write' || 'NotebookEdit':
+      final path = '${input['file_path'] ?? input['notebook_path'] ?? ''}'.split('/').where((p) => p.isNotEmpty);
+      return 'Edit: ${path.isEmpty ? 'a file' : path.last}';
+    case 'WebFetch':
+      return 'Open: ${one(input['url'], 100)}';
+    default:
+      return 'Use $toolName';
+  }
+}
+
 /// What a new chat should switch to once the machine has named it.
 class ChatChoices {
   const ChatChoices({this.mode = 'default', this.model = '', this.effort = ''});
@@ -63,6 +97,28 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
   final Map<String, int> _rounds = {};
   final Set<String> _halted = {};
   final _managedUnauthorized = StreamController<void>.broadcast();
+  final _notices = StreamController<HubNotice>.broadcast(sync: true);
+  final _openRequests = StreamController<ChatTarget>.broadcast();
+  ChatTarget? _pendingOpen;
+
+  /// The chat a ChatView is showing right now (null when none is on screen).
+  String? viewingSessionId;
+
+  /// Permission prompts as they arrive, for the in-app banner.
+  Stream<HubNotice> get notices => _notices.stream;
+
+  /// "Show this chat": the Machines screen opens it (see [takePendingOpen] for a screen that was not built yet).
+  Stream<ChatTarget> get openRequests => _openRequests.stream;
+
+  /// The chat asked to be opened before anything could show it; null once taken.
+  ChatTarget? takePendingOpen() {
+    final t = _pendingOpen;
+    _pendingOpen = null;
+    return t;
+  }
+
+  /// Chats waiting for the person's OK, across every machine.
+  int get waitingCount => _state.waiting.length;
 
   /// The hosted hub refused its token: whoever shows it asks Escanor for the current one.
   Stream<void> get managedUnauthorized => _managedUnauthorized.stream;
@@ -175,7 +231,10 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
       } else if (a != null) {
         dispatch(a);
       }
-      if (msg is PermissionRequestEvent) _autoAnswer(msg.vmId, msg.sessionId, msg.requestId, msg.toolName, msg.input);
+      if (msg is PermissionRequestEvent) {
+        _autoAnswer(msg.vmId, msg.sessionId, msg.requestId, msg.toolName, msg.input);
+        if (!isAutonomous(msg.vmId, msg.sessionId)) _notifyPrompt(msg);
+      }
     });
     if (!_observing) {
       try {
@@ -202,6 +261,52 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
     if (rows == null || busySince(rows) == null) return;
     if (socket.connected && socket.quietSince(DateTime.now()) < quietFor) return;
     unawaited(refreshSession(vm, session).catchError((_) {}));
+  }
+
+  void _notifyPrompt(PermissionRequestEvent e) {
+    var machine = '';
+    for (final v in _state.vms) {
+      if (v.id == e.vmId) machine = nameOf(v);
+    }
+    var chat = '';
+    for (final x in _state.sessionsByVm[e.vmId] ?? const <SessionDto>[]) {
+      if (x.id == e.sessionId) chat = titleOf(x);
+    }
+    final where = [if (machine.isNotEmpty) machine, if (chat.isNotEmpty) chat].join(' · ');
+    _notices.add(HubNotice(
+      vmId: e.vmId,
+      sessionId: e.sessionId,
+      requestId: e.requestId,
+      title: 'Claude needs your OK',
+      body: [if (where.isNotEmpty) where, describeTool(e.toolName, e.input)].join(': '),
+    ));
+  }
+
+  /// Open one chat (a tapped notification or banner): pick its machine and chat, then ask the Machines screen to show it.
+  Future<void> openChat(String vmId, String sessionId) async {
+    if (!_state.authed) return;
+    SessionDto? find() {
+      for (final x in _state.sessionsByVm[vmId] ?? const <SessionDto>[]) {
+        if (x.id == sessionId) return x;
+      }
+      return null;
+    }
+
+    dispatch(Select(vmId: vmId, sessionId: sessionId, accountId: find()?.accountId));
+    final target = (vmId: vmId, sessionId: sessionId);
+    _pendingOpen = target;
+    _openRequests.add(target);
+    try {
+      if (find() == null) dispatch(SetSessions(vmId, await api.listSessions(vmId)));
+      final s = find();
+      if (s != null) {
+        await openSession(vmId, s);
+      } else {
+        await refreshSession(vmId, sessionId);
+      }
+    } catch (_) {
+      // what is cached shows; the chat's own refresh tries again
+    }
   }
 
   void _stop() {
@@ -497,7 +602,7 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
     for (final id in others) {
       dispatch(PermissionResolved(id));
     }
-    dispatch(PermissionResolved(requestId));
+    dispatch(PermissionResolved(requestId, sessionId: sessionId));
     try {
       await api.resolvePermission(vmId, sessionId, requestId, behavior);
     } catch (_) {

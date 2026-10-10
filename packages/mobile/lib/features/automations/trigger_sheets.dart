@@ -6,7 +6,7 @@ import '../../core/api.dart';
 import '../../core/theme.dart';
 import '../../ui/parts.dart';
 import '../../ui/widgets.dart';
-import '../machines/message_format.dart' show relativeTime;
+import '../machines/message_format.dart' show timeAgo;
 import 'autopilot_api.dart';
 import 'autopilot_models.dart';
 import 'automations_screen.dart' show StatusBadge;
@@ -163,7 +163,7 @@ class _RunDetailSheetState extends State<RunDetailSheet> {
       Row(children: [
         StatusBadge(r.status),
         const SizedBox(width: 8),
-        if (r.createdAt != null) Text('Started ${relativeTime(r.createdAt!)} ago', style: TextStyle(fontSize: 12, color: c.muted)),
+        if (r.createdAt != null) Text('Started ${timeAgo(r.createdAt!)}', style: TextStyle(fontSize: 12, color: c.muted)),
         const Spacer(),
         if (r.phase != null && r.active) Text(r.phase!, style: TextStyle(fontSize: 12, color: c.mutedSoft)),
       ]),

@@ -136,27 +136,127 @@ export const listen = (opts: ListenOptions = {}): Promise<string> => {
 /** True where the person can talk to Escanor at all: the Android app, or a browser with speech recognition. */
 export const canListen = (): boolean => isNative() || webSpeechPlugin() !== null;
 
-/** Say something out loud. Resolves when it has finished (or immediately where the phone cannot speak). */
+/**
+ * Split into pieces a speech engine will finish: whole sentences, packed together up to `max` characters, with a sentence that is
+ * itself too long broken at a comma, then at a space. (The same rule as the website's voice: an engine silently stops a long single
+ * utterance, so a reply is spoken a sentence or two at a time and nothing is cut.)
+ */
+export function chunkForSpeech(text: string, max = 200): string[] {
+  const cleaned = text.replace(/\s+/g, ' ').trim();
+  if (!cleaned) return [];
+  const sentences = cleaned.match(/[^.!?]+(?:[.!?]+(?=\s|$)|$)/g) ?? [cleaned];
+  const pieces: string[] = [];
+  for (const raw of sentences) {
+    let sentence = raw.trim();
+    while (sentence.length > max) {
+      const window = sentence.slice(0, max);
+      // Break at a comma if one is far enough along to make a worthwhile piece, otherwise at the last space.
+      const comma = Math.max(window.lastIndexOf(', '), window.lastIndexOf('; '));
+      const cut = comma > max * 0.5 ? comma : window.lastIndexOf(' ');
+      const at = cut > max * 0.3 ? cut + 1 : max;
+      pieces.push(sentence.slice(0, at).trim());
+      sentence = sentence.slice(at).trim();
+    }
+    if (sentence) pieces.push(sentence);
+  }
+  const chunks: string[] = [];
+  for (const piece of pieces) {
+    const last = chunks[chunks.length - 1];
+    if (last && last.length + piece.length + 1 <= max) chunks[chunks.length - 1] = `${last} ${piece}`;
+    else chunks.push(piece);
+  }
+  return chunks;
+}
+
+type VoiceLike = { name: string; lang: string; default?: boolean; localService?: boolean };
+
+/**
+ * The best installed voice for a language: the person's own language first, a natural-sounding one ahead of a robotic one.
+ * Undefined when nothing matches, so the engine's default speaks.
+ */
+export function pickVoice<T extends VoiceLike>(voices: readonly T[], language: string): T | undefined {
+  const lang = language.toLowerCase();
+  const base = lang.split('-')[0];
+  const score = (v: T): number => {
+    const vl = v.lang.toLowerCase().replace('_', '-');
+    let s = 0;
+    if (vl === lang) s += 40;
+    else if (vl.split('-')[0] === base) s += 25;
+    else return -1;
+    if (/natural|neural|premium|enhanced|google|samantha|daniel|karen|aria|jenny|ava/i.test(v.name)) s += 12;
+    if (/compact|espeak|robot|novelty|bad news|zarvox|whisper|trinoids|bubbles/i.test(v.name)) s -= 30;
+    if (v.default) s += 3;
+    return s;
+  };
+  let best: T | undefined;
+  let bestScore = 0;
+  for (const v of voices) {
+    const s = score(v);
+    if (s > bestScore) {
+      best = v;
+      bestScore = s;
+    }
+  }
+  return best;
+}
+
+/** Say `text` a piece at a time with `say`, checking `cancelled` before each piece, so stopping takes effect at once. */
+export async function speakInPieces(text: string, say: (piece: string) => Promise<void>, cancelled: () => boolean, max = 200): Promise<void> {
+  for (const piece of chunkForSpeech(text, max)) {
+    if (cancelled()) return;
+    await say(piece);
+  }
+}
+
+const LANG = 'en-US';
+/** Bumped by stopSpeaking: whatever was being read stops before its next piece. */
+let speechTurn = 0;
+/** The phone's chosen voice, by its index in the engine's list (looked up once). */
+let nativeVoice: Promise<number | undefined> | null = null;
+
+function phoneVoice(): Promise<number | undefined> {
+  nativeVoice ??= TextToSpeech.getSupportedVoices()
+    .then(({ voices }) => {
+      const v = pickVoice(voices, LANG);
+      return v ? voices.indexOf(v) : undefined;
+    })
+    .catch(() => undefined);
+  return nativeVoice;
+}
+
+/** Say something out loud, all of it. Resolves when it has finished, is stopped, or at once where nothing can speak. */
 export async function speak(text: string): Promise<void> {
   if (!text.trim()) return;
+  const mine = ++speechTurn;
+  const cancelled = () => speechTurn !== mine;
   if (!isNative()) {
     const synth = typeof window !== 'undefined' ? window.speechSynthesis : undefined;
     if (!synth) return;
-    await new Promise<void>((resolve) => {
-      const u = new SpeechSynthesisUtterance(text.slice(0, 600));
-      u.onend = u.onerror = () => resolve();
-      synth.speak(u);
-    });
+    const voice = pickVoice(synth.getVoices?.() ?? [], LANG);
+    await speakInPieces(
+      text,
+      (piece) =>
+        new Promise<void>((resolve) => {
+          const u = new SpeechSynthesisUtterance(piece);
+          u.lang = LANG;
+          if (voice) u.voice = voice;
+          u.onend = u.onerror = () => resolve();
+          synth.speak(u);
+        }),
+      cancelled,
+    );
     return;
   }
+  const voice = await phoneVoice();
   try {
-    await TextToSpeech.speak({ text: text.slice(0, 600), lang: 'en-US', rate: 1.0, pitch: 1.0, volume: 1.0 });
+    await speakInPieces(text, (piece) => TextToSpeech.speak({ text: piece, lang: LANG, rate: 1.0, pitch: 1.0, volume: 1.0, ...(voice !== undefined ? { voice } : {}) }), cancelled);
   } catch {
     // no voice installed or interrupted: the reply is still on screen
   }
 }
 
 export async function stopSpeaking(): Promise<void> {
+  speechTurn += 1;
   if (!isNative()) return void (typeof window !== 'undefined' && window.speechSynthesis?.cancel());
   await TextToSpeech.stop().catch(() => undefined);
 }

@@ -114,7 +114,7 @@ class SessionDto {
       title: s('title', 'Untitled'),
       createdAt: created,
       lastMessageAt: s('lastMessageAt', created),
-      status: const ['active', 'idle', 'ended'].contains(j['status']) ? j['status'] as String : 'idle',
+      status: const ['active', 'idle', 'ended', 'waiting'].contains(j['status']) ? j['status'] as String : 'idle',
       accountId: s('accountId', 'default'),
       tempId: _isId(j['tempId']) ? j['tempId'] as String : null,
     );
@@ -173,6 +173,14 @@ class SdkMessageEvent extends HubEvent {
   final String? tempId;
   final Object? message;
   final String createdAt;
+}
+
+/// The reply as Claude is writing it: the whole text so far. Never stored; the finished message follows as an sdk_message.
+class SdkPartialEvent extends HubEvent {
+  const SdkPartialEvent({required this.vmId, required this.sessionId, required this.text});
+  final String vmId;
+  final String sessionId;
+  final String text;
 }
 
 class SessionCreatedEvent extends HubEvent {
@@ -239,6 +247,9 @@ HubEvent? parseHubFrame(Object? raw) {
         message: m['message'],
         createdAt: m['createdAt'] is String ? m['createdAt'] as String : DateTime.now().toUtc().toIso8601String(),
       );
+    case 'sdk_partial':
+      if (!_isId(m['vmId']) || !_isId(m['sessionId']) || m['text'] is! String) return null;
+      return SdkPartialEvent(vmId: m['vmId'] as String, sessionId: m['sessionId'] as String, text: m['text'] as String);
     case 'session_created':
       if (!_isId(m['vmId']) || !_isId(m['tempId']) || !_isId(m['sessionId']) || m['cwd'] is! String || m['title'] is! String || m['accountId'] is! String) {
         return null;

@@ -202,3 +202,22 @@ describe('answering "Did you mean …?"', () => {
     assert.deepEqual(calls, ['222', '111']);
   });
 });
+
+describe('the media keys', () => {
+  it('presses the key and says what it did', async () => {
+    const { dev, calls } = fakePhone({ media: (async () => ({ ok: true })) as DevicePlugin['media'] });
+    assert.deepEqual(await runPhoneAction({ type: 'media', action: 'next' }, dev), { ok: true, say: 'Next track.' });
+    void calls;
+  });
+
+  it('names the action when this build or phone cannot press it', async () => {
+    const { dev } = fakePhone({ media: (async () => { throw new Error('"EscanorDevice.media()" is not implemented on ios'); }) as DevicePlugin['media'] });
+    const r = await runPhoneAction({ type: 'media', action: 'playpause' }, dev);
+    assert.equal(r.ok, false);
+    assert.match(r.say, /play or pause/);
+    const none = await runPhoneAction({ type: 'media', action: 'previous' }, fakePhone().dev);
+    assert.match(none.say, /previous track/);
+    const browser = await runPhoneAction({ type: 'media', action: 'next' }, null);
+    assert.match(browser.say, /next track/);
+  });
+});

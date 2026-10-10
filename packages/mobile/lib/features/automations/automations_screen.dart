@@ -10,7 +10,7 @@ import '../../core/theme.dart';
 import '../../ui/parts.dart';
 import '../../ui/widgets.dart';
 import '../companion/dog_state.dart';
-import '../machines/message_format.dart' show relativeTime;
+import '../machines/message_format.dart' show timeAgo;
 import 'autopilot_api.dart';
 import 'autopilot_models.dart';
 import 'trigger_sheets.dart';
@@ -542,7 +542,7 @@ class _RunTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.c;
-    final when = run.createdAt == null ? '' : '${relativeTime(run.createdAt!)} ago';
+    final when = run.createdAt == null ? '' : timeAgo(run.createdAt!);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
@@ -624,8 +624,8 @@ class _WatcherTile extends StatelessWidget {
     final c = context.c;
     final w = watcher;
     final last = w.lastFoundAt == null
-        ? (w.lastCheckedAt == null ? 'Starts within a few minutes' : 'All clear · checked ${relativeTime(w.lastCheckedAt!)} ago')
-        : 'Found something ${relativeTime(w.lastFoundAt!)} ago';
+        ? (w.lastCheckedAt == null ? 'Starts within a few minutes' : 'All clear · checked ${timeAgo(w.lastCheckedAt!)}')
+        : 'Found something ${timeAgo(w.lastFoundAt!)}';
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Container(
@@ -670,7 +670,7 @@ class _TriggerTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.c;
     final t = trigger;
-    final last = t.lastFiredAt == null ? 'Has not run yet' : 'Last ran ${relativeTime(t.lastFiredAt!)} ago · ${t.firedCount} ${t.firedCount == 1 ? 'time' : 'times'}';
+    final last = t.lastFiredAt == null ? 'Has not run yet' : 'Last ran ${timeAgo(t.lastFiredAt!)} · ${t.firedCount} ${t.firedCount == 1 ? 'time' : 'times'}';
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(

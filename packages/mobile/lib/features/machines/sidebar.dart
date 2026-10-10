@@ -263,6 +263,7 @@ class _HubSidebarState extends State<HubSidebar> {
         for (final r in shown)
           _SessionRow(
               session: r.session,
+              waiting: state.waiting.containsKey(r.session.id),
               title: store.titleOf(r.session),
               snippet: r.snippet,
               active: state.selectedSessionId == r.session.id,
@@ -322,7 +323,16 @@ class _HubSidebarState extends State<HubSidebar> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(store.nameOf(vm), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: c.ink)),
+                      Row(children: [
+                        Flexible(
+                          child: Text(store.nameOf(vm),
+                              maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: c.ink)),
+                        ),
+                        if (state.waiting.containsValue(vm.id)) ...[
+                          const SizedBox(width: 8),
+                          WaitingPill(count: state.waiting.values.where((v) => v == vm.id).length, compact: true),
+                        ],
+                      ]),
                       Text(
                         '${machineStatus(vm.connected, vm.lastSeenAt)} · ${sessions.length} ${sessions.length == 1 ? 'chat' : 'chats'}',
                         maxLines: 1,
@@ -384,8 +394,12 @@ class _HubSidebarState extends State<HubSidebar> {
 }
 
 class _SessionRow extends StatelessWidget {
-  const _SessionRow({required this.session, required this.title, this.snippet, required this.active, required this.onTap, required this.onSettings});
+  const _SessionRow(
+      {required this.session, required this.title, this.snippet, required this.active, required this.onTap, required this.onSettings, this.waiting = false});
   final SessionDto session;
+
+  /// Claude in this chat asked for permission and is waiting for an answer.
+  final bool waiting;
   final String title;
 
   /// What was said in the chat that matched the search, when its title did not.
@@ -410,20 +424,21 @@ class _SessionRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              if (session.status == 'active') const Padding(padding: EdgeInsets.only(right: 6), child: _PulseDot()),
+              if (!waiting && session.status == 'active') const Padding(padding: EdgeInsets.only(right: 6), child: _PulseDot()),
               Expanded(
                 child: Text(title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 13, color: active ? c.ink : c.body, fontWeight: active ? FontWeight.w500 : FontWeight.w400)),
+                    style: TextStyle(fontSize: 13, color: active ? c.ink : c.body, fontWeight: active || waiting ? FontWeight.w500 : FontWeight.w400)),
               ),
+              if (waiting) const Padding(padding: EdgeInsets.only(left: 6), child: WaitingPill()),
             ]),
             if (snippet != null) ...[
               const SizedBox(height: 2),
               Text(snippet!, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: c.muted)),
             ],
             const SizedBox(height: 2),
-            Text('${relativeTime(session.lastMessageAt)} ago · ${session.cwd}',
+            Text('${timeAgo(session.lastMessageAt)} · ${session.cwd}',
                 maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: c.mutedSoft)),
           ]),
         ),
@@ -512,6 +527,34 @@ class _FooterRow extends StatelessWidget {
           leading,
           const SizedBox(width: 10),
           Expanded(child: Text(label, style: TextStyle(fontSize: 13, color: muted ? c.muted : c.body))),
+        ]),
+      ),
+    );
+  }
+}
+
+/// "Needs your OK": Claude asked for permission and is stopped until someone answers.
+class WaitingPill extends StatelessWidget {
+  const WaitingPill({super.key, this.count = 1, this.compact = false});
+  final int count;
+
+  /// Just the hand and the count (where space is short, e.g. next to a machine's name).
+  final bool compact;
+  @override
+  Widget build(BuildContext context) {
+    final c = context.c;
+    return Semantics(
+      label: count > 1 ? '$count chats need your OK' : 'Needs your OK',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(color: c.permission.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(Radii.pill), border: Border.all(color: c.permission.withValues(alpha: 0.6))),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.front_hand_outlined, size: 12, color: c.permission),
+          const SizedBox(width: 4),
+          ExcludeSemantics(
+            child: Text(compact ? '$count' : (count > 1 ? '$count need your OK' : 'Needs your OK'),
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: c.permission)),
+          ),
         ]),
       ),
     );

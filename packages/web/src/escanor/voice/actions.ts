@@ -1,5 +1,5 @@
 import { matchApp, type InstalledApp } from './apps';
-import type { ControlOp, PhoneAction, SettingsScreen } from './commands';
+import type { ControlOp, MediaKey, PhoneAction, SettingsScreen } from './commands';
 import { chooseContact, type Contact } from './contacts';
 
 export interface PluginResult {
@@ -51,6 +51,8 @@ export interface DevicePlugin {
   setTorch(o: { on: boolean }): Promise<PluginResult>;
   setVolume(o: { change: 'up' | 'down' | 'mute' | 'unmute' }): Promise<PluginResult>;
   openSettings(o: { screen: SettingsScreen | 'main' }): Promise<PluginResult>;
+  /** Press a media key (play/pause, next, previous). Optional: builds before it have no such method and reject the call. */
+  media?(o: { action: MediaKey }): Promise<PluginResult>;
 }
 
 export interface ActionOutcome {
@@ -97,6 +99,9 @@ export function formatDuration(seconds: number): string {
 }
 
 const SCREEN_NAMES: Record<string, string> = { wifi: 'Wi-Fi', bluetooth: 'Bluetooth', display: 'display', sound: 'sound', battery: 'battery', apps: 'apps', location: 'location' };
+const MEDIA_DONE: Record<MediaKey, string> = { playpause: 'Done.', next: 'Next track.', previous: 'Previous track.' };
+/** What each media key is called, for saying which one this phone could not press. */
+export const MEDIA_NAMES: Record<MediaKey, string> = { playpause: 'play or pause', next: 'skip to the next track', previous: 'go back to the previous track' };
 const VOLUME_WORDS = { up: 'Volume up.', down: 'Volume down.', mute: 'Muted.', unmute: 'Unmuted.' } as const;
 const TROUBLE = 'I could not do that on this phone.';
 
@@ -122,6 +127,7 @@ export async function runPhoneAction(action: PhoneAction, dev: DevicePlugin | nu
       window.open(action.url, '_blank', 'noopener');
       return { ok: true, say: `Opening ${action.url.replace(/^https:\/\/(www\.)?/, '')}.` };
     }
+    if (action.type === 'media') return { ok: false, say: `I can’t ${MEDIA_NAMES[action.action]} from here. That works in the Escanor app on an Android phone.` };
     return { ok: false, say: 'That works in the Android app. Open Escanor on your phone and ask again.' };
   }
   try {
@@ -182,6 +188,16 @@ export async function runPhoneAction(action: PhoneAction, dev: DevicePlugin | nu
         return outcome(await dev.setTorch({ on: action.on }), action.on ? 'Flashlight on.' : 'Flashlight off.');
       case 'volume':
         return outcome(await dev.setVolume({ change: action.change }), VOLUME_WORDS[action.change]);
+      case 'media': {
+        const cannot = `I can’t ${MEDIA_NAMES[action.action]} on this phone yet. Use the controls in the app that is playing.`;
+        try {
+          if (!dev.media) return { ok: false, say: cannot };
+          const r = await dev.media({ action: action.action });
+          return r.ok ? { ok: true, say: MEDIA_DONE[action.action] } : { ok: false, say: r.message || cannot };
+        } catch {
+          return { ok: false, say: cannot }; // an older build, or a phone (iPhone) with no media keys to press
+        }
+      }
       case 'web_search':
         return outcome(await dev.openUrl({ url: `https://www.google.com/search?q=${encodeURIComponent(action.query)}` }), `Searching for ${action.query}.`);
       case 'settings':

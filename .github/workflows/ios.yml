@@ -1,81 +1,170 @@
-# Builds the iPhone app for the simulator on a Mac runner and runs the web tests, so an iOS build can be checked without owning a Mac:
-# Actions → "iOS build" → Run workflow. It does not sign or publish anything (that needs an Apple developer account: docs/IOS.md).
-name: iOS build
+# The iPhone app (Flutter, packages/mobile), built on GitHub's Mac runners (no Mac needed here). No unsigned .ipa is made:
+# an iPhone build is either the simulator check or a properly signed .ipa.
+#
+#  simulator  Every push: builds the app for the iOS simulator, boots an iPhone, installs and launches it, and keeps a screenshot.
+#             Proves the iOS project compiles and starts. Needs nothing from Apple.
+#  signed     A signed .ipa (the iPhone's install format), exported for TestFlight / the App Store and uploaded to App Store
+#             Connect, or an ad hoc .ipa for the iPhones registered in the developer account. Runs only when the Apple secrets
+#             below are set (see packages/mobile/docs/IOS.md):
+#               APPLE_TEAM_ID                       10-character team id
+#               APP_STORE_CONNECT_KEY_ID            an App Store Connect API key (role App Manager or Admin)
+#               APP_STORE_CONNECT_ISSUER_ID
+#               APP_STORE_CONNECT_KEY_P8_BASE64     the .p8 file, base64
+#             Xcode's automatic signing uses the key to create the certificate, the app id (with push) and the profile itself.
+name: iOS
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/mobile/**'
+      - '.github/workflows/ios.yml'
   pull_request:
     paths:
-      - 'packages/web/ios/**'
-      - 'packages/web/src/**'
-      - 'packages/web/package.json'
+      - 'packages/mobile/ios/**'
       - '.github/workflows/ios.yml'
+  workflow_dispatch:
+    inputs:
+      method:
+        description: 'app-store-connect (TestFlight) or release-testing (ad hoc .ipa for registered iPhones)'
+        default: app-store-connect
+        type: choice
+        options: [app-store-connect, release-testing]
+      upload:
+        description: 'Upload to App Store Connect (TestFlight) - app-store-connect only'
+        default: true
+        type: boolean
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: 3.47.6
 
 jobs:
   simulator:
+    name: Build, install and launch on the iOS simulator
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: packages/mobile
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
+      - uses: subosito/flutter-action@v2
         with:
-          node-version: 22
-          cache: npm
-
-      - run: npm ci
-
-      - name: Web tests
-        run: npm test -w @remote-harness/web
-
-      - name: Build the web app and copy it into the iOS project
-        working-directory: packages/web
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Build for the simulator
+        run: flutter build ios --simulator --debug
+      - name: Boot an iPhone, install, launch, screenshot
         run: |
-          npx vite build
-          npx cap sync ios
-
-      - name: Build for the iOS simulator
-        working-directory: packages/web/ios/App
-        run: |
-          xcodebuild build \
-            -project App.xcodeproj \
-            -scheme App \
-            -destination 'generic/platform=iOS Simulator' \
-            -configuration Debug \
-            CODE_SIGNING_ALLOWED=NO \
-            | tee /tmp/xcodebuild.log | tail -40
-          test "${PIPESTATUS[0]}" -eq 0
-
-      - name: Boot a simulator, install the app and take a screenshot
-        working-directory: packages/web/ios/App
-        run: |
-          xcodebuild build -project App.xcodeproj -scheme App -configuration Debug \
-            -destination 'platform=iOS Simulator,name=iPhone 16' -derivedDataPath build CODE_SIGNING_ALLOWED=NO | tail -5
-          xcrun simctl boot "iPhone 16" || true
-          xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/App.app
-          xcrun simctl launch booted io.visey.remoteharness
-          sleep 12
-          xcrun simctl io booted screenshot "$RUNNER_TEMP/launch.png"
-
+          DEVICE=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for r,l in d.items() if 'iOS' in r for x in l if x['name'].startswith('iPhone')))")
+          xcrun simctl boot "$DEVICE"
+          xcrun simctl bootstatus "$DEVICE" -b
+          xcrun simctl install "$DEVICE" build/ios/iphonesimulator/Runner.app
+          xcrun simctl launch "$DEVICE" com.escanorlabs.escanor
+          sleep 25
+          xcrun simctl io "$DEVICE" screenshot "$RUNNER_TEMP/escanor-ios-launch.png"
+          # Still running 25 s later = it did not crash on start.
+          xcrun simctl spawn "$DEVICE" launchctl list | grep -q com.escanorlabs.escanor
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: ios-simulator-launch
-          path: ${{ runner.temp }}/launch.png
+          name: escanor-ios-simulator-screenshot
+          path: ${{ runner.temp }}/escanor-ios-launch.png
+          if-no-files-found: ignore
 
-      # An UNSIGNED .ipa for a real iPhone: it does not install as it is. A sideloading tool (Sideloadly, AltStore) signs it with the
-      # installer's own Apple ID, which works for 7 days on a free account. Publishing to the App Store needs a paid account (docs/IOS.md).
-      - name: Package an unsigned .ipa
-        working-directory: packages/web/ios/App
+  signed:
+    name: Signed .ipa
+    runs-on: macos-15
+    timeout-minutes: 60
+    # Never on a pull request: forks have no secrets, and a PR build must not upload to TestFlight.
+    if: github.event_name != 'pull_request'
+    defaults:
+      run:
+        working-directory: packages/mobile
+    env:
+      TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      ASC_KEY_P8_BASE64: ${{ secrets.APP_STORE_CONNECT_KEY_P8_BASE64 }}
+      METHOD: ${{ inputs.method || 'app-store-connect' }}
+      UPLOAD: ${{ (inputs.method || 'app-store-connect') == 'app-store-connect' && (inputs.upload == null || inputs.upload) }}
+    steps:
+      - name: Apple secrets present?
+        id: secrets
+        working-directory: .
         run: |
-          xcodebuild archive -project App.xcodeproj -scheme App -configuration Release \
-            -destination 'generic/platform=iOS' -archivePath build/App.xcarchive \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" | tail -5
-          rm -rf build/ipa && mkdir -p build/ipa/Payload
-          cp -R build/App.xcarchive/Products/Applications/App.app build/ipa/Payload/
-          (cd build/ipa && zip -qry "$RUNNER_TEMP/Escanor-unsigned.ipa" Payload)
-          ls -la "$RUNNER_TEMP/Escanor-unsigned.ipa"
-
-      - uses: actions/upload-artifact@v4
+          if [ -n "$TEAM_ID" ] && [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER_ID" ] && [ -n "$ASC_KEY_P8_BASE64" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No Apple signing secrets yet, so no signed .ipa. See packages/mobile/docs/IOS.md."
+          fi
+      - uses: actions/checkout@v4
+        if: steps.secrets.outputs.ok == 'true'
+      - uses: subosito/flutter-action@v2
+        if: steps.secrets.outputs.ok == 'true'
         with:
-          name: escanor-ios-unsigned-ipa
-          path: ${{ runner.temp }}/Escanor-unsigned.ipa
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Build number from the run, version from pubspec
+        if: steps.secrets.outputs.ok == 'true'
+        run: |
+          flutter pub get
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: *//; s/+.*//')
+          echo "BUILD_NAME=$VERSION" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+      - name: App Store Connect key
+        if: steps.secrets.outputs.ok == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          echo "$ASC_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8"
+          echo "ASC_KEY_PATH=$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8" >> "$GITHUB_ENV"
+      - name: Flutter build (signing comes in the archive step)
+        if: steps.secrets.outputs.ok == 'true'
+        run: flutter build ios --release --no-codesign --build-name "$BUILD_NAME" --build-number "$BUILD_NUMBER"
+      - name: Archive, signed by Xcode
+        if: steps.secrets.outputs.ok == 'true'
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -workspace ios/Runner.xcworkspace -scheme Runner -configuration Release \
+            -archivePath build/ios/Runner.xcarchive -destination 'generic/platform=iOS' \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic \
+            FLUTTER_BUILD_NAME="$BUILD_NAME" FLUTTER_BUILD_NUMBER="$BUILD_NUMBER" \
+            | tail -40
+      - name: Export the .ipa (and upload to TestFlight)
+        if: steps.secrets.outputs.ok == 'true'
+        run: |
+          set -o pipefail
+          export_ipa() {
+            sed -e "s/METHOD/$METHOD/" -e "s/TEAM_ID/$TEAM_ID/" -e "s/DESTINATION/$1/" ios/ExportOptions.plist > "$RUNNER_TEMP/ExportOptions.plist"
+            xcodebuild -exportArchive \
+              -archivePath build/ios/Runner.xcarchive -exportPath build/ios/ipa \
+              -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+              -allowProvisioningUpdates \
+              -authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+              | tail -40
+          }
+          # Always keep an .ipa to download; then, for TestFlight, also send the build to App Store Connect.
+          export_ipa export
+          if [ "$UPLOAD" = "true" ]; then export_ipa upload; fi
+          ls -la build/ios/ipa
+      - uses: actions/upload-artifact@v4
+        if: steps.secrets.outputs.ok == 'true'
+        with:
+          name: escanor-ios-${{ env.METHOD }}-${{ env.BUILD_NAME }}-${{ env.BUILD_NUMBER }}
+          path: packages/mobile/build/ios/ipa/*.ipa
+          if-no-files-found: error
+      - name: Remove the key
+        if: always()
+        working-directory: .
+        run: rm -rf "$RUNNER_TEMP/keys"

@@ -65,10 +65,10 @@ void main() {
       final p = const NotificationPrefs().merge({'team_pings': false});
       expect(p.teamPings, false);
       expect(p.emergencyAlerts, true);
-      expect(p.toJson().length, 6);
+      expect(p.toJson().length, 7);
     });
-    test('lists the five kinds in the website order', () {
-      expect(notificationKinds.map((k) => k.key), ['emergency_alerts', 'server_down', 'deployment_approvals', 'team_pings', 'checks']);
+    test('lists the six kinds in the website order', () {
+      expect(notificationKinds.map((k) => k.key), ['emergency_alerts', 'server_down', 'deployment_approvals', 'team_pings', 'checks', 'machine_chats']);
     });
   });
 
@@ -77,7 +77,7 @@ void main() {
       final keys = legalList.map((d) => d.key).toList();
       expect(keys, [
         'privacy', 'terms', 'acceptable-use', 'refunds', 'cookies', 'privacy/requests', 'delete-account', //
-        'grievances', 'support', 'security', 'accessibility', 'privacy/us',
+        'grievances', 'support', 'security', 'accessibility', 'privacy/notice', 'dpa', 'dark-patterns-audit', 'privacy/us',
       ]);
       expect(keys.contains('legal'), false);
       expect(keys.contains('about'), false); // a website page, opened on the web
@@ -88,10 +88,12 @@ void main() {
     test('names a document for its page, and falls back for an unknown one', () {
       expect(legalLabel('privacy/requests'), 'Privacy requests');
       expect(legalLabel('privacy/us'), 'US privacy');
+      expect(legalLabel('privacy/notice'), 'Consent notice');
+      expect(legalLabel('dpa'), 'Data processing');
       expect(legalLabel('about'), 'Legal'); // a website page, not stored in the app
       expect(legalLabel('nope'), 'Legal');
-      expect(policyVersion, '2026-10-07');
-      expect(policyDate, '7 October 2026');
+      expect(policyVersion, '2026-10-08');
+      expect(policyDate, '8 October 2026');
     });
   });
 }

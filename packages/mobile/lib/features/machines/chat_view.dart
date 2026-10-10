@@ -99,6 +99,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
   @override
   void dispose() {
     store.removeListener(_changed);
+    store.viewingSessionId = null;
     super.dispose();
   }
 
@@ -236,6 +237,8 @@ class _ChatViewState extends ConsumerState<ChatView> {
         break;
       }
     }
+    final partial = sessionId == null ? null : s.partialBySession[sessionId];
+    store.viewingSessionId = sessionId; // banners for this chat are not needed while it is on screen
     final unresolved = livePermissions(items, s.resolvedPermissionIds);
     final pending = unresolved.isEmpty ? null : unresolved.last;
     VmDto? vm;
@@ -304,6 +307,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
                     ),
                   ),
                 for (final item in items) MessageView(key: ValueKey(item.key), item: item, live: busy, waitingForPermission: pending != null),
+                // The reply as Claude writes it, until the finished message takes its place.
+                if (busy && pending == null && partial != null && partial.isNotEmpty)
+                  Padding(key: const ValueKey('live-reply'), padding: const EdgeInsets.only(top: 10), child: AnswerText(partial)),
                 if (busy && pending == null)
                   BusySpinner(
                     key: ValueKey('spin-$startedAt'),

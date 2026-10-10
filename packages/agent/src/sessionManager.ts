@@ -17,6 +17,7 @@ import type {
   PermissionMode,
 } from '@remote-harness/shared';
 import { AsyncMessageQueue } from './queue.js';
+import { PartialText } from './partialText.js';
 import { SessionRegistry } from './registry.js';
 import type { ClaudeProfile } from './profiles.js';
 
@@ -280,6 +281,8 @@ export class SessionManager {
       ...(choices.effort ? { effort: choices.effort } : {}),
       // Ask for summarized thinking so the web UI can show it like the CLI's transcript view.
       thinking: { type: 'adaptive', display: 'summarized' },
+      // Stream the reply as it is written, so the phone shows it live instead of all at once at the end (see PartialText).
+      includePartialMessages: true,
       // Session config is built from the *current* managed set, so a chat opened after the hub
       // changed it gets the change with no restart.
       mcpServers: this.sdkMcpConfig(),
@@ -358,8 +361,15 @@ export class SessionManager {
       setSessionId: (id: string) => void;
     },
   ): Promise<void> {
+    const partial = new PartialText((text) =>
+      this.send({ type: 'sdk_partial', sessionId: ctx.getSessionId() || ctx.tempId || ctx.liveKey, tempId: ctx.tempId, text }),
+    );
     try {
       for await (const message of q) {
+        if ((message as { type?: string }).type === 'stream_event') {
+          partial.feed(message as Parameters<PartialText['feed']>[0]);
+          continue;
+        }
         const msg = message as {
           type?: string;
           subtype?: string;
@@ -390,6 +400,7 @@ export class SessionManager {
             this.send({ type: 'session_created', tempId: ctx.tempId, sessionId, cwd: ctx.cwd, title, accountId: ctx.accountId });
           }
         }
+        if (msg.type === 'assistant' || msg.type === 'result') partial.reset();
         this.send({
           type: 'sdk_message',
           sessionId: ctx.getSessionId() || ctx.tempId || ctx.liveKey,
@@ -406,6 +417,7 @@ export class SessionManager {
         message: err instanceof Error ? err.message : String(err),
       });
     } finally {
+      partial.reset();
       const sessionId = ctx.getSessionId();
       // Cards still waiting for an answer belong to a session that no longer exists: deny them and drop the entries.
       for (const key of new Set([sessionId, ctx.tempId, ctx.liveKey])) if (key) this.permissions.dropSession(key);
