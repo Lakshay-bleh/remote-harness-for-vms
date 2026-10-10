@@ -275,10 +275,31 @@ export function openDb(dataDir: string, opts: DbOptions = {}) {
       listSessionsByVm(vmId: string): SessionDto[] {
         return db
           .prepare(
-            `SELECT id, vm_id as vmId, cwd, title, created_at as createdAt, last_message_at as lastMessageAt, status, account_id as accountId
+            // tempId: the id the chat started under, so an app that missed session_created can still tell which chat it became.
+            `SELECT id, vm_id as vmId, cwd, title, created_at as createdAt, last_message_at as lastMessageAt, status, account_id as accountId,
+                    (SELECT a.old_id FROM session_aliases a WHERE a.tenant_id = sessions.tenant_id AND a.new_id = sessions.id LIMIT 1) as tempId
              FROM sessions WHERE tenant_id = ? AND vm_id = ? ORDER BY last_message_at DESC`,
           )
-          .all(t, vmId) as never;
+          .all(t, vmId)
+          .map((r) => {
+            const row = r as SessionDto & { tempId: string | null };
+            if (row.tempId == null) delete (row as { tempId?: unknown }).tempId;
+            return row;
+          }) as never;
+      },
+
+      // Scoped to the VM, like every session change.
+      renameSession(id: string, vmId: string, title: string): boolean {
+        return db.prepare('UPDATE sessions SET title = ? WHERE tenant_id = ? AND id = ? AND vm_id = ?').run(title, t, id, vmId).changes > 0;
+      },
+
+      // The chat and everything said in it. (The machine keeps its own transcript; that is the machine's to delete.)
+      deleteSession(id: string, vmId: string): boolean {
+        const gone = db.prepare('DELETE FROM sessions WHERE tenant_id = ? AND id = ? AND vm_id = ?').run(t, id, vmId).changes > 0;
+        if (!gone) return false;
+        db.prepare('DELETE FROM messages WHERE tenant_id = ? AND session_id = ? AND vm_id = ?').run(t, id, vmId);
+        db.prepare('DELETE FROM session_aliases WHERE tenant_id = ? AND (new_id = ? OR old_id = ?)').run(t, id, id);
+        return true;
       },
 
       insertMessage(m: { sessionId: string; vmId: string; message: unknown }): MessageDto {
@@ -310,9 +331,10 @@ export function openDb(dataDir: string, opts: DbOptions = {}) {
 
       // The most recent `limit` messages, oldest first. Scoped to the VM when given, so a session id that belongs to
       // another machine yields nothing.
-      listMessages(sessionId: string, limit = DEFAULT_MESSAGE_LIMIT, vmId?: string): MessageDto[] {
-        const scope = vmId ? ' AND vm_id = ?' : '';
-        const params: (string | number)[] = [t, sessionId, ...(vmId ? [vmId] : []), limit];
+      // With `after`, only the messages newer than that id (what an app that already has the chat asks for).
+      listMessages(sessionId: string, limit = DEFAULT_MESSAGE_LIMIT, vmId?: string, after?: number): MessageDto[] {
+        const scope = (vmId ? ' AND vm_id = ?' : '') + (after !== undefined ? ' AND id > ?' : '');
+        const params: (string | number)[] = [t, sessionId, ...(vmId ? [vmId] : []), ...(after !== undefined ? [after] : []), limit];
         const rows = db
           .prepare(
             `SELECT id, session_id as sessionId, vm_id as vmId, payload, created_at as createdAt FROM (

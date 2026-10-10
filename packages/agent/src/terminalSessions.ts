@@ -124,7 +124,8 @@ export class TerminalSessionSync {
     // Any sdk_message marks the session active on the hub; it is not running here.
     if (toSend.length > 0 || !entry) this.o.send({ type: 'session_ended', sessionId: id });
 
-    this.o.registry.upsert({ ...next, syncedUuid: msgs.at(-1)?.uuid ?? next.syncedUuid, syncedMtime: info.lastModified });
+    // Re-read: the person may have changed this chat's mode/model/effort while the messages were going out.
+    this.o.registry.upsert({ ...next, ...this.o.registry.get(id), syncedUuid: msgs.at(-1)?.uuid ?? next.syncedUuid, syncedMtime: info.lastModified });
   }
 
   private readAll(sessionId: string, dir: string): Promise<SessionMessage[]> {

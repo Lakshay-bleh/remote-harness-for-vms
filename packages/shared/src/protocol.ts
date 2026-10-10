@@ -112,6 +112,11 @@ export type HubUserInput = {
   accountId?: string; // used only when starting a brand-new session
   text: string;
   images?: ImageAttachment[];
+  // What the chat runs with, sent with every message so a chat that has to be started or resumed for it keeps what was
+  // chosen (a set_* sent while the chat was not running used to be lost). Absent: what the agent last knew for it.
+  permissionMode?: PermissionMode;
+  model?: string; // '' = the default model
+  effort?: EffortLevel | null; // null = the default effort
 };
 
 export type HubInterrupt = {
@@ -268,6 +273,7 @@ export type SessionDto = {
   lastMessageAt: string;
   status: 'active' | 'idle' | 'ended';
   accountId: string;
+  tempId?: string; // the temporary id the chat was started under, when the hub knows it
 };
 
 export type MessageDto = {

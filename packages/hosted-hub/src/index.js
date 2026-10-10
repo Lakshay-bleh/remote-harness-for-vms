@@ -4,6 +4,7 @@ var __name = (target, value) => __defProp(target, "name", { value, configurable:
 // src/hub.ts
 import { DurableObject } from "cloudflare:workers";
 import { searchSessions } from "./session-search.js";
+import { SESSIONS_SCHEMA, deleteSession, listMessages as listSessionMessages, listSessions, messageQuery, recordAlias, renameSession, resolveSession, runChoices } from "./sessions.js";
 
 // src/protocol.ts
 var MIN_MCP_AGENT_VERSION = "0.3.0";
@@ -130,7 +131,7 @@ var PROJECTS_REQUEST_TIMEOUT_MS = 5e3;
 var CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, content-type",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+  "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS"
 };
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...CORS } });
@@ -203,7 +204,10 @@ var Hub = class extends DurableObject {
         reported_at TEXT NOT NULL
       );
     `);
+    this.sql.exec(SESSIONS_SCHEMA);
   }
+  /** `exec(sql, ...params) => rows`, for the SQL in sessions.js and session-search.js. */
+  rows = /* @__PURE__ */ __name((query, ...params) => this.sql.exec(query, ...params).toArray(), "rows");
   now = /* @__PURE__ */ __name(() => (/* @__PURE__ */ new Date()).toISOString(), "now");
   upsertVm(name) {
     const existing = this.sql.exec("SELECT id FROM vms WHERE name = ?", name).toArray()[0];
@@ -255,16 +259,6 @@ var Hub = class extends DurableObject {
       JSON.stringify(m.message),
       this.now()
     );
-  }
-  listMessages(sessionId) {
-    const rows = this.sql.exec("SELECT id, session_id, vm_id, payload, created_at FROM messages WHERE session_id = ? ORDER BY id ASC", sessionId).toArray();
-    return rows.map((r) => ({
-      id: r.id,
-      sessionId: r.session_id,
-      vmId: r.vm_id,
-      createdAt: r.created_at,
-      message: JSON.parse(r.payload)
-    }));
   }
   listMcpServers() {
     const rows = this.sql.exec("SELECT config_json FROM mcp_servers ORDER BY name").toArray();
@@ -487,6 +481,7 @@ var Hub = class extends DurableObject {
         break;
       case "session_created":
         this.sql.exec("UPDATE messages SET session_id = ? WHERE session_id = ?", msg.sessionId, msg.tempId);
+        recordAlias(this.rows, msg.tempId, msg.sessionId);
         this.upsertSession({ id: msg.sessionId, vmId, cwd: msg.cwd, title: msg.title, status: "active", accountId: msg.accountId });
         this.broadcast({
           type: "session_created",
@@ -563,7 +558,7 @@ var Hub = class extends DurableObject {
   async handleApi(request, url) {
     const path = url.pathname.replace(/^\/api/, "");
     const method = request.method;
-    const body = method === "POST" || method === "PUT" ? await request.json().catch(() => ({})) : {};
+    const body = method === "POST" || method === "PUT" || method === "PATCH" ? await request.json().catch(() => ({})) : {};
     if (method === "GET" && path === "/mcp-servers") {
       const overview = {
         servers: this.listMcpServers().map(toMcpServerDto),
@@ -615,22 +610,7 @@ var Hub = class extends DurableObject {
     }
     let m;
     if (method === "GET" && (m = path.match(/^\/vms\/([^/]+)\/sessions$/))) {
-      const rows = this.sql.exec(
-        `SELECT id, vm_id, cwd, title, created_at, last_message_at, status, account_id
-           FROM sessions WHERE vm_id = ? ORDER BY last_message_at DESC`,
-        m[1]
-      ).toArray();
-      const sessions = rows.map((r) => ({
-        id: r.id,
-        vmId: r.vm_id,
-        cwd: r.cwd,
-        title: r.title,
-        createdAt: r.created_at,
-        lastMessageAt: r.last_message_at,
-        status: r.status,
-        accountId: r.account_id
-      }));
-      return json(sessions);
+      return json(listSessions(this.rows, m[1]));
     }
     if (method === "GET" && (m = path.match(/^\/vms\/([^/]+)\/projects$/))) {
       return json(await this.requestProjects(m[1]));
@@ -640,7 +620,17 @@ var Hub = class extends DurableObject {
       return json(searchSessions(exec, m[1], url.searchParams.get("q"), url.searchParams.get("limit")));
     }
     if (method === "GET" && (m = path.match(/^\/vms\/([^/]+)\/sessions\/([^/]+)\/messages$/))) {
-      return json(this.listMessages(m[2]));
+      return json(listSessionMessages(this.rows, resolveSession(this.rows, m[2]), messageQuery(url.searchParams)));
+    }
+    if (method === "PATCH" && (m = path.match(/^\/vms\/([^/]+)\/sessions\/([^/]+)$/))) {
+      const title = typeof body.title === "string" ? body.title.trim() : "";
+      if (!title || title.length > 200) return json({ error: "title must be 1 to 200 characters" }, 400);
+      const ok = renameSession(this.rows, m[1], resolveSession(this.rows, m[2]), title);
+      return ok ? json({ ok: true }) : json({ error: "No such chat" }, 404);
+    }
+    if (method === "DELETE" && (m = path.match(/^\/vms\/([^/]+)\/sessions\/([^/]+)$/))) {
+      const ok = deleteSession(this.rows, m[1], resolveSession(this.rows, m[2]));
+      return ok ? json({ ok: true }) : json({ error: "No such chat" }, 404);
     }
     if (method === "POST" && (m = path.match(/^\/vms\/([^/]+)\/sessions$/))) {
       const vmId = m[1];
@@ -650,12 +640,13 @@ var Hub = class extends DurableObject {
       const localMessage = { type: "user", local: true, message: { role: "user", content: contentBlocks(text ?? "", images) } };
       this.insertMessage({ sessionId: tempId, vmId, message: localMessage });
       this.broadcast({ type: "sdk_message", vmId, sessionId: tempId, message: localMessage, createdAt: this.now() });
-      const delivered = this.sendToVm(vmId, { type: "user_input", sessionId: tempId, tempId, cwd, accountId, text: text ?? "", images });
+      const delivered = this.sendToVm(vmId, { type: "user_input", sessionId: tempId, tempId, cwd, accountId, text: text ?? "", images, ...runChoices(body) });
       if (!delivered) return json({ error: "VM not connected" }, 503);
       return json({ tempId }, 202);
     }
     if ((m = path.match(/^\/vms\/([^/]+)\/sessions\/([^/]+)\/([a-z-]+)$/)) && method === "POST") {
-      const [, vmId, sessionId, action] = m;
+      const [, vmId, rawSessionId, action] = m;
+      const sessionId = resolveSession(this.rows, rawSessionId);
       const b = body;
       switch (action) {
         case "messages": {
@@ -664,7 +655,7 @@ var Hub = class extends DurableObject {
           this.insertMessage({ sessionId, vmId, message: localMessage });
           this.touchSession(sessionId, "active");
           this.broadcast({ type: "sdk_message", vmId, sessionId, message: localMessage, createdAt: this.now() });
-          const delivered = this.sendToVm(vmId, { type: "user_input", sessionId, text: b.text ?? "", images: b.images });
+          const delivered = this.sendToVm(vmId, { type: "user_input", sessionId, text: b.text ?? "", images: b.images, ...runChoices(b) });
           return delivered ? json({ ok: true }, 202) : json({ error: "VM not connected" }, 503);
         }
         case "interrupt":

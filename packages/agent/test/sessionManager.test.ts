@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, realpathSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AgentToHubMessage, ManagedMcpServer } from '@remote-harness/shared';
@@ -154,4 +154,97 @@ describe('SessionManager', () => {
       release();
     }
   });
+
+  describe('a chat keeps its mode, model and effort', () => {
+    // A query that says who it is (init), records what was asked of it, and stays open until released.
+    function recordingQuery(sessionId = 'real-1') {
+      const calls: any[] = [];
+      const controls: string[] = [];
+      let release!: () => void;
+      const held = new Promise<void>((r) => { release = r; });
+      const query = ((args: any) => {
+        calls.push(args.options);
+        return {
+          [Symbol.asyncIterator]: async function* () {
+            yield { type: 'system', subtype: 'init', session_id: args.options.resume ?? sessionId };
+            await held;
+          },
+          interrupt: async () => {},
+          setPermissionMode: async (m: string) => { controls.push(`mode:${m}`); },
+          setModel: async (m?: string) => { controls.push(`model:${m}`); },
+          applyFlagSettings: async (f: unknown) => { controls.push(`flags:${JSON.stringify(f)}`); },
+          setMcpServers: async () => {},
+          mcpServerStatus: async () => [],
+          close: () => {},
+        };
+      }) as never;
+      return { calls, controls, query, release: () => release() };
+    }
+    const tick = () => new Promise((r) => setTimeout(r, 20));
+    const managerWith = (dir: string, query: never) => new SessionManager(dir, join(dir, 'data'), [{ id: 'default', label: 'default' }], () => {}, { query } as never);
+
+    it('a new chat starts with what came with its first message, and remembers it once named', async () => {
+      const dir = realpathSync(mkdtempSync(join(tmpdir(), 'sm-choices-')));
+      const q = recordingQuery();
+      const m = managerWith(dir, q.query);
+      m.handleUserInput({ type: 'user_input', sessionId: 't1', tempId: 't1', text: 'hi', permissionMode: 'auto', model: 'claude-opus-4-8', effort: 'high' });
+      await tick();
+      assert.equal(q.calls[0].permissionMode, 'auto');
+      assert.equal(q.calls[0].effort, 'high');
+      assert.deepEqual(q.controls, ['model:claude-opus-4-8']);
+      const saved = JSON.parse(readFileSync(join(dir, 'data', 'sessions.json'), 'utf-8'))[0];
+      assert.deepEqual([saved.sessionId, saved.permissionMode, saved.model, saved.effort], ['real-1', 'auto', 'claude-opus-4-8', 'high']);
+      q.release();
+    });
+
+    it('a change made while the chat is not running is kept, and the chat resumes with it', async () => {
+      const dir = realpathSync(mkdtempSync(join(tmpdir(), 'sm-choices-')));
+      mkdirSync(join(dir, 'data'), { recursive: true });
+      writeFileSync(join(dir, 'data', 'sessions.json'), JSON.stringify([{ sessionId: 's1', cwd: dir, title: 'x', createdAt: 'now', accountId: 'default' }]));
+      const q = recordingQuery();
+      const m = managerWith(dir, q.query);
+      // Not running: these used to be dropped, and the next message resumed the chat with the defaults.
+      m.setPermissionMode('s1', 'acceptEdits');
+      m.setEffort('s1', 'max');
+      m.setModel('s1', 'claude-sonnet-5');
+      m.handleUserInput({ type: 'user_input', sessionId: 's1', text: 'carry on' });
+      await tick();
+      assert.equal(q.calls[0].resume, 's1');
+      assert.equal(q.calls[0].permissionMode, 'acceptEdits');
+      assert.equal(q.calls[0].effort, 'max');
+      assert.deepEqual(q.controls, ['model:claude-sonnet-5']);
+      q.release();
+    });
+
+    it('what comes with a message wins over what was kept; bypass is switched to once running', async () => {
+      const dir = realpathSync(mkdtempSync(join(tmpdir(), 'sm-choices-')));
+      mkdirSync(join(dir, 'data'), { recursive: true });
+      writeFileSync(join(dir, 'data', 'sessions.json'), JSON.stringify([{ sessionId: 's1', cwd: dir, title: 'x', createdAt: 'now', accountId: 'default', permissionMode: 'plan', model: 'claude-x', effort: 'low' }]));
+      const q = recordingQuery();
+      const m = managerWith(dir, q.query);
+      m.handleUserInput({ type: 'user_input', sessionId: 's1', text: 'go', permissionMode: 'bypassPermissions', model: '', effort: null });
+      await tick();
+      assert.equal(q.calls[0].permissionMode, 'default', 'bypass needs the opt-in, so it is not a start option');
+      assert.equal('effort' in q.calls[0], false);
+      assert.deepEqual(q.controls, ['mode:bypassPermissions']);
+      const saved = JSON.parse(readFileSync(join(dir, 'data', 'sessions.json'), 'utf-8'))[0];
+      assert.deepEqual([saved.permissionMode, saved.model, saved.effort], ['bypassPermissions', '', null]);
+      q.release();
+    });
+
+    it('with nothing sent and nothing kept, a resumed chat runs as before (default mode)', async () => {
+      const dir = realpathSync(mkdtempSync(join(tmpdir(), 'sm-choices-')));
+      mkdirSync(join(dir, 'data'), { recursive: true });
+      writeFileSync(join(dir, 'data', 'sessions.json'), JSON.stringify([{ sessionId: 's1', cwd: dir, title: 'x', createdAt: 'now', accountId: 'default' }]));
+      const q = recordingQuery();
+      const m = managerWith(dir, q.query);
+      m.handleUserInput({ type: 'user_input', sessionId: 's1', text: 'go' });
+      await tick();
+      assert.equal(q.calls[0].permissionMode, 'default');
+      assert.equal('effort' in q.calls[0], false);
+      assert.deepEqual(q.controls, []);
+      q.release();
+    });
+  });
 });
+

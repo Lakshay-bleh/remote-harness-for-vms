@@ -229,3 +229,18 @@ export function redactSecrets(value: unknown, depth = 0, seen: WeakSet<object> =
   }
   return out;
 }
+
+export type RunChoices = { permissionMode?: PermissionMode; model?: string; effort?: EffortLevel | null };
+
+/** The mode, model and effort that may come with a message. Anything unrecognised is left out (an older or newer app
+ * must still be able to send its message), so this never fails. */
+export function parseRunChoices(body: unknown): RunChoices {
+  const out: RunChoices = {};
+  if (typeof body !== 'object' || body === null) return out;
+  const { permissionMode, model, effort } = body as Record<string, unknown>;
+  if (isPermissionMode(permissionMode)) out.permissionMode = permissionMode;
+  if (typeof model === 'string' && model.length <= 200) out.model = model;
+  if (effort === null || effort === '') out.effort = null;
+  else if (isEffortLevel(effort)) out.effort = effort;
+  return out;
+}

@@ -266,9 +266,18 @@ export class SessionManager {
 
     let resolvedSessionId = isResume ? input.sessionId : '';
     const queue = new AsyncMessageQueue<SDKUserMessage>();
+    // What this chat runs with: what came with the message, else what was last chosen for it here, else the defaults.
+    const choices = {
+      permissionMode: input.permissionMode ?? existingEntry?.permissionMode,
+      model: input.model !== undefined ? input.model : existingEntry?.model,
+      effort: input.effort !== undefined ? input.effort : existingEntry?.effort,
+    };
+    // Bypass needs the SDK's explicit opt-in at start, so it is switched to once running, as a live change always was.
+    const startMode: PermissionMode = choices.permissionMode && choices.permissionMode !== 'bypassPermissions' ? choices.permissionMode : 'default';
     const options: Options = {
       cwd,
-      permissionMode: 'default',
+      permissionMode: startMode,
+      ...(choices.effort ? { effort: choices.effort } : {}),
       // Ask for summarized thinking so the web UI can show it like the CLI's transcript view.
       thinking: { type: 'adaptive', display: 'summarized' },
       // Session config is built from the *current* managed set, so a chat opened after the hub
@@ -317,6 +326,12 @@ export class SessionManager {
       appliedMcp: JSON.stringify(options.mcpServers ?? {}),
     };
     this.live.set(liveKey, session);
+    // A model id this Claude Code does not know must not stop the chat from starting: it is switched to once running, and a
+    // refusal shows on the chat (see control()).
+    if (choices.model) this.control(liveKey, 'Switching the model', (live) => live.setModel(choices.model || undefined));
+    if (choices.permissionMode === 'bypassPermissions') this.control(liveKey, 'Changing the permission mode', (live) => live.setPermissionMode('bypassPermissions'));
+    if (isResume) this.remember(input.sessionId, choices);
+    else this.pendingChoices.set(liveKey, choices);
 
     void this.pump(q, {
       session,
@@ -362,7 +377,8 @@ export class SessionManager {
           const sessionId = msg.session_id;
           ctx.setSessionId(sessionId);
           const title = titleFrom(ctx.seedTitle);
-          this.registry.upsert({ sessionId, cwd: ctx.cwd, title, createdAt: new Date().toISOString(), accountId: ctx.accountId });
+          this.registry.upsert({ sessionId, cwd: ctx.cwd, title, createdAt: new Date().toISOString(), accountId: ctx.accountId, ...definedOnly(this.pendingChoices.get(ctx.liveKey)) });
+          this.pendingChoices.delete(ctx.liveKey);
           if (ctx.liveKey !== sessionId) {
             const entry = this.live.get(ctx.liveKey);
             if (entry) {
@@ -394,6 +410,7 @@ export class SessionManager {
       // Cards still waiting for an answer belong to a session that no longer exists: deny them and drop the entries.
       for (const key of new Set([sessionId, ctx.tempId, ctx.liveKey])) if (key) this.permissions.dropSession(key);
       this.live.delete(ctx.liveKey);
+      this.pendingChoices.delete(ctx.liveKey);
       if (sessionId) this.live.delete(sessionId);
       this.mcpSessionStatus.delete(ctx.session);
       this.reportMcpStatus();
@@ -410,16 +427,33 @@ export class SessionManager {
     this.control(sessionId, 'Stop', (live) => live.interrupt());
   }
 
+  // A change is remembered for the chat even when it is not running, so the next message resumes it with that change
+  // (it used to be dropped, and a resumed chat ran with the defaults whatever the phone showed).
   setPermissionMode(sessionId: string, mode: PermissionMode): void {
+    this.remember(sessionId, { permissionMode: mode });
     this.control(sessionId, 'Changing the permission mode', (live) => live.setPermissionMode(mode));
   }
 
   setModel(sessionId: string, model: string | undefined): void {
+    this.remember(sessionId, { model: model ?? '' });
     this.control(sessionId, 'Switching the model', (live) => live.setModel(model));
   }
 
   setEffort(sessionId: string, effort: EffortLevel | null): void {
+    this.remember(sessionId, { effort });
     this.control(sessionId, 'Changing the effort', (live) => live.setEffort(effort));
+  }
+
+  /** Mode, model and effort a new chat started with, until Claude names it (then they go into the registry). */
+  private pendingChoices = new Map<string, SessionChoices>();
+
+  private remember(sessionId: string, choices: SessionChoices): void {
+    const pending = this.pendingChoices.get(sessionId);
+    if (pending) {
+      this.pendingChoices.set(sessionId, { ...pending, ...definedOnly(choices) });
+      return;
+    }
+    this.registry.update(sessionId, definedOnly(choices));
   }
 
   // The SDK rejects control requests it can't honour (e.g. a model id its catalog doesn't know). Left unhandled, that
@@ -431,4 +465,15 @@ export class SessionManager {
       this.send({ type: 'error', sessionId, message: `${what} failed: ${err instanceof Error ? err.message : String(err)}` });
     });
   }
+}
+
+type SessionChoices = { permissionMode?: PermissionMode; model?: string; effort?: EffortLevel | null };
+
+function definedOnly(c: SessionChoices | undefined): SessionChoices {
+  const out: SessionChoices = {};
+  if (!c) return out;
+  if (c.permissionMode !== undefined) out.permissionMode = c.permissionMode;
+  if (c.model !== undefined) out.model = c.model;
+  if (c.effort !== undefined) out.effort = c.effort;
+  return out;
 }

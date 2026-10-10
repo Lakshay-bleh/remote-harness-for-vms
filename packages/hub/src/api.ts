@@ -9,6 +9,7 @@ import {
   isPermissionBehavior,
   isPermissionMode,
   parseNewSession,
+  parseRunChoices,
   parseUserInput,
   safeEqual,
 } from '@remote-harness/shared/validate';
@@ -43,6 +44,12 @@ const DEFAULT_SEARCH_LIMIT = 20;
 const MAX_SEARCH_LIMIT = 100;
 const MIN_TOKEN_TTL_SECONDS = 60;
 const MAX_TOKEN_TTL_SECONDS = 2 * 365 * 24 * 60 * 60;
+
+/** `?after=<message id>`: a whole number, else nothing (the newest messages). */
+function afterCursor(v: unknown): number | undefined {
+  const n = typeof v === 'string' && /^\d{1,15}$/.test(v) ? Number(v) : NaN;
+  return Number.isSafeInteger(n) ? n : undefined;
+}
 
 export function createApiRouter(db: Db, agentServer: AgentServer, browserServer: BrowserServer, appPassword: string, opts: ApiOptions = {}) {
   const router = Router();
@@ -273,7 +280,23 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
 
   router.get('/vms/:vmId/sessions/:sessionId/messages', (req, res) => {
     const limit = clampLimit(req.query.limit, DEFAULT_MESSAGE_LIMIT, MAX_MESSAGE_LIMIT);
-    res.json(T(res).listMessages(T(res).resolveSession(req.params.sessionId), limit, req.params.vmId));
+    const after = afterCursor(req.query.after);
+    res.json(T(res).listMessages(T(res).resolveSession(req.params.sessionId), limit, req.params.vmId, after));
+  });
+
+  router.patch('/vms/:vmId/sessions/:sessionId', (req, res) => {
+    const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
+    if (!title || title.length > 200) {
+      res.status(400).json({ error: 'title must be 1 to 200 characters' });
+      return;
+    }
+    const ok = T(res).renameSession(T(res).resolveSession(req.params.sessionId), req.params.vmId, title);
+    res.status(ok ? 200 : 404).json(ok ? { ok: true } : { error: 'No such chat' });
+  });
+
+  router.delete('/vms/:vmId/sessions/:sessionId', (req, res) => {
+    const ok = T(res).deleteSession(T(res).resolveSession(req.params.sessionId), req.params.vmId);
+    res.status(ok ? 200 : 404).json(ok ? { ok: true } : { error: 'No such chat' });
   });
 
   const userMessage = (text: string, images: ImageAttachment[] | undefined) => ({
@@ -304,7 +327,7 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
     T(res).insertMessage({ sessionId: tempId, vmId, message: localMessage });
     browserServer.broadcast(tenantOf(res), { type: 'sdk_message', vmId, sessionId: tempId, message: localMessage, createdAt: new Date().toISOString() });
 
-    const delivered = agentServer.sendToVm(vmId, { type: 'user_input', sessionId: tempId, tempId, cwd, accountId, text, images });
+    const delivered = agentServer.sendToVm(vmId, { type: 'user_input', sessionId: tempId, tempId, cwd, accountId, text, images, ...parseRunChoices(req.body) });
     if (!delivered) {
       res.status(503).json({ error: 'VM not connected' });
       return;
@@ -327,7 +350,7 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
     T(res).touchSession(sessionId, 'active', vmId);
     browserServer.broadcast(tenantOf(res), { type: 'sdk_message', vmId, sessionId, message: localMessage, createdAt: new Date().toISOString() });
 
-    const delivered = agentServer.sendToVm(vmId, { type: 'user_input', sessionId, text, images });
+    const delivered = agentServer.sendToVm(vmId, { type: 'user_input', sessionId, text, images, ...parseRunChoices(req.body) });
     if (!delivered) {
       res.status(503).json({ error: 'VM not connected' });
       return;
