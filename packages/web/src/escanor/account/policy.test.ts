@@ -17,3 +17,8 @@ test('the rules reminder comes back after 90 days', () => {
   assert.equal(needsRulesNotice([s('rules_notice', 'x', '2026-09-01T00:00:00Z')], now), false);
   assert.equal(needsRulesNotice([s('rules_notice', 'x', '2026-06-01T00:00:00Z')], now), true);
 });
+
+test('a newer version accepted elsewhere (website, desktop) counts: an app one version behind must not ask again', () => {
+  assert.equal(needsAcceptance([s('terms', '2026-10-08'), s('privacy_notice', '2026-10-08')], '2026-10-07'), false);
+  assert.equal(needsAcceptance([s('terms', '2026-10-08'), s('privacy_notice', '2026-10-06')], '2026-10-07'), true);
+});

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:escanor/features/settings/info_pages.dart';
 import 'package:escanor/features/settings/legal_content.dart';
@@ -129,5 +130,11 @@ void main() {
     await t.pumpWidget(host(const Scaffold(body: LegalBody(docKey: 'about'))));
     await settle(t);
     expect(find.text('This document is not available.'), findsOneWidget);
+  });
+
+  test('the policy version is the website\'s (the copy in packages/web): one version behind re-asks "I am 18 or older…" forever', () {
+    final ts = File('../web/src/legal/content.ts').readAsStringSync();
+    expect(RegExp(r"POLICY_VERSION = '([^']+)'").firstMatch(ts)?.group(1), policyVersion,
+        reason: 'regenerate lib/features/settings/legal_content.dart with tool/sync_legal.mts');
   });
 }
