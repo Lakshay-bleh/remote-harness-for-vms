@@ -396,7 +396,7 @@ export const legalDocuments: Record<string, LegalDocument> = {
     description: 'Our yearly check that Escanor does not use any of the 13 dark patterns listed by the Central Consumer Protection Authority, and our declaration of compliance.',
     sections: [
       { heading: 'Declaration', paragraphs: [
-        'Lakshay Jain, trading as Escanor Labs, has audited Escanor\'s website, web app, desktop app, Android app and iPhone app against the Guidelines for Prevention and Regulation of Dark Patterns, 2023 issued by the Central Consumer Protection Authority. We declare that, as of 8 October 2026, Escanor does not use any of the dark patterns listed in those guidelines. Signed by Lakshay Jain, sole proprietor of Escanor Labs and its Grievance Officer. Next audit due by 8 October 2027.',
+        'Lakshay Jain, trading as Escanor Labs, has audited Escanor\'s website, web app, desktop app, Android app and iPhone app against the Guidelines for Prevention and Regulation of Dark Patterns, 2023 issued by the Central Consumer Protection Authority. We declare that, as of 10 October 2026, Escanor does not use any of the dark patterns listed in those guidelines. Signed by Lakshay Jain, sole proprietor of Escanor Labs and its Grievance Officer. Next audit due by 10 October 2027.',
       ] },
       { heading: 'What we checked', items: [
         '**False urgency:** no countdown timers, "only N left" claims or limited-time pressure anywhere.',

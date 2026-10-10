@@ -22,6 +22,19 @@ void main() {
     expect(needsAcceptance([s('terms', '2026-10-08'), s('privacy_notice', '2026-10-06')], '2026-10-07'), true);
   });
 
+  test('the highest accepted version counts, so an older app recording its version afterwards does not make this one ask', () {
+    // The desktop (2026-10-08) granted after this app (2026-10-10): the latest event is 10-08, the accepted one 10-10.
+    ConsentState after(String p) =>
+        ConsentState(purpose: p, granted: true, noticeVersion: '2026-10-08', recordedAt: '', acceptedVersion: '2026-10-10');
+    expect(needsAcceptance([after('terms'), after('privacy_notice')], '2026-10-10'), false);
+    expect(needsAcceptance([after('terms'), after('privacy_notice')], '2026-10-11'), true);
+    // An older API sends no accepted_version: notice_version is used.
+    expect(needsAcceptance([s('terms', '2026-10-08'), s('privacy_notice', '2026-10-08')], '2026-10-10'), true);
+    final parsed = ConsentState.fromJson({'purpose': 'terms', 'granted': true, 'notice_version': '2026-10-08', 'accepted_version': '2026-10-10', 'recorded_at': ''});
+    expect(parsed.acceptedVersion, '2026-10-10');
+    expect(ConsentState.fromJson({'purpose': 'terms', 'granted': true, 'notice_version': 'x', 'accepted_version': null}).acceptedVersion, isNull);
+  });
+
   test('the rules reminder comes back after 90 days', () {
     final now = DateTime.parse('2026-10-07T00:00:00Z');
     expect(needsRulesNotice([], now), true);
