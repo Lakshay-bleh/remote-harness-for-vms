@@ -187,6 +187,9 @@ export function openDb(dataDir: string, opts: DbOptions = {}) {
   // What chat search reads: the user's and the assistant's words, without tool output. NULL = not extracted yet (rows
   // from before search existed); they are filled in the first time their VM is searched.
   if (!hasColumn(db, 'messages', 'search_text')) db.exec('ALTER TABLE messages ADD COLUMN search_text TEXT');
+  // An agent sends again what a dropped connection may have lost; this is how the copies it already delivered are known.
+  if (!hasColumn(db, 'messages', 'uid')) db.exec('ALTER TABLE messages ADD COLUMN uid TEXT');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_uid ON messages(tenant_id, uid) WHERE uid IS NOT NULL');
   if (key) {
     for (const row of db.prepare('SELECT tenant_id, name, config_json FROM mcp_servers').all() as { tenant_id: string; name: string; config_json: string }[]) {
       if (!isSealed(row.config_json)) db.prepare('UPDATE mcp_servers SET config_json = ? WHERE tenant_id = ? AND name = ?').run(seal(key, row.config_json), row.tenant_id, row.name);
@@ -279,6 +282,19 @@ export function openDb(dataDir: string, opts: DbOptions = {}) {
              FROM sessions WHERE tenant_id = ? AND vm_id = ? ORDER BY last_message_at DESC`,
           )
           .all(t, vmId) as never;
+      },
+
+      /** Store a message from an agent once: false when one with the same uid is already stored (a resent copy). */
+      insertAgentMessage(m: { sessionId: string; vmId: string; message: unknown; uid?: string }): boolean {
+        if (!m.uid) {
+          this.insertMessage(m);
+          return true;
+        }
+        const stored = redactSecrets(m.message);
+        const result = db
+          .prepare('INSERT OR IGNORE INTO messages (tenant_id, session_id, vm_id, payload, created_at, search_text, uid) VALUES (?, ?, ?, ?, ?, ?, ?)')
+          .run(t, m.sessionId, m.vmId, JSON.stringify(stored), new Date().toISOString(), readableText(stored), m.uid);
+        return Number(result.changes) > 0;
       },
 
       insertMessage(m: { sessionId: string; vmId: string; message: unknown }): MessageDto {

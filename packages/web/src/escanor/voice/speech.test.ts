@@ -113,3 +113,61 @@ describe('webSpeechPlugin', () => {
     assert.equal(await p, 'open youtube');
   });
 });
+
+describe('chunkForSpeech', () => {
+  it('keeps a short reply in one piece', async () => {
+    const { chunkForSpeech } = await import('./speech');
+    assert.deepEqual(chunkForSpeech('All good.'), ['All good.']);
+    assert.deepEqual(chunkForSpeech('   '), []);
+  });
+
+  it('never drops anything: a long reply is spoken whole, a sentence or two at a time', async () => {
+    const { chunkForSpeech } = await import('./speech');
+    const sentences = Array.from({ length: 40 }, (_, i) => `Service number ${i + 1} is healthy and answered in ${i + 10} milliseconds.`);
+    const text = sentences.join(' ');
+    assert.ok(text.length > 1500);
+    const chunks = chunkForSpeech(text, 200);
+    assert.ok(chunks.length > 5);
+    assert.ok(chunks.every((c) => c.length <= 200), 'every piece fits the engine');
+    assert.equal(chunks.join(' '), text, 'nothing is cut');
+    // Pieces end at a sentence, so the voice never stops mid-sentence.
+    assert.ok(chunks.every((c) => /\.$/.test(c)));
+  });
+
+  it('breaks one very long sentence at a comma, then at a space', async () => {
+    const { chunkForSpeech } = await import('./speech');
+    const long = `${'word '.repeat(30).trim()}, ${'more '.repeat(30).trim()}`;
+    const chunks = chunkForSpeech(long, 100);
+    assert.ok(chunks.every((c) => c.length <= 100));
+    assert.equal(chunks.join(' ').replace(/\s+/g, ' '), long);
+  });
+});
+
+describe('pickVoice', () => {
+  it('prefers a natural voice in the person’s language over a robotic or foreign one', async () => {
+    const { pickVoice } = await import('./speech');
+    const voices = [
+      { name: 'eSpeak English', lang: 'en-US' },
+      { name: 'Google français', lang: 'fr-FR' },
+      { name: 'Google US English', lang: 'en-US' },
+      { name: 'Daniel', lang: 'en-GB' },
+    ];
+    assert.equal(pickVoice(voices, 'en-US')?.name, 'Google US English');
+    assert.equal(pickVoice(voices, 'de-DE'), undefined);
+  });
+});
+
+describe('speakInPieces', () => {
+  it('says every piece in order, and stops between pieces when cancelled', async () => {
+    const { speakInPieces } = await import('./speech');
+    const said: string[] = [];
+    const text = Array.from({ length: 12 }, (_, i) => `Sentence ${i + 1} is here and it has a few words in it.`).join(' ');
+    await speakInPieces(text, async (p) => void said.push(p), () => false, 120);
+    assert.equal(said.join(' '), text);
+    assert.ok(said.length > 1);
+
+    const some: string[] = [];
+    await speakInPieces(text, async (p) => void some.push(p), () => some.length >= 2, 120);
+    assert.equal(some.length, 2);
+  });
+});

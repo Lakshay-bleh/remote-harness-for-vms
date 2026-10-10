@@ -3,11 +3,15 @@ import type { AgentToHubMessage, HubToAgentMessage } from '@remote-harness/share
 
 const DEFAULT_RECONNECT_DELAY_MS = 3000;
 const DEFAULT_MAX_BUFFERED = 1000;
-// Cloudflare closes WebSockets that are idle for ~100s, so keep traffic flowing.
-const DEFAULT_PING_INTERVAL_MS = 25_000;
+// Cloudflare closes WebSockets that are idle for ~100s, so keep traffic flowing. Frequent enough that a dead socket is
+// noticed quickly (each ping is also what confirms the messages before it arrived).
+const DEFAULT_PING_INTERVAL_MS = 15_000;
 // After sleep or a network change the old TCP socket is half-open: writes just queue and 'close' never fires,
 // so the agent would stay "connected" to nothing. No pong within this window means the socket is dead.
-const DEFAULT_PONG_TIMEOUT_MS = 60_000;
+const DEFAULT_PONG_TIMEOUT_MS = 40_000;
+
+// Live text as it is being written: only worth anything right now, so never buffered or replayed.
+const isEphemeral = (m: AgentToHubMessage) => m.type === 'sdk_partial';
 const HANDSHAKE_TIMEOUT_MS = 15_000;
 
 export class HubConnection {
@@ -15,6 +19,12 @@ export class HubConnection {
   private closedByUser = false;
   private pingTimer: NodeJS.Timeout | null = null;
   private buffer: AgentToHubMessage[] = [];
+  // Written to the socket but not yet known to have arrived. A pong answers a ping sent after them, and the socket is
+  // ordered, so a pong confirms everything sent before its ping. What a socket that died held unconfirmed is sent again
+  // on the next connection (the hub ignores the copies it did get: sdk messages by uuid, prompts by requestId).
+  private unconfirmed: { msg: AgentToHubMessage; seq: number }[] = [];
+  private seq = 0;
+  private pingSeqs: number[] = [];
   private reconnectDelayMs: number;
   private maxBuffered: number;
   private pingIntervalMs: number;
@@ -42,7 +52,12 @@ export class HubConnection {
     this.ws = ws;
     let lastHeard = Date.now();
     const heard = () => { lastHeard = Date.now(); };
-    ws.on('pong', heard);
+    ws.on('pong', () => {
+      heard();
+      if (this.ws !== ws) return;
+      const upTo = this.pingSeqs.shift();
+      if (upTo !== undefined) this.unconfirmed = this.unconfirmed.filter((u) => u.seq > upTo);
+    });
 
     ws.on('open', () => {
       heard();
@@ -53,6 +68,7 @@ export class HubConnection {
           ws.terminate(); // emits 'close', which schedules the reconnect
           return;
         }
+        this.pingSeqs.push(this.seq);
         ws.ping();
       }, this.pingIntervalMs);
       this.onOpen(); // sends the hello first, so the hub knows who we are before the replay
@@ -69,6 +85,12 @@ export class HubConnection {
     ws.on('close', () => {
       if (this.pingTimer) clearInterval(this.pingTimer);
       this.pingTimer = null;
+      if (this.ws === ws) {
+        // Whatever this socket never confirmed may be lost: it goes out again, ahead of what was queued since.
+        this.buffer = [...this.unconfirmed.map((u) => u.msg).filter((m) => m.type !== 'hello'), ...this.buffer].slice(-this.maxBuffered);
+        this.unconfirmed = [];
+        this.pingSeqs = [];
+      }
       if (!this.closedByUser) setTimeout(() => this.connect(), this.reconnectDelayMs);
     });
     ws.on('error', (err) => console.error('Hub connection error', err.message));
@@ -80,8 +102,13 @@ export class HubConnection {
   send(msg: AgentToHubMessage): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
+      if (!isEphemeral(msg)) {
+        this.unconfirmed.push({ msg, seq: ++this.seq });
+        if (this.unconfirmed.length > this.maxBuffered) this.unconfirmed.shift();
+      }
       return;
     }
+    if (isEphemeral(msg)) return;
     if (this.buffer.length >= this.maxBuffered) {
       const i = this.buffer.findIndex((m) => m.type === 'sdk_message');
       this.buffer.splice(i === -1 ? 0 : i, 1);
@@ -97,6 +124,10 @@ export class HubConnection {
 
   bufferedForTest(): AgentToHubMessage[] {
     return [...this.buffer];
+  }
+
+  unconfirmedForTest(): AgentToHubMessage[] {
+    return this.unconfirmed.map((u) => u.msg);
   }
 
   close(): void {

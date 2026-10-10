@@ -392,10 +392,12 @@ export function createApiRouter(db: Db, agentServer: AgentServer, browserServer:
     // Only tell the UI the card is resolved if the agent actually received the answer; otherwise the user would see
     // "approved" while the agent is still blocked waiting.
     if (delivered) {
+      const sessionId = T(res).resolveSession(req.params.sessionId);
+      T(res).touchSession(sessionId, 'active', req.params.vmId); // no longer waiting for the person
       browserServer.broadcast(tenantOf(res), {
         type: 'permission_resolved',
         vmId: req.params.vmId,
-        sessionId: T(res).resolveSession(req.params.sessionId),
+        sessionId,
         requestId,
       });
     }

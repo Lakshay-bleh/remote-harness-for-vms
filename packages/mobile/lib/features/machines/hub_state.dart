@@ -138,6 +138,8 @@ class HubState {
     this.sessionsByVm = const {},
     this.messagesBySession = const {},
     this.resolvedPermissionIds = const {},
+    this.partialBySession = const {},
+    this.waiting = const {},
     this.selectedVmId,
     this.selectedSessionId,
     this.selectedAccountId,
@@ -148,6 +150,12 @@ class HubState {
   final Map<String, List<SessionDto>> sessionsByVm;
   final Map<String, List<MessageDto>> messagesBySession;
   final Set<String> resolvedPermissionIds;
+
+  /// The reply each chat is writing right now, shown live until the finished message arrives.
+  final Map<String, String> partialBySession;
+
+  /// Chats where Claude asked for permission and nobody has answered yet: session id -> machine id.
+  final Map<String, String> waiting;
   final String? selectedVmId;
 
   /// A real session id, a new chat's temporary id until the machine names it, or null for a new chat.
@@ -159,6 +167,8 @@ class HubState {
     Map<String, List<SessionDto>>? sessionsByVm,
     Map<String, List<MessageDto>>? messagesBySession,
     Set<String>? resolvedPermissionIds,
+    Map<String, String>? partialBySession,
+    Map<String, String>? waiting,
     String? Function()? selectedVmId,
     String? Function()? selectedSessionId,
     String? Function()? selectedAccountId,
@@ -169,6 +179,8 @@ class HubState {
         sessionsByVm: sessionsByVm ?? this.sessionsByVm,
         messagesBySession: messagesBySession ?? this.messagesBySession,
         resolvedPermissionIds: resolvedPermissionIds ?? this.resolvedPermissionIds,
+        partialBySession: partialBySession ?? this.partialBySession,
+        waiting: waiting ?? this.waiting,
         selectedVmId: selectedVmId != null ? selectedVmId() : this.selectedVmId,
         selectedSessionId: selectedSessionId != null ? selectedSessionId() : this.selectedSessionId,
         selectedAccountId: selectedAccountId != null ? selectedAccountId() : this.selectedAccountId,
@@ -251,8 +263,18 @@ class SessionWentIdle extends HubAction {
 }
 
 class PermissionResolved extends HubAction {
-  const PermissionResolved(this.requestId);
+  const PermissionResolved(this.requestId, {this.sessionId});
   final String requestId;
+
+  /// The chat it was asked in, when known: it stops waiting.
+  final String? sessionId;
+}
+
+/// The reply a chat is writing, so far.
+class SetPartial extends HubAction {
+  const SetPartial(this.sessionId, this.text);
+  final String sessionId;
+  final String text;
 }
 
 /// An answer that did not reach the machine: the question is open again.
@@ -278,6 +300,8 @@ HubState reduceHub(HubState state, HubAction action) {
               sessionsByVm: state.sessionsByVm,
               messagesBySession: state.messagesBySession,
               resolvedPermissionIds: state.resolvedPermissionIds,
+              partialBySession: state.partialBySession,
+              waiting: state.waiting,
               selectedVmId: state.selectedVmId,
               selectedSessionId: state.selectedSessionId,
               selectedAccountId: state.selectedAccountId,
@@ -291,14 +315,47 @@ HubState reduceHub(HubState state, HubAction action) {
           : [...state.vms, VmDto(id: action.vmId, name: action.name, connected: action.connected, accounts: action.accounts)];
       return state.copyWith(vms: vms);
     case SetSessions(:final vmId, :final sessions):
-      return state.copyWith(sessionsByVm: {...state.sessionsByVm, vmId: sessions});
+      // The hub's list says which of this machine's chats are waiting for an answer.
+      final waiting = {...state.waiting};
+      for (final s in sessions) {
+        if (s.status == 'waiting') {
+          waiting[s.id] = vmId;
+        } else if (waiting[s.id] == vmId) {
+          waiting.remove(s.id);
+        }
+      }
+      return state.copyWith(sessionsByVm: {...state.sessionsByVm, vmId: sessions}, waiting: waiting);
     case SetMessages(:final sessionId, :final messages, :final seenLocalUpTo):
       final existing = state.messagesBySession[sessionId] ?? const <MessageDto>[];
-      return state.copyWith(messagesBySession: {...state.messagesBySession, sessionId: mergeFetched(existing, messages, seenLocalUpTo: seenLocalUpTo)});
+      final merged = mergeFetched(existing, messages, seenLocalUpTo: seenLocalUpTo);
+      final vmId = merged.isEmpty ? state.waiting[sessionId] : merged.last.vmId;
+      final open = hasOpenPrompt(merged, state.resolvedPermissionIds);
+      final waiting = {...state.waiting};
+      if (open && vmId != null && vmId.isNotEmpty) {
+        waiting[sessionId] = vmId;
+      } else if (!open) {
+        waiting.remove(sessionId);
+      }
+      return state.copyWith(
+        messagesBySession: {...state.messagesBySession, sessionId: merged},
+        partialBySession: {...state.partialBySession}..remove(sessionId),
+        waiting: waiting,
+      );
     case AppendMessage(:final sessionId, :final message):
       final existing = state.messagesBySession[sessionId] ?? const <MessageDto>[];
       final next = _isUserPrompt(message) && !isOptimisticRow(message) ? settleOptimistic([...existing, message]) : [...existing, message];
-      return state.copyWith(messagesBySession: {...state.messagesBySession, sessionId: next});
+      final m = message.message;
+      final type = m is Map ? m['type'] : null;
+      final isPrompt = type == 'permission_request';
+      // Anything Claude finished writing (or a prompt for permission) replaces the live text.
+      final replacesPartial = type != null && type != 'user' && state.partialBySession.containsKey(sessionId);
+      return state.copyWith(
+        messagesBySession: {...state.messagesBySession, sessionId: next},
+        partialBySession: replacesPartial ? ({...state.partialBySession}..remove(sessionId)) : null,
+        waiting: isPrompt && message.vmId.isNotEmpty ? {...state.waiting, sessionId: message.vmId} : null,
+      );
+    case SetPartial(:final sessionId, :final text):
+      return state.copyWith(partialBySession: {...state.partialBySession, sessionId: text});
     case RemoveMessage(:final sessionId, :final id):
       final rows = state.messagesBySession[sessionId];
       if (rows == null) return state;
@@ -309,7 +366,7 @@ HubState reduceHub(HubState state, HubAction action) {
         final m = r.message;
         if (m is Map && m['type'] == 'permission_request') ids.add('${m['requestId']}');
       }
-      return ids.isEmpty ? state : state.copyWith(resolvedPermissionIds: {...state.resolvedPermissionIds, ...ids});
+      return state.copyWith(resolvedPermissionIds: {...state.resolvedPermissionIds, ...ids}, waiting: {...state.waiting}..remove(sessionId));
     case SessionCreated():
       final merged = settleOptimistic([...?state.messagesBySession[action.tempId], ...?state.messagesBySession[action.sessionId]]);
       final messages = {...state.messagesBySession, action.sessionId: merged}..remove(action.tempId);
@@ -344,17 +401,32 @@ HubState reduceHub(HubState state, HubAction action) {
           vmId: vmId,
           message: {'type': sessionEndedType, 'afterId': hubTail(rows ?? const [])},
           createdAt: at.toUtc().toIso8601String());
-      final ended = rows == null ? state : state.copyWith(messagesBySession: {...state.messagesBySession, sessionId: [...rows, marker]});
+      final settled = state.partialBySession.containsKey(sessionId) || state.waiting.containsKey(sessionId)
+          ? state.copyWith(
+              partialBySession: {...state.partialBySession}..remove(sessionId),
+              waiting: {...state.waiting}..remove(sessionId),
+            )
+          : state;
+      final ended = rows == null ? settled : settled.copyWith(messagesBySession: {...settled.messagesBySession, sessionId: [...rows, marker]});
       final list = ended.sessionsByVm[vmId];
       if (list == null) return ended;
       return ended.copyWith(sessionsByVm: {
         ...ended.sessionsByVm,
         vmId: [for (final s in list) s.id == sessionId ? s.copyWith(status: 'idle') : s],
       });
-    case PermissionResolved(:final requestId):
-      return state.copyWith(resolvedPermissionIds: {...state.resolvedPermissionIds, requestId});
+    case PermissionResolved(:final requestId, :final sessionId):
+      final resolved = {...state.resolvedPermissionIds, requestId};
+      final sid = sessionId ?? _sessionOfPrompt(state, requestId);
+      final stillOpen = sid != null && hasOpenPrompt(state.messagesBySession[sid] ?? const [], resolved);
+      return state.copyWith(resolvedPermissionIds: resolved, waiting: sid == null || stillOpen ? null : ({...state.waiting}..remove(sid)));
     case PermissionReopened(:final requestIds):
-      return state.copyWith(resolvedPermissionIds: state.resolvedPermissionIds.difference(requestIds.toSet()));
+      final sid = requestIds.isEmpty ? null : _sessionOfPrompt(state, requestIds.first);
+      final rows = sid == null ? null : state.messagesBySession[sid];
+      final vmId = rows == null || rows.isEmpty ? null : rows.last.vmId;
+      return state.copyWith(
+        resolvedPermissionIds: state.resolvedPermissionIds.difference(requestIds.toSet()),
+        waiting: sid != null && vmId != null && vmId.isNotEmpty ? {...state.waiting, sid: vmId} : null,
+      );
     case Select():
       return state.copyWith(selectedVmId: () => action.vmId, selectedSessionId: () => action.sessionId, selectedAccountId: () => action.accountId);
   }
@@ -391,6 +463,31 @@ HubAction? actionForEvent(HubEvent msg, num Function() localId) {
         ),
       );
     case PermissionResolvedEvent():
-      return PermissionResolved(msg.requestId);
+      return PermissionResolved(msg.requestId, sessionId: msg.sessionId);
+    case SdkPartialEvent():
+      return SetPartial(msg.sessionId, msg.text);
   }
+}
+
+/// The chat a permission prompt was asked in, among the chats this phone has loaded.
+String? _sessionOfPrompt(HubState state, String requestId) {
+  for (final e in state.messagesBySession.entries) {
+    for (final r in e.value) {
+      final m = r.message;
+      if (m is Map && m['type'] == 'permission_request' && m['requestId'] == requestId) return e.key;
+    }
+  }
+  return null;
+}
+
+/// Is Claude in this chat waiting for an answer to a permission prompt? (One that nobody answered, and no turn ended since.)
+bool hasOpenPrompt(List<MessageDto> rows, Set<String> resolved) {
+  for (var i = rows.length - 1; i >= 0; i--) {
+    final m = rows[i].message;
+    if (m is! Map) continue;
+    final type = m['type'];
+    if (type == 'result' || type == sessionEndedType) return false;
+    if (type == 'permission_request' && !resolved.contains('${m['requestId']}')) return true;
+  }
+  return false;
 }

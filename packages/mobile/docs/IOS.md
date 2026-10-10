@@ -23,7 +23,7 @@ runners are the Mac (`.github/workflows/ios.yml`):
 3. Note the Team ID (developer.apple.com > Membership).
 4. Add four secrets to the GitHub repo (Settings > Secrets and variables > Actions):
    `APPLE_TEAM_ID`, `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`, and `APP_STORE_CONNECT_KEY_P8_BASE64`
-   (`base64 -w0 AuthKey_<id>.p8`). Or: `gh secret set APPLE_TEAM_ID -R escanorlabs-source/escanor-mobile` etc.
+   (`base64 -w0 AuthKey_<id>.p8`). Or: `gh secret set APPLE_TEAM_ID -R yashmishra2006/remote-harness-for-vms` etc.
 5. Create the app in App Store Connect (My Apps > + > New App, bundle id `com.escanorlabs.escanor`, name Escanor). Xcode registers
    the bundle id with push notifications on the first signed run if it does not exist yet.
 6. Push: upload an **APNs key** (developer.apple.com > Keys > Apple Push Notifications service) to Firebase (project `escanorai` >

@@ -7,6 +7,7 @@ import type { VoiceTab } from './commands';
 import { loadOrb, movedFar, orbCss, ORB_SIZE, posFromPoint, saveOrb, type OrbPos, type View } from './orbPosition';
 import { App as CapApp } from '@capacitor/app';
 import { isAndroid, isNative } from '../../api';
+import { forgetPending, type AssistantTurn } from './assistant';
 import { deviceOrNull } from './device';
 import PhoneControlSetup from './PhoneControlSetup';
 import { useVoiceSession, type VoicePhase } from './useVoiceSession';
@@ -51,7 +52,7 @@ const currentView = (): View => {
  * what was said (on this phone, on a computer, or through the assistant), answers out loud, and listens again until the person
  * is done.
  */
-export default function VoiceHost({ go, onAssistant, children }: { go: (tab: VoiceTab) => void; onAssistant: (text: string, signal: AbortSignal) => Promise<string | void>; children?: ReactNode }) {
+export default function VoiceHost({ go, onAssistant, children }: { go: (tab: VoiceTab) => void; onAssistant: (text: string, signal: AbortSignal) => Promise<string | void | AssistantTurn>; children?: ReactNode }) {
   const [open, setOpen] = useState(false);
   const live = useRef(false); // a conversation is running: keep listening after each answer
   const [pos, setPos] = useState<OrbPos>(loadOrb);
@@ -86,6 +87,7 @@ export default function VoiceHost({ go, onAssistant, children }: { go: (tab: Voi
   const close = useCallback(() => {
     live.current = false;
     v.cancel();
+    forgetPending(); // a question left unanswered is not answered by the next conversation's first "yes"
     setOpen(false);
   }, [v.cancel]);
   closeRef.current = close;

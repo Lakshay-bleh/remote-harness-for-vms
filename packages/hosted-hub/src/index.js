@@ -4,6 +4,7 @@ var __name = (target, value) => __defProp(target, "name", { value, configurable:
 // src/hub.ts
 import { DurableObject } from "cloudflare:workers";
 import { searchSessions } from "./session-search.js";
+import { agentMessageUid, approvalEvent, resultEvent } from "./events.js";
 
 // src/protocol.ts
 var MIN_MCP_AGENT_VERSION = "0.3.0";
@@ -203,6 +204,10 @@ var Hub = class extends DurableObject {
         reported_at TEXT NOT NULL
       );
     `);
+    // An agent sends again what a dropped connection may have lost; uid is how the copies already stored are known.
+    const cols = this.sql.exec("PRAGMA table_info(messages)").toArray().map((c) => c.name);
+    if (!cols.includes("uid")) this.sql.exec("ALTER TABLE messages ADD COLUMN uid TEXT");
+    this.sql.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_uid ON messages(uid) WHERE uid IS NOT NULL");
   }
   now = /* @__PURE__ */ __name(() => (/* @__PURE__ */ new Date()).toISOString(), "now");
   upsertVm(name) {
@@ -232,7 +237,8 @@ var Hub = class extends DurableObject {
     this.sql.exec(
       `INSERT INTO sessions (id, vm_id, cwd, title, created_at, last_message_at, status, account_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET status = excluded.status, last_message_at = excluded.last_message_at`,
+       ON CONFLICT(id) DO UPDATE SET last_message_at = excluded.last_message_at,
+         status = CASE WHEN sessions.status = 'waiting' AND excluded.status = 'active' THEN 'waiting' ELSE excluded.status END`,
       s.id,
       s.vmId,
       s.cwd,
@@ -255,6 +261,59 @@ var Hub = class extends DurableObject {
       JSON.stringify(m.message),
       this.now()
     );
+  }
+  /** Store an agent's message once: false when a copy with the same uid is already stored (resent after a drop). */
+  insertAgentMessage(m) {
+    if (!m.uid) {
+      this.insertMessage(m);
+      return true;
+    }
+    const before = this.sql.exec("SELECT 1 FROM messages WHERE uid = ?", m.uid).toArray().length;
+    if (before) return false;
+    this.sql.exec(
+      "INSERT INTO messages (session_id, vm_id, payload, created_at, uid) VALUES (?, ?, ?, ?, ?)",
+      m.sessionId,
+      m.vmId,
+      JSON.stringify(m.message),
+      this.now(),
+      m.uid
+    );
+    return true;
+  }
+  // ---------- push notifications (through Escanor's backend) ----------
+  rememberTenant(tenant) {
+    if (!tenant || this.tenantId === tenant) return;
+    this.tenantId = tenant;
+    this.sql.exec(
+      `INSERT INTO tenant_meta (key, value) VALUES ('tenant_id', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      tenant
+    );
+  }
+  tenant() {
+    if (this.tenantId) return this.tenantId;
+    const row = this.sql.exec("SELECT value FROM tenant_meta WHERE key = 'tenant_id'").toArray()[0];
+    this.tenantId = row?.value;
+    return this.tenantId;
+  }
+  chatInfo(vmId, sessionId) {
+    const vm = this.sql.exec("SELECT name FROM vms WHERE id = ?", vmId).toArray()[0];
+    const s = this.sql.exec("SELECT title FROM sessions WHERE id = ?", sessionId).toArray()[0];
+    return { vmName: vm?.name ?? "", title: s?.title ?? "" };
+  }
+  /** Tell Escanor something the person should hear about on their phone. Best effort, never delays the agent. */
+  notify(event) {
+    const url = this.env?.EVENTS_URL;
+    const token = this.env?.HUB_ADMIN_TOKEN;
+    const tenantId = this.tenant();
+    if (!event || !url || !token || !tenantId) return;
+    const sent = fetch(url, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ tenantId, ...event })
+    }).then((r) => {
+      if (!r.ok) console.error(`[events] ${event.kind} -> ${r.status}`);
+    }).catch((err) => console.error(`[events] ${event.kind} failed`, String(err)));
+    this.ctx.waitUntil(sent);
   }
   listMessages(sessionId) {
     const rows = this.sql.exec("SELECT id, session_id, vm_id, payload, created_at FROM messages WHERE session_id = ? ORDER BY id ASC", sessionId).toArray();
@@ -361,6 +420,7 @@ var Hub = class extends DurableObject {
     if (url.pathname.startsWith("/_admin/")) return this.handleAdmin(request, url);
     const role = request.headers.get("x-hub-role");
     const gen = Number(request.headers.get("x-hub-gen"));
+    this.rememberTenant(request.headers.get("x-hub-tenant"));
     if (role !== "agent" && role !== "app" || !Number.isInteger(gen) || gen < this.minGen(role)) {
       return new Response("Unauthorized", { status: 401 });
     }
@@ -480,10 +540,16 @@ var Hub = class extends DurableObject {
       case "mcp_status":
         this.setVmMcpStatus(vmId, { servers: msg.servers, liveSessions: msg.liveSessions });
         break;
+      case "sdk_partial":
+        // The reply as it is being written: shown live, never stored (the finished message is).
+        if (typeof msg.text !== "string" || typeof msg.sessionId !== "string") break;
+        this.broadcast({ type: "sdk_partial", vmId, sessionId: msg.sessionId, text: msg.text.slice(0, 2e4) });
+        break;
       case "sdk_message":
-        this.insertMessage({ sessionId: msg.sessionId, vmId, message: msg.message });
+        if (!this.insertAgentMessage({ sessionId: msg.sessionId, vmId, message: msg.message, uid: agentMessageUid(msg) })) break;
         this.touchSession(msg.sessionId, "active");
         this.broadcast({ type: "sdk_message", vmId, sessionId: msg.sessionId, tempId: msg.tempId, message: msg.message, createdAt: now });
+        if (msg.message?.type === "result") this.notify(resultEvent({ vmId, sessionId: msg.sessionId, message: msg.message, ...this.chatInfo(vmId, msg.sessionId) }));
         break;
       case "session_created":
         this.sql.exec("UPDATE messages SET session_id = ? WHERE session_id = ?", msg.sessionId, msg.tempId);
@@ -502,10 +568,11 @@ var Hub = class extends DurableObject {
         this.touchSession(msg.sessionId, "idle");
         this.broadcast({ type: "session_ended", vmId, sessionId: msg.sessionId });
         break;
-      case "permission_request":
-        this.insertMessage({
+      case "permission_request": {
+        const fresh = this.insertAgentMessage({
           sessionId: msg.sessionId,
           vmId,
+          uid: agentMessageUid(msg),
           message: {
             type: "permission_request",
             requestId: msg.requestId,
@@ -514,6 +581,9 @@ var Hub = class extends DurableObject {
             blockedPath: msg.blockedPath
           }
         });
+        if (!fresh) break;
+        // The chat waits for the person: lists show it until they answer.
+        this.touchSession(msg.sessionId, "waiting");
         this.broadcast({
           type: "permission_request",
           vmId,
@@ -523,7 +593,9 @@ var Hub = class extends DurableObject {
           input: msg.input,
           blockedPath: msg.blockedPath
         });
+        this.notify(approvalEvent({ vmId, sessionId: msg.sessionId, requestId: msg.requestId, toolName: msg.toolName, input: msg.input, ...this.chatInfo(vmId, msg.sessionId) }));
         break;
+      }
       case "error": {
         const sessionId = msg.sessionId ?? msg.tempId ?? "unknown";
         console.error(`[agent ${vmId}]`, msg.message);
@@ -682,6 +754,7 @@ var Hub = class extends DurableObject {
             behavior: b.behavior,
             message: b.message
           });
+          if (delivered) this.sql.exec("UPDATE sessions SET status = 'active' WHERE id = ? AND status = 'waiting'", sessionId);
           this.broadcast({ type: "permission_resolved", vmId, sessionId, requestId: b.requestId });
           return this.deliver(delivered);
         }
@@ -710,6 +783,7 @@ async function routeToTenant(request, env, kind, token) {
   for (const name of [...headers.keys()]) if (name.startsWith("x-hub-")) headers.delete(name);
   headers.set("x-hub-role", kind);
   headers.set("x-hub-gen", String(verified.gen));
+  headers.set("x-hub-tenant", verified.tenant);
   return tenantStub(env, verified.tenant).fetch(new Request(request, { headers }));
 }
 __name(routeToTenant, "routeToTenant");

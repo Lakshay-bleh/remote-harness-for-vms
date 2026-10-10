@@ -16,6 +16,7 @@ const _icons = {
   'server_down': Icons.bolt_rounded,
   'deployment_approvals': Icons.rocket_launch_outlined,
   'team_pings': Icons.groups_outlined,
+  'machine_chats': Icons.dns_outlined,
   'checks': Icons.radar_rounded,
 };
 

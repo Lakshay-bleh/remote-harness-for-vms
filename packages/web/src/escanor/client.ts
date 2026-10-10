@@ -48,6 +48,43 @@ export interface CatalogProvider {
   help_url: string;
 }
 
+/** Why a model cannot answer right now; null when it can. */
+export type AssistantModelReason = 'no_key' | 'key_rejected' | 'rate_limited' | 'quota' | 'not_found' | null;
+
+/** A model the person can chat with (GET /ai/models). `id` is what /ai/chat takes as `model`. */
+export interface AssistantModel {
+  id: string;
+  provider: string;
+  provider_label?: string;
+  model?: string;
+  label: string;
+  default: boolean;
+  /** False when it cannot answer right now; `reason` and `detail` say why. Older servers omit these. */
+  available?: boolean;
+  reason?: AssistantModelReason;
+  detail?: string;
+  retry_after?: number | null;
+  local?: boolean;
+  /** It answered a test question recently. */
+  verified?: boolean;
+}
+
+/** What "Auto" would use right now: the best model that can answer, and the next when it cannot. */
+export interface AssistantAuto {
+  id: 'auto';
+  label: string;
+  available: boolean;
+  resolves_to: string | null;
+  detail: string;
+}
+
+export interface AssistantModels {
+  models: AssistantModel[];
+  default: string | null;
+  /** Absent on older servers, which have no Auto. */
+  auto?: AssistantAuto;
+}
+
 export interface McpConnection {
   id: string;
   name: string;
@@ -258,6 +295,19 @@ async function request<T>(path: string, init: RequestInit = {}, opts: { auth?: b
   return res.json();
 }
 
+/** `signal`, or a time limit, whichever ends first. */
+export function withTimeout(signal: AbortSignal | undefined, ms: number): AbortSignal {
+  const timeout = AbortSignal.timeout(ms);
+  if (!signal) return timeout;
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any([signal, timeout]);
+  const both = new AbortController();
+  const end = () => both.abort();
+  if (signal.aborted || timeout.aborted) end();
+  signal.addEventListener('abort', end, { once: true });
+  timeout.addEventListener('abort', end, { once: true });
+  return both.signal;
+}
+
 const json = (body: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body) });
 const enc = encodeURIComponent;
 
@@ -298,7 +348,10 @@ export const escanor = {
   capabilities: (live = false) => request<AssistantCapabilities>(`/ai/capabilities${live ? '?live=true' : ''}`),
   machine: (logs = false) => request<MachineView>(`/ai/machine?logs=${logs}&tail=120`),
   conversations: () => request<{ conversations: AssistantConversation[] }>('/ai/conversations').then((r) => r.conversations),
-  send: (text: string, conversationId?: string, attachments: ApiAttachment[] = []) => request<{ conversation_id: string }>('/ai/chat', json({ text, conversation_id: conversationId ?? null, ...(attachments.length ? { attachments } : {}) })),
+  /** The models the person can choose between, and what Auto would use. */
+  models: () => request<AssistantModels>('/ai/models'),
+  /** `model`: an id from `models()` (or "auto"); left out, the conversation keeps its model (or the server's default for a new one). */
+  send: (text: string, conversationId?: string, attachments: ApiAttachment[] = [], model?: string) => request<{ conversation_id: string }>('/ai/chat', json({ text, conversation_id: conversationId ?? null, ...(attachments.length ? { attachments } : {}), ...(model ? { model } : {}) })),
   messages: (id: string, after: number) => request<AssistantMessages>(`/ai/conversations/${enc(id)}/messages?after=${after}`),
   answer: (id: string, requestId: string, allow: boolean) => request<{ status: string }>(`/ai/conversations/${enc(id)}/permissions/${enc(requestId)}`, json({ allow })),
   stop: (id: string) => request<{ ok: boolean }>(`/ai/conversations/${enc(id)}/stop`, { method: 'POST' }),
@@ -407,7 +460,7 @@ export const escanor = {
   revokeMcp: (id: string) => request<{ success: boolean }>(`/tokens/${enc(id)}`, { method: 'DELETE' }),
 
   // -- voice: the server's brain for what the phone's own rules do not understand (semantic match, then the AI model)
-  voiceResolve: (body: { text: string; client: 'mobile'; device: { platform: string; apps: Array<{ id: string; label: string }> } }) => request<ServerPlan>('/ai/voice/resolve', { ...json(body), signal: AbortSignal.timeout(40_000) }),
+  voiceResolve: (body: { text: string; client: 'mobile'; device: { platform: string; apps: Array<{ id: string; label: string }> } }, signal?: AbortSignal) => request<ServerPlan>('/ai/voice/resolve', { ...json(body), signal: withTimeout(signal, 40_000) }),
 
   // -- the website, already signed in: a one-minute link, so billing and settings open without a second sign-in
   webHandoff: (next: string) => request<{ url: string; expires_in: number }>('/auth/handoff', json({ next })).then((r) => r.url),

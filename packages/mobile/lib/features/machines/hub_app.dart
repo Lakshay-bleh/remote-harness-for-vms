@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
@@ -33,16 +35,32 @@ class HubApp extends StatefulWidget {
 class _HubAppState extends State<HubApp> {
   final store = HubStore.instance;
 
+  StreamSubscription<ChatTarget>? _opens;
+  BuildContext? _listContext;
+
   @override
   void initState() {
     super.initState();
     store.addListener(_changed);
+    // A notification or banner asked for a chat: show it (once this screen is laid out, if it was not yet).
+    _opens = store.openRequests.listen((_) => _showRequested());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showRequested());
   }
 
   @override
   void dispose() {
+    _opens?.cancel();
     store.removeListener(_changed);
     super.dispose();
+  }
+
+  void _showRequested() {
+    if (!mounted || !_authed) return;
+    if (store.takePendingOpen() == null) return;
+    final ctx = _listContext;
+    // Side by side (no list context) or a chat page already up: the selected chat is the one shown.
+    if (ctx == null || !ctx.mounted || HubChatPage.open > 0) return;
+    _openChat(ctx);
   }
 
   bool _authed = HubStore.instance.state.authed;
@@ -68,6 +86,7 @@ class _HubAppState extends State<HubApp> {
         final c = context.c;
         return LayoutBuilder(builder: (context, box) {
           if (box.maxWidth >= hubWideWidth) {
+            _listContext = null;
             return Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               Container(
                 width: 320,
@@ -77,6 +96,7 @@ class _HubAppState extends State<HubApp> {
               const Expanded(child: ChatView()),
             ]);
           }
+          _listContext = context;
           return HubSidebar(onSelectSession: () => _openChat(context));
         });
       }),
@@ -88,6 +108,9 @@ class _HubAppState extends State<HubApp> {
 /// becomes wide enough to show both.
 class HubChatPage extends StatefulWidget {
   const HubChatPage({super.key});
+
+  /// How many chat pages are on screen (a requested chat is shown in the one that is, rather than stacking another).
+  static int open = 0;
   @override
   State<HubChatPage> createState() => _HubChatPageState();
 }
@@ -99,11 +122,13 @@ class _HubChatPageState extends State<HubChatPage> {
   @override
   void initState() {
     super.initState();
+    HubChatPage.open++;
     store.addListener(_changed);
   }
 
   @override
   void dispose() {
+    HubChatPage.open--;
     store.removeListener(_changed);
     super.dispose();
   }

@@ -9,6 +9,7 @@ import 'package:escanor/features/machines/hub_markdown.dart';
 import 'package:escanor/features/machines/hub_socket.dart';
 import 'package:escanor/features/machines/hub_state.dart';
 import 'package:escanor/features/machines/hub_store.dart';
+import 'package:escanor/ui/chat_parts.dart' show AnswerText;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -104,6 +105,55 @@ void main() {
     HubStore.instance.logout();
     await tester.pumpAndSettle();
     expect(find.text('Your hub'), findsOneWidget);
+  });
+
+  Finder answer(String text) => find.byWidgetPredicate((w) => w is AnswerText && w.text.contains(text), skipOffstage: false);
+
+  testWidgets('a chat waiting for an OK is marked in the list; the reply shows live as it is written', (tester) async {
+    tester.view.physicalSize = const Size(400, 860);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    session['status'] = 'waiting';
+    addTearDown(() => session['status'] = 'idle');
+    await tester.pumpWidget(app(const HubApp()));
+    await tester.pumpAndSettle();
+    expect(find.text('Needs your OK'), findsOneWidget, reason: 'on the chat');
+    expect(find.text('1'), findsOneWidget, reason: 'and on its machine');
+    expect(HubStore.instance.waitingCount, 1);
+
+    await tester.tap(find.text('Fix the tests'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+    expect(HubStore.instance.waitingCount, 0, reason: 'answered: no longer waiting');
+
+    final ws = sockets.last..open();
+    await tester.pump();
+    ws.message(jsonEncode({'type': 'sdk_partial', 'vmId': 'v1', 'sessionId': 's1', 'text': 'Writing the fix now'}));
+    await tester.pump();
+    await tester.pump(); // the socket's event lands, then the frame shows it
+    expect(answer('Writing the fix now'), findsOneWidget);
+    ws.message(jsonEncode({
+      'type': 'sdk_message', 'vmId': 'v1', 'sessionId': 's1', 'createdAt': '2026-10-07T10:01:00Z', //
+      'message': {'type': 'assistant', 'message': {'content': [{'type': 'text', 'text': 'Fixed it.'}]}},
+    }));
+    await tester.pump();
+    await tester.pump();
+    expect(answer('Writing the fix now'), findsNothing, reason: 'the finished message takes its place');
+    expect(answer('Fixed it.'), findsOneWidget);
+
+    // A new prompt: the store announces it for the banner (PushHost leaves it out while this chat is on screen). A chat
+    // that works on its own answers its prompts itself and announces nothing.
+    final notices = <HubNotice>[];
+    final sub = HubStore.instance.notices.listen(notices.add);
+    addTearDown(sub.cancel);
+    ws.message(jsonEncode({'type': 'permission_request', 'vmId': 'v1', 'sessionId': 's1', 'requestId': 'r9', 'toolName': 'Bash', 'input': {'command': 'npm test'}}));
+    await tester.pump();
+    await tester.pump();
+    expect(notices.single.body, contains('Run: npm test'));
+    expect(HubStore.instance.waitingCount, 1);
+    HubStore.instance.logout();
+    await tester.pumpAndSettle();
   });
 
   testWidgets('wide: the list and the chat side by side', (tester) async {

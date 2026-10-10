@@ -1,6 +1,6 @@
 import { explainFailure } from '../computer/errors';
 import { runPhoneAction, type DevicePlugin, type PhoneOptions } from './actions';
-import { parseVoiceCommand, type PhoneAction, type VoiceTab } from './commands';
+import { parseVoiceCommand, stripWake, type PhoneAction, type VoiceTab } from './commands';
 import { chooseContact } from './contacts';
 import { planToActions, type ServerPlan } from './serverPlan';
 
@@ -8,10 +8,20 @@ export interface AssistantDeps {
   /** The phone's native tools; null in a browser. */
   device: DevicePlugin | null;
   hasComputer: boolean;
-  /** Run a sentence on the paired computer; resolves with what it said back. */
-  toComputer(text: string): Promise<string>;
-  /** Hand a sentence to the Escanor assistant; resolves with its answer when it has one (empty when it only started working). */
-  toAssistant(text: string): Promise<string | void>;
+  /** The paired computers' names, so a sentence can name one ("on Work Laptop, …"). */
+  computerNames?: string[];
+  /**
+   * Run a sentence on a paired computer (the one named, else the one used last); resolves with what it said back, and whether it
+   * asked something and is waiting for the answer.
+   */
+  toComputer(text: string, computer?: string): Promise<string | ComputerReply>;
+  /**
+   * Hand a sentence to the Escanor assistant; resolves with its answer when it has one (empty when it only started working), or with
+   * the OK it is waiting for.
+   */
+  toAssistant(text: string): Promise<string | void | AssistantTurn>;
+  /** The voice turn's signal: work started by this sentence stops when voice is cancelled. */
+  signal?: AbortSignal;
   go(tab: VoiceTab): void;
   /** How the person wants the phone to behave (calling directly). */
   phone?: PhoneOptions;
@@ -24,6 +34,24 @@ export interface AssistantDeps {
   ack?(text: string): Promise<void>;
   /** Show something on screen now, while work continues. */
   interim?(text: string): void;
+}
+
+/** What the assistant said back: its words, or a step it wants an OK for. */
+export interface AssistantTurn {
+  text: string;
+  approval?: {
+    title: string;
+    detail?: string;
+    risk?: 'normal' | 'high';
+    /** Give the OK (or refuse it); resolves with what the assistant said next. Throws the server's refusal as it is. */
+    answer(allow: boolean, signal?: AbortSignal): Promise<string | AssistantTurn>;
+  };
+}
+
+/** What a computer said back. `listenAgain`: it asked a question, and the next sentence is the answer. */
+export interface ComputerReply {
+  reply: string;
+  listenAgain?: boolean;
 }
 
 export interface Reply {
@@ -65,10 +93,10 @@ async function viaServer(text: string, d: AssistantDeps): Promise<Reply | null> 
     const work = d.toAssistant(text);
     d.interim?.(plan.say);
     await Promise.race([d.ack?.(plan.say), work.then(() => undefined)]).catch(() => undefined);
-    const answer = await work;
-    return { ok: true, say: (typeof answer === 'string' && answer.trim()) || plan.say || 'Asking your Escanor assistant.', kind: 'assistant' };
+    return fromAssistant(await work, plan.say || 'Asking your Escanor assistant.');
   }
-  const { actions, skipped } = planToActions(plan);
+  const { actions, skipped, stop } = planToActions(plan);
+  if (stop && actions.length === 0) return { ok: true, say: plan.say || 'Okay.', kind: 'stop' };
   if (actions.length > 0) {
     const results: Array<{ ok: boolean; say: string }> = [];
     for (const a of actions) results.push(await runPhoneAction(a as PhoneAction, d.device));
@@ -79,6 +107,89 @@ async function viaServer(text: string, d: AssistantDeps): Promise<Reply | null> 
   if (plan.source === 'error' && plan.say) return { ok: false, say: plan.say, kind: 'phone' };
   if (plan.say && !plan.not_device) return { ok: false, say: plan.say, kind: 'phone' }; // e.g. "I couldn't find an app called X. Did you mean …?"
   return null;
+}
+
+/**
+ * A question that is waiting for the next sentence: a computer asked something (the answer goes back to it, not to the cloud
+ * assistant), or the assistant wants an OK (the answer is yes or no). Forgotten after two minutes, or once answered.
+ */
+type FollowUp = { kind: 'computer'; computer?: string; at: number } | { kind: 'approval'; approval: NonNullable<AssistantTurn['approval']>; tries: number; at: number };
+let followUp: FollowUp | null = null;
+const FOLLOW_UP_MS = 120_000;
+
+/** Forget any question waiting for an answer (voice mode closed). */
+export function forgetPending(): void {
+  followUp = null;
+  pendingChoice = null;
+}
+
+function takeFollowUp(): FollowUp | null {
+  const f = followUp;
+  followUp = null;
+  return f && Date.now() - f.at < FOLLOW_UP_MS ? f : null;
+}
+
+/** Say a sentence to a computer and turn what it says back into a reply; a question from it makes the next sentence its answer. */
+async function askComputer(text: string, computer: string | undefined, d: AssistantDeps): Promise<Reply> {
+  let out: string | ComputerReply;
+  try {
+    out = await d.toComputer(text, computer);
+  } catch (e) {
+    return { ok: false, say: spokenProblem(e) };
+  }
+  const said = typeof out === 'string' ? out : out.reply;
+  // A reply that is really "that is switched off" is a problem with a fix, not an answer.
+  if (explainFailure(said).ask) return { ok: false, say: spokenProblem(said), kind: 'computer' };
+  if (typeof out !== 'string' && out.listenAgain && said.trim()) {
+    followUp = { kind: 'computer', computer, at: Date.now() };
+    return { ok: true, say: said, kind: 'computer', ask: true };
+  }
+  return { ok: true, say: said || 'Done.', kind: 'computer' };
+}
+
+const NO = /\b(?:no|nope|nah|don'?t|do not|stop|cancel|deny|never ?mind|not now)\b/;
+const YES_WORD = '(?:yes|yeah|yep|yup|sure|ok|okay|go ahead|do it|approve(?: it)?|go for it|please do|affirmative|absolutely|of course)';
+const YES = new RegExp(`^${YES_WORD}(?: ${YES_WORD})*(?: (?:please|thanks|thank you))?$`);
+
+/** "yes", "go ahead", "no, don't": the answer to "should I go ahead?", or null when it is neither. A no anywhere wins; a yes must be the whole sentence ("why does it need to be approved?" is a question, not a yes). */
+export function yesOrNo(text: string): 'yes' | 'no' | null {
+  const t = stripWake(text).toLowerCase().replace(/[’']/g, "'").replace(/[.!?,]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!t) return null;
+  if (NO.test(t)) return 'no';
+  return YES.test(t) ? 'yes' : null;
+}
+
+const sentence = (s: string) => {
+  const t = s.trim();
+  return !t ? '' : /[.!?]$/.test(t) ? t : `${t}.`;
+};
+
+/** The assistant's answer as a reply; an OK it is waiting for is read out, and the next sentence answers it. */
+function fromAssistant(answer: string | void | AssistantTurn, fallback: string): Reply {
+  const turn: AssistantTurn = typeof answer === 'object' && answer ? answer : { text: typeof answer === 'string' ? answer : '' };
+  if (turn.approval) {
+    const a = turn.approval;
+    followUp = { kind: 'approval', approval: a, tries: 0, at: Date.now() };
+    const say = ['Before I go on, I need your OK.', sentence(a.title), sentence(a.detail ?? ''), a.risk === 'high' ? 'This one is high impact.' : '', 'Should I go ahead? Say yes or no.'].filter(Boolean).join(' ');
+    return { ok: true, say, kind: 'assistant', ask: true };
+  }
+  return { ok: true, say: turn.text.trim() || fallback, kind: 'assistant' };
+}
+
+async function answerApproval(f: Extract<FollowUp, { kind: 'approval' }>, text: string, d: AssistantDeps): Promise<Reply | null> {
+  const yn = yesOrNo(text);
+  if (!yn) {
+    if (f.tries >= 1) return null; // still not an answer: treat it as a new request (the OK is still waiting in the chat)
+    followUp = { ...f, tries: f.tries + 1, at: Date.now() };
+    return { ok: true, say: `Should I go ahead: ${f.approval.title.trim().replace(/[.!?]+$/, '')}? Say yes or no.`, kind: 'assistant', ask: true };
+  }
+  try {
+    const next = await f.approval.answer(yn === 'yes', d.signal);
+    return fromAssistant(next, yn === 'yes' ? 'Going ahead.' : 'Okay, I won’t do that.');
+  } catch (e) {
+    // e.g. 409 "Someone else has to approve this…": the server's own words say what to do.
+    return { ok: false, say: e instanceof Error && e.message ? e.message : 'I couldn’t send your answer. Answer it in the chat.', kind: 'assistant' };
+  }
 }
 
 /** Names offered by the last "Did you mean … ?", so the next sentence can answer it. Forgotten after 40 seconds. */
@@ -97,8 +208,18 @@ function answerToChoice(text: string): string | null {
 }
 
 export async function handleUtterance(text: string, d: AssistantDeps): Promise<Reply> {
+  const ctx = { hasComputer: d.hasComputer, computerNames: d.computerNames };
+  const waiting = takeFollowUp();
+  if (waiting?.kind === 'approval') {
+    const r = await answerApproval(waiting, text, d);
+    if (r) return r;
+  } else if (waiting) {
+    const parsed = parseVoiceCommand(text, ctx);
+    // The answer to a computer's question goes back to it as said; "stop" or "never mind" still ends the conversation.
+    if (parsed.kind !== 'stop' && parsed.kind !== 'empty') return askComputer(stripWake(text), waiting.computer, d);
+  }
   const chosen = answerToChoice(text);
-  const cmd = chosen ? ({ kind: 'phone', action: { type: 'call', who: chosen } } as const) : parseVoiceCommand(text, { hasComputer: d.hasComputer });
+  const cmd = chosen ? ({ kind: 'phone', action: { type: 'call', who: chosen } } as const) : parseVoiceCommand(text, ctx);
   try {
     switch (cmd.kind) {
       case 'empty':
@@ -120,22 +241,12 @@ export async function handleUtterance(text: string, d: AssistantDeps): Promise<R
         return { ok: true, say: `Opening ${TAB_NAMES[cmd.tab]}.`, kind: 'go' };
       case 'no_computer':
         return { ok: false, say: 'You have not paired a computer yet. Open Computers in this app, then add one with the code from Escanor Desktop.' };
-      case 'computer': {
-        let said: string;
-        try {
-          said = await d.toComputer(cmd.text);
-        } catch (e) {
-          return { ok: false, say: spokenProblem(e) };
-        }
-        // A reply that is really "that is switched off" is a problem with a fix, not an answer.
-        if (explainFailure(said).ask) return { ok: false, say: spokenProblem(said), kind: 'computer' };
-        return { ok: true, say: said || 'Done.', kind: 'computer' };
-      }
+      case 'computer':
+        return askComputer(cmd.text, cmd.computer, d);
       case 'assistant': {
         const served = await viaServer(text, d);
         if (served) return served;
-        const answer = await d.toAssistant(cmd.text);
-        return { ok: true, say: (typeof answer === 'string' && answer.trim()) || 'Asking your Escanor assistant.', kind: 'assistant' };
+        return fromAssistant(await d.toAssistant(cmd.text), 'Asking your Escanor assistant.');
       }
     }
   } catch (e) {
