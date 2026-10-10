@@ -374,15 +374,23 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
     if (choices != null) _applyChoices(a.vmId, a.sessionId, choices, sent: sent);
   }
 
-  /// What was picked for a new chat is remembered for it once the machine has named it. The machine started the chat with
-  /// what went with the request ([sent]), so only a choice changed since then is sent again.
+  /// What was picked for a new chat is remembered for it once the machine has named it, and sent to it again.
   void _applyChoices(String vmId, String sessionId, ChatChoices c, {ChatChoices? sent}) {
     choicesStore.write(vmId, sessionId, SavedChoices(mode: c.mode, model: c.model, effort: c.effort));
     if (isPermissionMode(c.mode)) _keepModeForNewChats(vmId, c.mode);
-    final changed = sent == null
-        ? SavedChoices(mode: c.mode, model: c.model, effort: c.effort)
-        : SavedChoices(mode: c.mode == sent.mode ? 'default' : c.mode, model: c.model == sent.model ? '' : c.model, effort: c.effort == sent.effort ? '' : c.effort);
-    unawaited(_pushChoices(vmId, sessionId, changed).catchError((_) {}));
+    unawaited(_pushNamed(vmId, sessionId, c, sent).catchError((_) {}));
+  }
+
+  /// A new chat was just named. The mode goes again even though it went with the request that started the chat: agents from
+  /// before the hub passed it on (most machines out there) ignore that one. Model and effort go when they changed since that
+  /// request ([sent]), a change back to the default included; when what went with it is not known, as for any chat.
+  Future<void> _pushNamed(String vmId, String sessionId, ChatChoices c, ChatChoices? sent) async {
+    if (sent == null) return _pushChoices(vmId, sessionId, SavedChoices(mode: c.mode, model: c.model, effort: c.effort));
+    await Future.wait([
+      if (isPermissionMode(c.mode) && (c.mode != 'default' || c.mode != sent.mode)) api.setPermissionMode(vmId, sessionId, c.mode),
+      if (c.model != sent.model) api.setModel(vmId, sessionId, c.model),
+      if (c.effort != sent.effort && (c.effort.isEmpty || isEffortLevel(c.effort))) api.setEffort(vmId, sessionId, c.effort),
+    ]);
   }
 
   /// Tell the machine what this chat is set to. A choice left at "default" needs no telling.

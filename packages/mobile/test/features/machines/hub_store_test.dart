@@ -59,7 +59,7 @@ void main() {
     expect(sockets[0].closed, isTrue);
   });
 
-  test('what was picked for a new chat goes with the request that starts it, and is not sent again once it is named', () async {
+  test('what was picked for a new chat goes with the request that starts it; once named, the mode goes again', () async {
     answer = (req) => req.url.path.endsWith('/sessions') ? http.Response(jsonEncode({'tempId': 't1'}), 202) : http.Response('{"ok":true}', 202);
     final store = make();
     await store.startNewChat('v', input, choices: const ChatChoices(mode: 'plan', model: 'claude-opus-5-5', effort: 'high'));
@@ -71,8 +71,23 @@ void main() {
     await pumpEventQueue();
     expect(store.state.selectedSessionId, 's1');
     expect(store.namedAs('t1'), 's1');
-    expect(sent.length, 1, reason: 'the machine started the chat with them already');
+    // Agents from before the hub passed the mode on ignore the one in the request; model and effort did not change since.
+    expect(sent.skip(1).map((r) => '${r.url.path} ${r.body}'), ['/api/vms/v/sessions/s1/permission-mode {"mode":"plan"}']);
     expect(store.savedChoices('v', 's1'), const SavedChoices(mode: 'plan', model: 'claude-opus-5-5', effort: 'high'));
+  });
+
+  test('a choice changed back to the default while the chat was being named is sent too', () async {
+    answer = (req) => req.url.path.endsWith('/sessions') ? http.Response(jsonEncode({'tempId': 't1'}), 202) : http.Response('{}', 202);
+    final store = make();
+    await store.startNewChat('v', input, choices: const ChatChoices(mode: 'plan', model: 'claude-opus-5-5', effort: 'high'));
+    store.updatePendingChoices('t1', const ChatChoices());
+    store.dispatch(const SessionCreated(vmId: 'v', tempId: 't1', sessionId: 's1', cwd: '', title: '', accountId: 'a'));
+    await pumpEventQueue();
+    expect(sent.skip(1).map((r) => '${r.url.path} ${r.body}'), [
+      '/api/vms/v/sessions/s1/permission-mode {"mode":"default"}',
+      '/api/vms/v/sessions/s1/model {"model":""}',
+      '/api/vms/v/sessions/s1/effort {"effort":""}',
+    ]);
   });
 
   test('defaults are not sent; a choice changed while waiting is', () async {
@@ -95,7 +110,7 @@ void main() {
     await store.startNewChat('v', input, choices: const ChatChoices(mode: 'acceptEdits'));
     await pumpEventQueue();
     expect(store.state.selectedSessionId, 's1');
-    expect(sent.map((r) => r.url.path), ['/api/vms/v/sessions'], reason: 'the mode went with the request that started it');
+    expect(sent.last.url.path, '/api/vms/v/sessions/s1/permission-mode');
     expect(store.savedChoices('v', 's1')!.mode, 'acceptEdits');
   });
 

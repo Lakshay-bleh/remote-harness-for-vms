@@ -8,7 +8,8 @@
   "exports": {
     ".": "./src/protocol.ts",
     "./escanor": "./src/escanor.ts",
-    "./validate": "./src/validate.ts"
+    "./validate": "./src/validate.ts",
+    "./autonomy": "./src/autonomy.ts"
   },
   "scripts": {
     "test": "node --experimental-strip-types --test test/*.test.ts"
