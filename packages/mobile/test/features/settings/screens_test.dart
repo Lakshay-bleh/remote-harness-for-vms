@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:escanor/features/settings/legal_content.dart' show policyDate;
 import 'package:escanor/core/cache.dart';
 import 'package:escanor/core/prefs.dart';
 import 'package:escanor/core/theme.dart';
@@ -216,7 +217,7 @@ void main() {
     await settle(t);
     expect(find.text('Terms of service'), findsOneWidget);
     expect(find.text('This agreement'), findsOneWidget);
-    expect(find.text('Last updated 7 October 2026'), findsOneWidget);
+    expect(find.text('Last updated $policyDate'), findsOneWidget);
   });
 
   testWidgets('About shows the version and the documents', (t) async {
