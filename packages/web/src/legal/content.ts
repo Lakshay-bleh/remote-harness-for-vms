@@ -98,7 +98,7 @@ export const legalDocuments: Record<string, LegalDocument> = {
     description: 'The agreement between you and Lakshay Jain, trading as Escanor Labs, for using Escanor.',
     sections: [
       { heading: 'This agreement', paragraphs: [
-        'These terms are a contract between you and Lakshay Jain, a sole proprietor trading as Escanor Labs, of ATF-39, Gaur World Smart Street, Sector-16B, Greater Noida West, Uttar Pradesh 201308, India ("Escanor", "we") for the Escanor website, web app, desktop app, Android app and API (the "service"). You accept them when you create an account or tick "I agree"; we record the version you accepted. If you use Escanor for an organisation, you confirm you have its authority, and these terms bind it too.',
+        'These terms are a contract between you and Lakshay Jain, a sole proprietor trading as Escanor Labs, of ATF-39, Gaur World Smart Street, Sector-16B, Greater Noida West, Uttar Pradesh 201308, India ("Escanor", "we") for the Escanor website, web app, desktop app, Android app, iPhone app and API (the "service"). You accept them when you create an account or tick "I agree"; we record the version you accepted. If you use Escanor for an organisation, you confirm you have its authority, and these terms bind it too.',
       ] },
       { heading: 'Who can use Escanor', paragraphs: [
         'You must be 18 or older and able to enter a contract under Indian law. Keep your password and keys secret, use two-step verification where you can, and tell us at once at support@escanor.in if you suspect someone else is using your account.',
@@ -129,7 +129,7 @@ export const legalDocuments: Record<string, LegalDocument> = {
         'We work to keep Escanor available and secure but cannot promise it will be uninterrupted or error-free, and services you connect are run by their own providers. To the extent the law allows, our total liability to you for any claim is limited to the fees you paid us in the 12 months before the claim. This limit does not apply to fraud, gross negligence, or anything the law does not allow us to limit, and nothing in these terms affects your rights under the Consumer Protection Act, 2019.',
       ] },
       { heading: 'Changes, law and disputes', paragraphs: [
-        'We will tell you about material changes to these terms before they apply and ask you to accept them in the app. These terms are governed by the laws of India. Please raise any problem with us first through [Support](/support) or [Grievances](/grievances): we acknowledge a complaint within 24 hours and resolve it within 7 days. Subject to that, the courts at Gautam Buddh Nagar, Uttar Pradesh have jurisdiction, and you may also use a consumer commission or the National Consumer Helpline (1915) where the law allows.',
+        'We will tell you about material changes to these terms before they apply and ask you to accept them in the app. These terms are governed by the laws of India. Please raise any problem with us first through [Support](/support) or [Grievances](/grievances). We acknowledge a complaint made through Grievances within 24 hours and resolve it within 7 days; privacy requests are answered within 30 days, as the [Privacy policy](/privacy#rights) says. Subject to that, the courts at Gautam Buddh Nagar, Uttar Pradesh have jurisdiction, and you may also use a consumer commission or the National Consumer Helpline (1915) where the law allows.',
       ] },
     ],
   },
@@ -159,7 +159,7 @@ export const legalDocuments: Record<string, LegalDocument> = {
       ] },
       { heading: 'What happens if you do', paragraphs: [
         'We may remove the content, disable an integration, or suspend or close the account, and we keep removed content and records for 180 days where the law requires it for an investigation. We may report offences to the authorities as the law requires. You will be told why and can contest the decision through [Grievances](/grievances).',
-        'Sexual material involving a child is removed at once and reported to the police or the National Cyber Crime Reporting Portal, with the details of where it came from, as the Protection of Children from Sexual Offences Act, 2012 requires. The account is closed.',
+        'If content is sexual material involving a child, access to it is disabled at once, the account is suspended, and it is reported to the police or the National Cyber Crime Reporting Portal, with the details of where it came from, as the Protection of Children from Sexual Offences Act, 2012 requires.',
       ] },
       { heading: 'Reporting misuse', paragraphs: [
         'Report content or behaviour that breaks these rules on [Grievances](/grievances). Content showing someone\'s private areas or nudity, or impersonating them, is dealt with within 2 hours of a report. Report security vulnerabilities on [Security](/security).',
@@ -396,7 +396,7 @@ export const legalDocuments: Record<string, LegalDocument> = {
     description: 'Our yearly check that Escanor does not use any of the 13 dark patterns listed by the Central Consumer Protection Authority, and our declaration of compliance.',
     sections: [
       { heading: 'Declaration', paragraphs: [
-        'Lakshay Jain, trading as Escanor Labs, has audited Escanor\'s website, web app, desktop app and Android app against the Guidelines for Prevention and Regulation of Dark Patterns, 2023 issued by the Central Consumer Protection Authority. We declare that, as of 8 October 2026, Escanor does not use any of the dark patterns listed in those guidelines. Signed by Lakshay Jain, sole proprietor of Escanor Labs and its Grievance Officer. Next audit due by 8 October 2027.',
+        'Lakshay Jain, trading as Escanor Labs, has audited Escanor\'s website, web app, desktop app, Android app and iPhone app against the Guidelines for Prevention and Regulation of Dark Patterns, 2023 issued by the Central Consumer Protection Authority. We declare that, as of 8 October 2026, Escanor does not use any of the dark patterns listed in those guidelines. Signed by Lakshay Jain, sole proprietor of Escanor Labs and its Grievance Officer. Next audit due by 8 October 2027.',
       ] },
       { heading: 'What we checked', items: [
         '**False urgency:** no countdown timers, "only N left" claims or limited-time pressure anywhere.',

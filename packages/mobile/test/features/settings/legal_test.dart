@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:escanor/core/native_licences.dart';
 import 'package:escanor/features/settings/about_page.dart';
 import 'package:escanor/features/settings/info_pages.dart';
 import 'package:escanor/features/settings/legal_content.dart';
 import 'package:escanor/features/settings/legal_rich.dart';
 import 'package:escanor/features/voice/control_consent.dart' as consent;
+import 'package:flutter/foundation.dart' show LicenseRegistry;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -142,6 +144,22 @@ void main() {
     await t.tap(find.text('Open-source licences'));
     await settle(t);
     expect(find.byType(LicensePage), findsOneWidget);
+  });
+
+  test('the native libraries and fonts are on the licence page, with their licence texts', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    registerNativeLicences();
+    final entries = await LicenseRegistry.licenses.toList();
+    String textOf(String package) => entries
+        .firstWhere((e) => e.packages.any((p) => p.startsWith(package)))
+        .paragraphs
+        .map((p) => p.text)
+        .join('\n');
+    for (final name in ['Vosk', 'Java Native Access', 'Firebase', 'Google Play services', 'Google ML Kit', 'Razorpay', 'Gellix']) {
+      expect(entries.any((e) => e.packages.any((p) => p.startsWith(name))), isTrue, reason: name);
+    }
+    expect(textOf('Vosk'), contains('Apache License'));
+    expect(textOf('Java Native Access'), allOf(contains('Apache License'), contains('GNU LESSER GENERAL PUBLIC LICENSE')));
   });
 
   test('the policies name the sole proprietor, never a company', () {

@@ -8,7 +8,8 @@ import 'whats_new.dart';
 /// Who provides Escanor, as the policies name him. Escanor Labs is a trading name, not a company: never "Private Limited".
 const legalOwner = 'Lakshay Jain, sole proprietor, trading as Escanor Labs';
 
-/// The open-source licences of every package built into the app (Flutter collects them), as their licences require.
+/// The licences of everything built into the app: Dart packages (Flutter collects them) and the native libraries and fonts
+/// registered in core/native_licences.dart, as their licences require.
 void openLicences(BuildContext context) => showLicensePage(
       context: context,
       applicationName: 'Escanor',
@@ -30,8 +31,8 @@ class AboutEscanorPage extends StatelessWidget {
           'without you.'),
       p('It works on your own machines and servers, on the services you connect (code hosting, deployments, monitoring and more), and '
           'on its own while you are away: on a schedule, or the moment a deployment fails or an incident opens.'),
-      p('Escanor is made by Escanor Labs in India and provided to you by $legalOwner. What it stores, why, and your choices about it are in '
-          'the documents below, which read here in the app.'),
+      p('Escanor is made in India by $legalOwner. What it stores, why, and your choices about it are in the documents below, which '
+          'read here in the app.'),
       Group(children: [
         SRow(icon: Icons.new_releases_outlined, label: 'What’s new', onTap: () => pushPage(context, const WhatsNewPage())),
         SRow(icon: Icons.verified_user_outlined, label: 'Privacy policy', onTap: () => openLegalDoc(context, 'privacy')),
