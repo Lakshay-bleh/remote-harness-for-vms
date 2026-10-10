@@ -28,6 +28,7 @@ import {
   isWeakSecret,
   parseAgentFrame,
   parseNewSession,
+  parseRunChoices,
   parseUserInput,
   redactSecrets,
   safeEqual,
@@ -800,7 +801,7 @@ export class Hub extends DurableObject<Env> {
       const localMessage = userMessage(text, images);
       this.insertMessage({ sessionId: tempId, vmId, message: localMessage });
       this.broadcast({ type: 'sdk_message', vmId, sessionId: tempId, message: localMessage, createdAt: this.now() });
-      const delivered = this.sendToVm(vmId, { type: 'user_input', sessionId: tempId, tempId, cwd, accountId, text, images });
+      const delivered = this.sendToVm(vmId, { type: 'user_input', sessionId: tempId, tempId, cwd, accountId, text, images, ...parseRunChoices(body) });
       if (!delivered) return json({ error: 'VM not connected' }, 503);
       return json({ tempId }, 202);
     }
@@ -821,7 +822,7 @@ export class Hub extends DurableObject<Env> {
           this.insertMessage({ sessionId, vmId, message: localMessage });
           this.touchSession(sessionId, 'active', vmId);
           this.broadcast({ type: 'sdk_message', vmId, sessionId, message: localMessage, createdAt: this.now() });
-          const delivered = this.sendToVm(vmId, { type: 'user_input', sessionId, text, images });
+          const delivered = this.sendToVm(vmId, { type: 'user_input', sessionId, text, images, ...parseRunChoices(body) });
           return delivered ? json({ ok: true }, 202) : json({ error: 'VM not connected' }, 503);
         }
         case 'interrupt':

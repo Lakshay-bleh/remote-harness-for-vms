@@ -1,6 +1,7 @@
 import { homedir, hostname } from 'node:os';
 import { resolve } from 'node:path';
-import { isPermissionMode, isValidMcpServerName, type ManagedMcpServer, type PermissionMode } from '@remote-harness/shared';
+import { isValidMcpServerName, type ManagedMcpServer, type PermissionMode } from '@remote-harness/shared';
+import { isPermissionMode } from '@remote-harness/shared/validate';
 import { workspaceRootFrom } from './paths.js';
 
 function required(name: string): string {
@@ -52,8 +53,9 @@ const mcpOverride = parseMcpOverride(process.env.ESCANOR_MCP_OVERRIDE);
 delete process.env.ESCANOR_MCP_OVERRIDE;
 
 /**
- * The mode a chat starts in until the app picks one. 'bypassPermissions' = this machine does everything itself: chats never
- * wait for the phone to approve anything (and the app's "Autonomous" runs as bypass here). Unset or unknown = 'default'.
+ * The mode a chat starts in when the app picks none (DEFAULT_PERMISSION_MODE, written at install from the owner's plan).
+ * 'bypassPermissions' = this machine does everything itself: chats never wait for the phone to approve anything (and the
+ * app's "Autonomous" runs as bypass here). Unset or unknown = 'default'.
  */
 export function defaultModeFrom(raw: string | undefined): PermissionMode {
   const v = raw?.trim();

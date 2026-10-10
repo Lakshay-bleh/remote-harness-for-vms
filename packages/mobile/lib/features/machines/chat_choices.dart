@@ -12,6 +12,13 @@ class SavedChoices {
 
   Map<String, String> toJson() => {'mode': mode, 'model': model, 'effort': effort};
 
+  /// As it goes with a message to the hub (packages/shared parseRunChoices): '' model and null effort are the defaults.
+  Map<String, Object?> toRunJson() => {
+        if (isPermissionMode(mode)) 'permissionMode': mode,
+        'model': model,
+        'effort': isEffortLevel(effort) ? effort : null,
+      };
+
   static SavedChoices? tryParse(Object? j) {
     if (j is! Map) return null;
     final mode = j['mode'];

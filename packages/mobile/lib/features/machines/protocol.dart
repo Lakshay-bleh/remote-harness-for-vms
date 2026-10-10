@@ -76,8 +76,12 @@ class SessionDto {
     required this.lastMessageAt,
     required this.status,
     required this.accountId,
+    this.tempId,
   });
   final String id;
+
+  /// The temporary id the chat started under, when the hub says (an app that missed session_created can match it).
+  final String? tempId;
   final String vmId;
   final String cwd;
   final String title;
@@ -89,7 +93,15 @@ class SessionDto {
   final String accountId;
 
   SessionDto copyWith({String? status, String? title}) => SessionDto(
-      id: id, vmId: vmId, cwd: cwd, title: title ?? this.title, createdAt: createdAt, lastMessageAt: lastMessageAt, status: status ?? this.status, accountId: accountId);
+      id: id,
+      vmId: vmId,
+      cwd: cwd,
+      title: title ?? this.title,
+      createdAt: createdAt,
+      lastMessageAt: lastMessageAt,
+      status: status ?? this.status,
+      accountId: accountId,
+      tempId: tempId);
 
   static SessionDto? tryParse(Object? j) {
     if (j is! Map || !_isId(j['id'])) return null;
@@ -104,6 +116,7 @@ class SessionDto {
       lastMessageAt: s('lastMessageAt', created),
       status: const ['active', 'idle', 'ended', 'waiting'].contains(j['status']) ? j['status'] as String : 'idle',
       accountId: s('accountId', 'default'),
+      tempId: _isId(j['tempId']) ? j['tempId'] as String : null,
     );
   }
 

@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { PermissionMode } from '@remote-harness/shared';
+import type { EffortLevel, PermissionMode } from '@remote-harness/shared';
 
 export type RegistryEntry = {
   sessionId: string;
@@ -14,8 +14,10 @@ export type RegistryEntry = {
   syncedUuid?: string;
   /** Transcript mtime at the last sync; an unchanged file is not re-read. */
   syncedMtime?: number;
-  /** The permission mode the chat was last set to, so a resumed chat keeps it. */
-  mode?: PermissionMode;
+  /** What the person last chose for this chat. A resumed chat starts with these instead of the defaults. */
+  permissionMode?: PermissionMode;
+  model?: string;
+  effort?: EffortLevel | null;
 };
 
 const isEntry = (e: unknown): e is RegistryEntry =>
@@ -92,6 +94,16 @@ export class SessionRegistry {
 
   upsert(entry: RegistryEntry): void {
     this.entries.set(entry.sessionId, entry);
+    this.persist();
+  }
+
+  /** Change some fields of a known session (nothing happens for one this VM has no record of). */
+  update(sessionId: string, patch: Partial<Omit<RegistryEntry, 'sessionId'>>): void {
+    const e = this.entries.get(sessionId);
+    if (!e) return;
+    const next = { ...e, ...patch };
+    if (JSON.stringify(next) === JSON.stringify(e)) return;
+    this.entries.set(sessionId, next);
     this.persist();
   }
 

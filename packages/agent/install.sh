@@ -51,6 +51,9 @@ if [ ! -f "$ENV_FILE" ]; then
   read -rp "Folder to scan for projects, shown as pick-a-project options for new chats [$WORKSPACE_ROOT]: " PROJECTS_ROOT < "$TTY"
   PROJECTS_ROOT="${PROJECTS_ROOT:-$WORKSPACE_ROOT}"
   read -rp "ANTHROPIC_API_KEY (leave blank if this machine already ran 'claude' and logged in): " ANTHROPIC_API_KEY < "$TTY"
+  # The mode chats start in when the app picks none. The Escanor app's command sets it from your plan: bypassPermissions (this
+  # machine runs Claude Code without asking for approval) on Pro and above, default (it asks) otherwise.
+  DEFAULT_PERMISSION_MODE="${DEFAULT_PERMISSION_MODE:-default}"
 
   # Everything below ends up in a file read by the service, so refuse anything that is not what it claims to be.
   need "hub URL (expected wss://host[:port]/path)" valid_hub_url "$HUB_URL"
@@ -59,6 +62,7 @@ if [ ! -f "$ENV_FILE" ]; then
   need "workspace root" valid_path "$WORKSPACE_ROOT"
   need "projects folder" valid_path "$PROJECTS_ROOT"
   need "ANTHROPIC_API_KEY" valid_api_key "$ANTHROPIC_API_KEY"
+  need "DEFAULT_PERMISSION_MODE" valid_permission_mode "$DEFAULT_PERMISSION_MODE"
 
   # HUB_TOKEN and ANTHROPIC_API_KEY live here: create it owner-only from the start.
   (umask 077; cat > "$ENV_FILE" <<EOF
@@ -70,11 +74,13 @@ PROJECTS_ROOT=$PROJECTS_ROOT
 DATA_DIR=$AGENT_DIR/data
 PROFILES_DIR=$HOME/.claude-profiles
 ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
+DEFAULT_PERMISSION_MODE=$DEFAULT_PERMISSION_MODE
 EOF
   )
   echo "    wrote $ENV_FILE"
 else
   echo "==> Found existing $ENV_FILE, leaving it as-is"
+  # DEFAULT_PERMISSION_MODE included: it is set once, when the machine is first connected, and changed by its owner after that.
   # ...except the hub details when they were passed in, e.g. after the token was rotated.
   if [ -n "${HUB_URL:-}" ] && [ -n "${HUB_TOKEN:-}" ]; then
     need "hub URL (expected wss://host[:port]/path)" valid_hub_url "$HUB_URL"

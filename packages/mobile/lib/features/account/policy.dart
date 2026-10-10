@@ -23,10 +23,12 @@ class ConsentState {
 const acceptancePurposes = ['terms', 'privacy_notice'];
 const rulesNoticeEvery = Duration(days: 90);
 
-/// True until both acceptance records exist at the current policy version.
+/// True until both acceptance records exist at the current policy version or a newer one. Versions are dates (YYYY-MM-DD), so
+/// they order as strings. A newer one counts because the website, the desktop app and this app write the same records: if only
+/// the exact version counted, two apps on different versions would each ask again after the other had recorded its own.
 bool needsAcceptance(List<ConsentState> states, String version) => acceptancePurposes.any((purpose) {
       final found = states.where((s) => s.purpose == purpose).firstOrNull;
-      return found == null || !found.granted || found.noticeVersion != version;
+      return found == null || !found.granted || found.noticeVersion.compareTo(version) < 0;
     });
 
 /// The IT Rules ask that people are reminded of the rules at least every three months.

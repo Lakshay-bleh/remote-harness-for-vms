@@ -1,5 +1,5 @@
 import { query as sdkQuery, type McpServerConfig, type Options, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
-import { isPermissionMode, isValidMcpServerName } from '@remote-harness/shared';
+import { isValidMcpServerName } from '@remote-harness/shared';
 import { isSandboxAutoAllowed } from './sandboxPolicy.js';
 import { isAutoAllowedMcpTool } from './mcpApproval.js';
 import { childEnv } from './childEnv.js';
@@ -31,13 +31,22 @@ type LiveSession = {
   setMcpServers: (servers: Record<string, McpServerConfig>) => Promise<unknown>;
   mcpServerStatus: () => Promise<Array<{ name: string; status: string; error?: string }>>;
   close: () => void;
-  /** The mode the app picked for this chat (after effectiveMode), which decides how canUseTool answers. */
+  /** The mode the chat is in now (after effectiveMode). In bypass, canUseTool answers everything itself. */
   mode: PermissionMode;
+  /** Launched with the SDK's bypass opt-in, so it can be switched to bypass while running. */
+  canBypass: boolean;
+  /** Messages sent in whose turn has not ended yet (0 = between turns). */
+  pending: number;
+  /** Switched to bypass while running without the opt-in: the run is closed after its turn and resumed in bypass. */
+  restartForBypass: boolean;
+  closedForRestart?: boolean;
   appliedMcp: string; // the MCP config this session was last given, so an unchanged re-push is a no-op
 };
 
 /** Claude Code will not run in bypass mode as root (it exits), so there the agent itself says yes to everything instead. */
 const runningAsRoot = (): boolean => typeof process.getuid === 'function' && process.getuid() === 0;
+
+const modeLabel = (mode: PermissionMode): string => (mode === 'auto' ? 'Autonomous' : mode === 'bypassPermissions' ? 'Bypass permissions' : mode);
 
 // A wedged session must not stop the rest (or the status report) from converging.
 const MCP_APPLY_TIMEOUT_MS = 15_000;
@@ -107,8 +116,9 @@ export class SessionManager {
       /** The SDK's query(); injectable so tests can see exactly what a session is started with. */
       query?: typeof sdkQuery;
       /**
-       * The mode a chat starts in until the app picks one (DEFAULT_PERMISSION_MODE). 'bypassPermissions' is a machine that
-       * does everything itself: its chats never wait for the phone, and the app's "Autonomous" means the same thing there.
+       * The mode a chat starts in when nothing was chosen for it (DEFAULT_PERMISSION_MODE, set from the owner's plan at
+       * install). 'bypassPermissions' is a machine that does everything itself: its chats never wait for the phone, and the
+       * app's "Autonomous" means bypass there too.
        */
       defaultMode?: PermissionMode;
       /** Injectable for tests; otherwise whether this process runs as root. */
@@ -254,6 +264,7 @@ export class SessionManager {
   handleUserInput(input: HubUserInput): void {
     const live = this.live.get(input.sessionId);
     if (live) {
+      live.pending++;
       live.queue.push(toUserMessage(input.text, input.images));
       return;
     }
@@ -270,6 +281,10 @@ export class SessionManager {
     this.startSession(input);
   }
 
+  private get isRoot(): boolean {
+    return this.opts.isRoot ?? runningAsRoot();
+  }
+
   /**
    * On a machine set to do everything itself, the app's "Autonomous" ('auto') runs as bypass too. Handed to Claude Code as
    * is, 'auto' is its own classifier mode, which refuses some commands and then asks the person to run them by hand.
@@ -278,29 +293,38 @@ export class SessionManager {
     return mode === 'auto' && this.opts.defaultMode === 'bypassPermissions' ? 'bypassPermissions' : mode;
   }
 
-  /** The mode Claude Code itself runs in: as root, bypass is answered here instead (see runningAsRoot). */
+  /** The mode Claude Code itself runs in: as root, bypass is answered by canUseTool instead (see runningAsRoot). */
   private sdkMode(mode: PermissionMode): PermissionMode {
-    return mode === 'bypassPermissions' && (this.opts.isRoot ?? runningAsRoot()) ? 'default' : mode;
+    return mode === 'bypassPermissions' && this.isRoot ? 'default' : mode;
   }
 
   private startSession(input: HubUserInput): void {
     const tempId = input.tempId;
     const existingEntry = this.registry.get(input.sessionId);
     const isResume = Boolean(existingEntry) && !tempId;
-    // A resumed chat keeps the mode it was last set to; a new one starts in the machine's default.
-    const saved = isResume && isPermissionMode(existingEntry?.mode) ? existingEntry.mode : undefined;
-    const mode = this.effectiveMode(saved ?? this.opts.defaultMode ?? 'default');
-    let session!: LiveSession;
     const cwd = this.resolveCwd(input.cwd ?? existingEntry?.cwd);
     const profile = this.resolveProfile(isResume ? existingEntry?.accountId : input.accountId);
 
     let resolvedSessionId = isResume ? input.sessionId : '';
     const queue = new AsyncMessageQueue<SDKUserMessage>();
+    // What this chat runs with: what came with the message, else what was last chosen for it here, else the defaults
+    // (the machine's own default mode included).
+    const choices = {
+      permissionMode: input.permissionMode ?? existingEntry?.permissionMode,
+      model: input.model !== undefined ? input.model : existingEntry?.model,
+      effort: input.effort !== undefined ? input.effort : existingEntry?.effort,
+    };
+    // The run starts in the chosen mode. Bypass is only possible with the SDK's explicit opt-in at start (Claude Code refuses
+    // a later switch to it in a run launched without it), so the opt-in is passed when bypass is the chosen mode, or when
+    // the machine's owner made bypass this machine's default. Never as root, where Claude Code refuses it outright.
+    const startMode = this.effectiveMode(choices.permissionMode ?? this.opts.defaultMode ?? 'default');
+    const canBypass = !this.isRoot && (startMode === 'bypassPermissions' || this.opts.defaultMode === 'bypassPermissions');
+    let session!: LiveSession;
     const options: Options = {
       cwd,
-      permissionMode: this.sdkMode(mode),
-      // Lets a chat be switched to bypass later (the app's "Bypass permissions"); it does not by itself skip anything.
-      allowDangerouslySkipPermissions: !(this.opts.isRoot ?? runningAsRoot()),
+      permissionMode: this.sdkMode(startMode),
+      ...(canBypass ? { allowDangerouslySkipPermissions: true } : {}),
+      ...(choices.effort ? { effort: choices.effort } : {}),
       // Ask for summarized thinking so the web UI can show it like the CLI's transcript view.
       thinking: { type: 'adaptive', display: 'summarized' },
       // Stream the reply as it is written, so the phone shows it live instead of all at once at the end (see PartialText).
@@ -349,9 +373,12 @@ export class SessionManager {
     session = {
       queue,
       cwd,
-      mode,
+      mode: startMode,
+      canBypass,
+      pending: 1,
+      restartForBypass: false,
       interrupt: () => q.interrupt(),
-      setPermissionMode: (m) => q.setPermissionMode(this.sdkMode(m)),
+      setPermissionMode: (mode) => q.setPermissionMode(this.sdkMode(mode)),
       setModel: (model) => q.setModel(model),
       setEffort: (effort) => q.applyFlagSettings({ effortLevel: effort }),
       setMcpServers: (servers) => q.setMcpServers(servers),
@@ -360,6 +387,11 @@ export class SessionManager {
       appliedMcp: JSON.stringify(options.mcpServers ?? {}),
     };
     this.live.set(liveKey, session);
+    // A model id this Claude Code does not know must not stop the chat from starting: it is switched to once running, and a
+    // refusal shows on the chat (see control()).
+    if (choices.model) this.control(liveKey, 'Switching the model', (live) => live.setModel(choices.model || undefined));
+    if (isResume) this.remember(input.sessionId, choices);
+    else this.pendingChoices.set(liveKey, choices);
 
     void this.pump(q, {
       session,
@@ -412,7 +444,8 @@ export class SessionManager {
           const sessionId = msg.session_id;
           ctx.setSessionId(sessionId);
           const title = titleFrom(ctx.seedTitle);
-          this.registry.upsert({ sessionId, cwd: ctx.cwd, title, createdAt: new Date().toISOString(), accountId: ctx.accountId, mode: ctx.session.mode });
+          this.registry.upsert({ sessionId, cwd: ctx.cwd, title, createdAt: new Date().toISOString(), accountId: ctx.accountId, ...definedOnly(this.pendingChoices.get(ctx.liveKey)) });
+          this.pendingChoices.delete(ctx.liveKey);
           if (ctx.liveKey !== sessionId) {
             const entry = this.live.get(ctx.liveKey);
             if (entry) {
@@ -431,10 +464,15 @@ export class SessionManager {
           tempId: ctx.tempId,
           message,
         });
-        if (msg.type === 'result' && ctx.getSessionId()) this.onTurnEnded?.(ctx.getSessionId(), ctx.cwd);
+        if (msg.type === 'result') {
+          ctx.session.pending = Math.max(0, ctx.session.pending - 1);
+          if (ctx.getSessionId()) this.onTurnEnded?.(ctx.getSessionId(), ctx.cwd);
+          if (ctx.session.restartForBypass && ctx.session.pending === 0 && ctx.getSessionId()) this.closeForRestart(ctx.session);
+        }
       }
     } catch (err) {
-      this.send({
+      // A run closed on purpose (to restart it in bypass) has nothing to report.
+      if (!ctx.session.closedForRestart) this.send({
         type: 'error',
         sessionId: ctx.getSessionId() || undefined,
         tempId: ctx.tempId,
@@ -443,14 +481,18 @@ export class SessionManager {
     } finally {
       partial.reset();
       const sessionId = ctx.getSessionId();
+      // A chat closed to restart in bypass may already be running again under the same id: leave that run alone.
+      const replaced = Boolean(sessionId) && this.live.has(sessionId) && this.live.get(sessionId) !== ctx.session;
       // Cards still waiting for an answer belong to a session that no longer exists: deny them and drop the entries.
-      for (const key of new Set([sessionId, ctx.tempId, ctx.liveKey])) if (key) this.permissions.dropSession(key);
-      this.live.delete(ctx.liveKey);
-      if (sessionId) this.live.delete(sessionId);
+      if (!replaced) for (const key of new Set([sessionId, ctx.tempId, ctx.liveKey])) if (key) this.permissions.dropSession(key);
+      for (const key of new Set([ctx.liveKey, sessionId])) if (key && this.live.get(key) === ctx.session) this.live.delete(key);
+      this.pendingChoices.delete(ctx.liveKey);
       this.mcpSessionStatus.delete(ctx.session);
       this.reportMcpStatus();
-      this.send({ type: 'session_ended', sessionId: sessionId || ctx.tempId || ctx.liveKey });
-      if (sessionId) this.onTurnEnded?.(sessionId, ctx.cwd);
+      if (!replaced) {
+        this.send({ type: 'session_ended', sessionId: sessionId || ctx.tempId || ctx.liveKey });
+        if (sessionId) this.onTurnEnded?.(sessionId, ctx.cwd);
+      }
     }
   }
 
@@ -459,25 +501,67 @@ export class SessionManager {
   }
 
   interrupt(sessionId: string): void {
-    this.control(sessionId, 'Stop', (live) => live.interrupt());
+    this.control(sessionId, 'Stop', async (live) => {
+      await live.interrupt();
+      // Stopped: nothing is running now, so a switch to bypass that was waiting for the turn to end happens now.
+      live.pending = 0;
+      if (live.restartForBypass && this.live.get(sessionId) === live) this.closeForRestart(live);
+    });
   }
 
+  // A change is remembered for the chat even when it is not running, so the next message resumes it with that change
+  // (it used to be dropped, and a resumed chat ran with the defaults whatever the phone showed).
   setPermissionMode(sessionId: string, requested: PermissionMode): void {
-    const mode = this.effectiveMode(requested);
-    // Remembered, so the chat comes back in it after it stops (or the agent restarts) and is resumed.
-    const entry = this.registry.get(sessionId);
-    if (entry && entry.mode !== mode) this.registry.upsert({ ...entry, mode });
+    this.remember(sessionId, { permissionMode: requested });
     const live = this.live.get(sessionId);
-    if (live) live.mode = mode;
+    if (!live) return;
+    const mode = this.effectiveMode(requested);
+    if (mode === 'bypassPermissions' && !live.canBypass && !this.isRoot) {
+      // Claude Code refuses a switch to bypass in a run launched without the opt-in. The mode is remembered, so the run is
+      // closed once it is between turns and the next message resumes it in bypass. Said once per run, not on every message.
+      if (!live.restartForBypass) {
+        live.restartForBypass = true;
+        this.send({ type: 'error', sessionId, message: `This chat switches to ${modeLabel(requested)} the next time it starts.` });
+      }
+      if (live.pending === 0) this.closeForRestart(live);
+      return;
+    }
+    live.restartForBypass = false;
+    live.mode = mode;
     this.control(sessionId, 'Changing the permission mode', (l) => l.setPermissionMode(mode));
   }
 
+  /** End a run that is between turns so its next message resumes it (in the mode now remembered for it). */
+  private closeForRestart(session: LiveSession): void {
+    for (const [key, s] of this.live) if (s === session) this.live.delete(key);
+    session.closedForRestart = true;
+    try {
+      session.close();
+    } catch {
+      // already gone
+    }
+  }
+
   setModel(sessionId: string, model: string | undefined): void {
+    this.remember(sessionId, { model: model ?? '' });
     this.control(sessionId, 'Switching the model', (live) => live.setModel(model));
   }
 
   setEffort(sessionId: string, effort: EffortLevel | null): void {
+    this.remember(sessionId, { effort });
     this.control(sessionId, 'Changing the effort', (live) => live.setEffort(effort));
+  }
+
+  /** Mode, model and effort a new chat started with, until Claude names it (then they go into the registry). */
+  private pendingChoices = new Map<string, SessionChoices>();
+
+  private remember(sessionId: string, choices: SessionChoices): void {
+    const pending = this.pendingChoices.get(sessionId);
+    if (pending) {
+      this.pendingChoices.set(sessionId, { ...pending, ...definedOnly(choices) });
+      return;
+    }
+    this.registry.update(sessionId, definedOnly(choices));
   }
 
   // The SDK rejects control requests it can't honour (e.g. a model id its catalog doesn't know). Left unhandled, that
@@ -489,4 +573,15 @@ export class SessionManager {
       this.send({ type: 'error', sessionId, message: `${what} failed: ${err instanceof Error ? err.message : String(err)}` });
     });
   }
+}
+
+type SessionChoices = { permissionMode?: PermissionMode; model?: string; effort?: EffortLevel | null };
+
+function definedOnly(c: SessionChoices | undefined): SessionChoices {
+  const out: SessionChoices = {};
+  if (!c) return out;
+  if (c.permissionMode !== undefined) out.permissionMode = c.permissionMode;
+  if (c.model !== undefined) out.model = c.model;
+  if (c.effort !== undefined) out.effort = c.effort;
+  return out;
 }
