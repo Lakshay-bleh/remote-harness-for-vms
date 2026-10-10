@@ -82,8 +82,8 @@ void main() {
       }
     });
     test('the policy version, and the phone-control consent refers to it', () async {
-      expect(policyVersion, '2026-10-07');
-      expect(policyDate, '7 October 2026');
+      expect(policyVersion, '2026-10-08');
+      expect(policyDate, '8 October 2026');
       final backend = await setUpBackend({'POST /compliance/consents': (_) => {'ok': true}});
       await consent.recordPhoneControlConsent(true);
       final sent = jsonDecode(backend.calls.single.body) as Map<String, dynamic>;
@@ -111,7 +111,7 @@ void main() {
     await t.pumpWidget(host(const Scaffold(body: SingleChildScrollView(child: LegalBody(docKey: 'privacy')))));
     await settle(t);
     expect(find.text('Privacy policy'), findsOneWidget);
-    expect(find.text('Last updated 7 October 2026'), findsOneWidget);
+    expect(find.text('Last updated $policyDate'), findsOneWidget);
     expect(find.text('What we collect and why'), findsOneWidget);
     expect(find.text('•'), findsWidgets);
 
