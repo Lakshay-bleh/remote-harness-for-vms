@@ -387,13 +387,17 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
     final older = await api.listMessages(vmId, sessionId, limit: pageSize, before: oldest);
     // Fewer than a page means this reached the start; a row that is not older means the hub ignored `before` and sent it all.
     if (older.length < pageSize || older.any((m) => m.id >= oldest!)) _hasEarlier.remove(sessionId);
+    final before = (_state.messagesBySession[sessionId] ?? const <MessageDto>[]).where(_isResult).length;
     dispatch(PrependMessages(sessionId, older));
+    // Older turns that ended long ago are not a turn that just ended (an autonomous chat must not go round again for them).
+    final added = (_state.messagesBySession[sessionId] ?? const <MessageDto>[]).where(_isResult).length - before;
+    final handled = _resultsHandled[sessionId];
+    if (handled != null && added > 0) _resultsHandled[sessionId] = handled + added;
   }
 
   /// Open a chat: show what is here, ask the hub for what is new, and make sure the machine runs it with the mode,
   /// model and effort chosen for it.
   Future<void> openSession(String vmId, SessionDto s) async {
-    dispatch(Select(vmId: vmId, sessionId: s.id, accountId: s.accountId));
     // What was chosen when it started (kept under its temporary id, in case the machine named it while this phone was
     // not listening), else a chat never given its own choices runs as new chats do on this machine, and keeps that.
     var saved = choicesStore.read(vmId, s.id);
@@ -402,12 +406,13 @@ class HubStore extends ChangeNotifier with WidgetsBindingObserver {
       saved = choicesStore.read(vmId, t);
       if (saved != null) choicesStore.write(vmId, s.id, saved);
     }
-    if (saved != null) {
-      unawaited(_pushChoices(vmId, s.id, saved).catchError((_) {}));
-    } else {
+    if (saved == null) {
       // Not sent now (a chat started elsewhere may be running as it was told); they go with the next message.
       choicesStore.write(vmId, s.id, defaultChoicesFor(vmId));
     }
+    // Selected once its choices are in place, so a chat already on screen (side by side) shows them straight away.
+    dispatch(Select(vmId: vmId, sessionId: s.id, accountId: s.accountId));
+    if (saved != null) unawaited(_pushChoices(vmId, s.id, saved).catchError((_) {}));
     await refreshSession(vmId, s.id);
   }
 

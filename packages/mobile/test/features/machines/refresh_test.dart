@@ -198,6 +198,27 @@ void main() {
       store.logout();
     });
 
+    test('showing earlier messages is not a turn that just ended (an autonomous chat does not go round again)', () async {
+      final store = make();
+      await store.setPermissionMode('v', 's', 'auto');
+      Map<String, Object?> r(int id, Object? m) => {'id': id, 'sessionId': 's', 'vmId': 'v', 'createdAt': 'now', 'message': m};
+      final result = {'type': 'result', 'subtype': 'success', 'result': 'finished for now'};
+      final page = [for (var i = 0; i < HubStore.pageSize; i++) r(1000 + i, i == HubStore.pageSize - 1 ? result : {'type': 'assistant', 'message': {'content': []}})];
+      answer = (req) {
+        final q = req.url.queryParameters;
+        if (q.containsKey('before')) return http.Response(jsonEncode([r(10, prompt('old work')), r(11, {'type': 'assistant', 'message': {'content': [{'type': 'tool_use', 'id': 'x', 'name': 'Bash', 'input': {}}]}}), r(12, {'type': 'result', 'subtype': 'success', 'result': 'stopped'})]), 200);
+        if (q.containsKey('after')) return http.Response('[]', 200);
+        return http.Response(jsonEncode(page), 200);
+      };
+      await store.refreshSession('v', 's');
+      await store.loadEarlier('v', 's');
+      sent.clear();
+      await store.refreshSession('v', 's');
+      await Future<void>.delayed(const Duration(milliseconds: 1500));
+      expect(sent.where((q) => q.method == 'POST'), isEmpty, reason: 'no nudge was sent');
+      store.logout();
+    });
+
     test('a hub from before paging (whole chat every time) still works', () async {
       final store = make();
       final all = [for (var i = 1; i <= 5; i++) {'id': i, 'sessionId': 's', 'vmId': 'v', 'createdAt': 'now', 'message': {'type': 'assistant', 'n': i}}];
